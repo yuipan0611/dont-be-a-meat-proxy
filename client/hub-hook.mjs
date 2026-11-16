@@ -248,10 +248,16 @@ function describeFlush(results) {
   });
 }
 
+let outboxSeq = 0;
+/** Outbox file names sort in queue order, even for entries queued in the same millisecond (reply before its `answer`). */
+function outboxName(clock, key) {
+  return `${String(clock.now()).padStart(15, '0')}-${String(++outboxSeq).padStart(6, '0')}-${key}.json`;
+}
+
 function queueItem(ctx, item, extra = {}) {
   const key = item.clientEventId;
   const entry = { type: 'item', key, item, label: extra.label ?? `「${item.subject}」`, createdAt: new Date(ctx.clock.now()).toISOString(), ...extra };
-  ctx.j.write(`outbox/${String(ctx.clock.now()).padStart(15, '0')}-${key}.json`, entry);
+  ctx.j.write(`outbox/${outboxName(ctx.clock, key)}`, entry);
   return entry;
 }
 
@@ -270,7 +276,7 @@ function queueControl(ctx, { eventType, rootMailId = null, threadId, sid, choice
     type: 'control', key, label: label ?? `${eventType}${rootMailId ? ` #${rootMailId}` : ''}（${sid}）`, createdAt: new Date(clock.now()).toISOString(),
     msg: { to: [cfg.clockAgent], subject: `${eventType}${rootMailId ? ` #${rootMailId}` : ` ${sid}`}`, threadId, control, idempotencyKey: key },
   };
-  j.write(`outbox/${String(clock.now()).padStart(15, '0')}-${key}.json`, entry);
+  j.write(`outbox/${outboxName(clock, key)}`, entry);
   return entry;
 }
 

@@ -5,7 +5,81 @@
 - 產出：`client/hub-hook.mjs`、`client/templates/{claude-settings.json,hub-client.json}`、`client/README.md`（hub-hook 段）、測試 `client/test/hub-hook*.test.mjs`、雙 session 模擬 `spikes/h04/`
 - 環境：macOS、Claude Code 2.1.325、Node 24.18.0、mcp_agent_mail_rust 0.3.40（本機，SHA-256 `4c3804fe…5bead`）
 
-<!-- RESULTS -->
+## 結論
+
+- **H-04 功能完成（Mac 本機）**：開工列未讀＋最近 5 則交接、閒置自動收信、checkpoint 交接、session 結束上報、強退後下次開工提示，都有自動化測試；真 Claude 雙 session 模擬跑過 TC-02、TC-06 與權限提示情境。
+- **A-4（PM 暫定判準）**：閒置 ≤60 秒 → 成立（TC-06：問題保存後 10.6–14.6 秒進入對方對話，5/5）；忙碌時「目前這一步結束後立即收到」→ 成立，權限提示也一樣（提示開著 94.8 秒都沒進對話，回答提示後 2.5 秒就處理）。
+- **沒做到／要 維護者 驗**：真 Mac↔Windows（H-08）、Windows 上的 hook 與孤兒處理、斷網／睡眠恢復。
+
+## 測試輸出
+
+### 1. 單元（FakeClock＋記憶體假 Hub）
+
+`node --test client/test/hub-hook.test.mjs` → `tests 40, pass 40, fail 0`。涵蓋：開工未讀逐字（舊→新）、沒有新項目要明說、Hub 連不上／缺 token 不得說沒有新項目、顯示過即已讀（AC-03.3）、最近 N=5 新→舊、過長原文截斷且保持未讀、強退後提示「上次已保存 #ID」且不編造、同 agent 另一個活著的 session 不算強退；watch 一行通知不含全文、15 秒輪詢、同一則不重複喚醒、單一 watcher、Claude 消失不讀事件（父程序死亡／被收養兩種）、55 分鐘自我到期早於範本 timeout、撤銷 token 只喚醒一次、連不上只喚醒一次且恢復後照常；checkpoint／send 未送達與結果未確認（同 key 重送只一筆）、本機擋未知收件者與密鑰；stop 只 block 一次、只收信的回合不 block；end 送 session.closed、離線時留待送；read 逐字＋標已讀；H-05 控制紀錄格式與固定 key；HubClock 名稱未設定時不猜名字；範本可載入；經 symlink 的 client/ 也能跑；`--json` 參數；回覆先於 answer 控制紀錄送出。
+
+TDD 說明：第一個垂直切片與後來的 bug（symlink、`--json`、交接誤顯示為動作請求）都是先紅後綠；其餘行為測試是寫完實作後補的，所以另做了 5 個突變測試（拿掉孤兒檢查、連不上時說沒有新項目、拿掉不重複喚醒、重送換新 key、到期改 60 分鐘），每一個都有對應測試變紅。
+
+### 2. 整合（真 Mail 0.3.40＋真 hub-hook 子程序）
+
+`node --test client/test/hub-hook.integration.test.mjs`：TC-02 模擬、session.closed 以 H-05 格式送到「Mail 產生名稱」的 HubClock、question→replyTo（HubClock 收到問題 CC 與 answer 控制紀錄、回覆不 CC）、TC-04 模擬、TC-13 模擬。
+
+TC-13（本機雙 agent、真 15 秒輪詢；A 以 monotonic clock 量 送出→B 喚醒→B 讀原文→回條→A 喚醒；不含 Claude 模型本身的回合時間，F-09 量到每端約 1.3–2.5 秒）：
+
+| 方向 | 送出→B 喚醒（秒） | 來回（秒） |
+|---|---|---|
+| BlueLake→RedStone ×5 | 2.98／6.12／11.24／0.20／4.24 | 18.00／21.15／26.26／15.24／19.26 |
+| RedStone→BlueLake ×5 | 4.69／0.85／1.68／12.21／8.09 | 19.73／15.87／16.71／27.24／23.12 |
+
+10/10 ≤60 秒，最大 27.24 秒（最終程式碼這一輪；前兩輪也都 10/10，最大 27.26／30.02 秒）。
+
+最終一次完整執行：`node --test client/test/hub-hook.test.mjs client/test/hub-hook.integration.test.mjs client/test/mail-client.test.mjs client/test/mail-client.integration.test.mjs` → `tests 98, pass 98, fail 0, skipped 0`（含 H-03 的測試，確認沒有改壞）。
+
+### 3. 真 Claude 雙 session 模擬（同一台 Mac；`spikes/h04/`）
+
+兩個互動式 Claude Code（mac＝BlueLake、win＝RedStone）各在自己的專案資料夾，用 `client/templates` 的設定；只有測試腳本代打使用者的字，收信全靠 hook。原始紀錄：`spikes/h04/results/`。
+
+**TC-02（模擬）**：Mac session 留交接（#1）後 `/exit`；新開 win session 只打「開始」。第一則回覆有交接 ID、`/login`、`11/20`、完整 PR 連結（4/4）；接著「再列一次給我的新項目」→「沒有給你的新項目」。
+
+**TC-06（模擬，win 停在等待輸入，n=5）**：
+
+| # | 保存→win 偵測 | →進入 win 對話 | →win 回答已保存 | →mac 偵測到回答 | →mac 回覆 |
+|---|---|---|---|---|---|
+| 1 | 13.85 | 13.88 | 25.55 | 34.43 | 36.13 |
+| 2 | 14.57 | 14.60 | 21.66 | 24.14* | — |
+| 3 | 12.28 | 12.32 | 15.03 | 29.44 | 30.94 |
+| 4 | 10.60 | 10.63 | 12.87 | 25.96 | 27.29 |
+| 5 | 11.45 | 11.47 | 13.91 | 25.03 | 26.33 |
+
+5/5 沒有跳確認就自動回答，回答內容＝README 第一行。\* 第 2 輪腳本把 answer 控制紀錄（#12）當成回答，mac 實際在 24.14 秒偵測到回答 #13；因此修正了 outbox 排序（同一毫秒排入時回覆先送），並加測試。
+
+**權限提示等待中（PM 要求補測；win 以 `--permission-mode default` 開，讓一個 Bash 指令停在權限提示）**：
+
+| 事件 | 時間（以 mac 送出為 0） |
+|---|---|
+| win watcher 偵測到 #25 | 4.7 秒 |
+| 權限提示一直開著 | 到 94.8 秒才回答 |
+| 提示開著期間進入對話 | **沒有**（排在 Claude 的佇列，與 F-09 長工具相同） |
+| 回答提示後 Claude 處理 #25 | 97.3 秒（回答提示後 2.5 秒） |
+
+→ 權限提示＝「目前這一步」，結束後立即收到，符合 PM 暫定判準；但等多久取決於人什麼時候回答提示。
+
+## 實測中發現並已修正
+
+1. **經 symlink 的 `client/` 會靜默不執行**：主程式判斷拿 `argv[1]`（symlink 路徑）比 `import.meta.url`（實際路徑），永遠不相等 → exit 0、沒有輸出、hook 看起來「成功」。改為比較 realpath，加測試。
+2. **auto mode 擋下 `printf … | node client/hub-hook.mjs send`**：開頭不是 `node client/hub-hook.mjs`，對不到範本的允許規則，被判為未核准的對外訊息。改成 `send --json '<JSON>'`，開工說明只教這個寫法。之後 TC-06 5/5 自動回答。
+3. **交接被當成動作請求**：交接 envelope 的 intent 預設 action，顯示成 `handoff/action`，模型就照動作請求流程跑 `presented`。改為交接一律標「交接（資訊，不是動作請求）」。
+4. **回答不能 CC HubClock**：H-05 把 CC 給它、intent 為 question／action 的 item 當成新請求；回答若 CC 會變成一筆假的動作請求。改為回覆不 CC，另送 `answer` 控制紀錄。
+
+## 已知限制／待 PM、維護者
+
+- **`presented` 的時間點**：權限提示測試中，模型在同一回合先執行 `presented 25`，約 4 秒後才把卡片文字印出來。SDS 要求「真的顯示後」才送；差幾秒對 30 分鐘計時影響小，但嚴格說不符合。若要嚴格，需改成由使用者回應卡片時才送（產品決定）。
+- **信任對話框**：範本預先允許 `Bash(node client/hub-hook.mjs:*)`，第一次開會跳「This folder pre-approves 1 tool permission」，**預設選項是 No, exit**；H-07 手冊要寫清楚選 Yes。
+- **HubClock 名稱**：範本 `clock_agent` 是佔位字，要填 H-02 產生的實際名稱（`hubclock.sender.json` 的 `agentName`）；沒填時開工會警告、question／action 不會被計時、不送 session.closed，不會猜名字。
+- **部署需要兩個資料夾**：hub-hook import `ops/lifecycle/protocol.mjs`（PM 指定共用格式），所以專案裡要同時有 `client/` 與 `ops/lifecycle/protocol.mjs`。
+- **同一 agent 同時開兩個 session**：兩個 session 共用同一份本機 staging／cursor，各自有 watcher；不會漏信，但同一則可能兩邊都通知（SDS 規定一個 agent 只開一個主 session）。
+- **一次間歇紅燈（已找到原因並修正）**：與 H-05 對齊時，replyTo 測試在一次完整執行中失敗過一次。原因與 TC-06 第 2 輪相同：回覆與 answer 控制紀錄在同一毫秒排入 outbox 時，檔名後半是隨機 key，送出順序約一半機率顛倒，而該測試取「最後一則」當控制紀錄。已改成排序用遞增序號，並加 20 次迴圈的順序測試。
+- **未測**：Windows（見下節）、斷網與睡眠恢復、VS Code 擴充裡的 Claude Code。
+
 
 ## Windows：待 維護者 驗（照做約 15 分鐘）
 

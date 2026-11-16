@@ -571,3 +571,14 @@ test('send/checkpoint accept the JSON as `--json <json>`, so the command starts 
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /--json 不是 JSON/);
 });
+
+test('a reply to a question is sent before its `answer` control, even when both are queued in the same millisecond', async () => {
+  for (let i = 0; i < 20; i++) {
+    const hub = createFakeHub();
+    const q = await hub.send('BlueLake', handoff({ kind: 'help', intent: 'question' }));
+    const win = machine(hub);
+    await win.run('start');
+    await win.run('send', { replyTo: q.messageId, summary: 'a', text: 'a' });
+    assert.deepEqual(hub.messages.slice(1).map((m) => m.topic), ['help', 'control']);
+  }
+});
