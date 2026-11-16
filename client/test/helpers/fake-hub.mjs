@@ -51,6 +51,11 @@ export function createFakeHub({ projectKey = '/data/projects/group-a', clock = {
         return { status: 'saved', messageId: r.message_id, createdTs: r.created_ts, threadId: r.thread_id, idempotencyKey: clientEventId, replay: !!r.idempotent_replay };
       },
       async sendWithRetry(item) { return { ...(await api.sendItem(item)), attempts: 1 }; },
+      async sendControl({ to, cc, subject, threadId, control, idempotencyKey }) {
+        gate({ agent: agentName, op: 'sendControl', key: idempotencyKey });
+        const r = store({ from: agentName, to, cc: cc ?? [], subject, topic: 'control', thread_id: threadId ?? idempotencyKey, body_md: JSON.stringify(control), key: idempotencyKey });
+        return { status: 'saved', messageId: r.message_id, createdTs: r.created_ts, threadId: r.thread_id, idempotencyKey, replay: !!r.idempotent_replay };
+      },
       async fetchEvents({ after, limit = 100 } = {}) {
         gate({ agent: agentName, op: 'fetchEvents', after });
         const mine = deliveries.filter((d) => d.agent === agentName && d.cursor > (after ?? 0));

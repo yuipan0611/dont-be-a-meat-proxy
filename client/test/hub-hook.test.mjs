@@ -11,7 +11,7 @@ import { FakeClock } from './helpers/fakes.mjs';
 
 const CONFIG = {
   v: 1, group_id: 'group-a', project_key: '/data/projects/group-a', hub_mail_url: 'https://hub.example/mcp/',
-  agents: { darwin: 'BlueLake', win32: 'RedStone' }, peers: ['BlueLake', 'RedStone'], clock_agent: 'hub-clock',
+  agents: { darwin: 'BlueLake', win32: 'RedStone' }, peers: ['BlueLake', 'RedStone'], clock_agent: 'JadeBluff',
   recent_handoffs: 5, poll_seconds: 15,
 };
 
@@ -150,7 +150,7 @@ test('start: after a kill -9 session it says so, names the last saved checkpoint
   const c = ctx(await mac.run('start', { session_id: 's-new' }));
   assert.match(c, /上次 session 未正常交接（s-old/);
   assert.match(c, new RegExp(`上次已保存交接 #${id}`));
-  const closed = hub.inboxOf('hub-clock');
+  const closed = hub.inboxOf('JadeBluff');
   assert.equal(closed.length, 1);
   assert.deepEqual(
     (({ event_type, recipient_session, agent, reason }) => ({ event_type, recipient_session, agent, reason }))(JSON.parse(closed[0].body_md)),
@@ -400,7 +400,7 @@ test('end: reports session.closed to the clock agent, closes the session, and th
   await mac.run('start', { session_id: 's-1' });
   const r = await mac.run('end', { session_id: 's-1', reason: 'prompt_input_exit' });
   assert.equal(r.exitCode, 0);
-  const [closed] = hub.inboxOf('hub-clock');
+  const [closed] = hub.inboxOf('JadeBluff');
   assert.equal(JSON.parse(closed.body_md).reason, 'prompt_input_exit');
   const c = ctx(await mac.run('start', { session_id: 's-2' }));
   assert.doesNotMatch(c, /未正常交接/);
@@ -417,7 +417,7 @@ test('end: with the Hub down, session.closed waits in the journal and the next s
   const c = ctx(await mac.run('start', { session_id: 's-2' }));
   assert.match(c, /上次有 1 則未送出/);
   assert.match(c, /已補送：session.closed（s-1）/);
-  assert.equal(hub.inboxOf('hub-clock').length, 1);
+  assert.equal(hub.inboxOf('JadeBluff').length, 1);
 });
 
 test('end: stops this session\'s watcher', async () => {
@@ -445,4 +445,94 @@ test('read: prints the original verbatim, marks it read on the Hub, and it leave
   assert.ok(r.stdout.includes(text.split('\n').join('\n    ')));
   assert.deepEqual(hub.readsOf('RedStone'), [sent.messageId]);
   assert.match((await win.run('inbox')).stdout, /沒有給你的新項目/);
+});
+
+// ---- HubClock alignment (H-05: ops/lifecycle/protocol.mjs) ----
+import { buildClientControl, clientControlKey } from '../../ops/lifecycle/protocol.mjs';
+
+test('a question or action request CCs the configured HubClock; handoffs and checkpoints do not', async () => {
+  const hub = createFakeHub();
+  const mac = machine(hub, { agent: 'BlueLake' });
+  await mac.run('start');
+  await mac.run('send', { to: ['RedStone'], subject: 'q', kind: 'help', intent: 'question', summary: 's', text: 't' });
+  await mac.run('send', { to: ['RedStone'], subject: 'a', kind: 'task', intent: 'action', summary: 's', text: 't' });
+  await mac.run('send', { to: ['RedStone'], subject: 'h', kind: 'handoff', summary: 's', text: 't' });
+  await mac.run('checkpoint', { summary: 's', text: 't' });
+  assert.deepEqual(hub.messages.map((m) => [m.subject, m.cc]), [['q', ['JadeBluff']], ['a', ['JadeBluff']], ['h', []], ['agent 自動交接：s', []]]);
+});
+
+test('replyTo answers in the root thread to the asker, and records the answer with an `answer` control (not a CC)', async () => {
+  const hub = createFakeHub();
+  const q = await hub.send('BlueLake', handoff({ kind: 'help', intent: 'question', subject: 'README 第一行？' }));
+  const win = machine(hub);
+  await win.run('start');
+  const r = await win.run('send', { replyTo: q.messageId, summary: '第一行是標題', text: '# 燈塔專案' });
+  assert.equal(r.exitCode, 0, r.stderr);
+  const reply = hub.messages.at(-1);
+  const replyMsg = hub.messages.find((m) => m.subject === 'Re: README 第一行？');
+  assert.deepEqual([replyMsg.to, replyMsg.cc, replyMsg.thread_id], [['BlueLake'], [], q.threadId]);
+  assert.deepEqual(JSON.parse(reply.body_md), buildClientControl({ eventType: 'answer', rootMailId: q.messageId, recipientSession: 'sess-1', agent: 'RedStone' }));
+  assert.deepEqual(reply.to, ['JadeBluff']);
+  // The asker sees it as a reply, not as a new action request.
+  const mac = machine(hub, { agent: 'BlueLake' });
+  const c = ctx(await mac.run('start'));
+  assert.match(c, /這是同一串裡的回覆/);
+  assert.doesNotMatch(c, /這是動作請求/);
+});
+
+test('presented / choice / session.closed use the exact H-05 control shape and fixed keys', async () => {
+  const hub = createFakeHub();
+  const req = await hub.send('BlueLake', handoff({ kind: 'task', intent: 'action', subject: '刪除舊分支' }));
+  const win = machine(hub, { alive: () => false });
+  await win.run('start', { session_id: 's-9' });
+  assert.match((await win.run('presented', {}, { args: [String(req.messageId)] })).stdout, /^已保存 #\d+（presented，請求 #1）/);
+  assert.match((await win.run('choice', {}, { args: [String(req.messageId), 'approve', '可以'] })).stdout, /choice approve/);
+  await win.run('end', { session_id: 's-9', reason: 'prompt_input_exit' });
+  const controls = hub.messages.filter((m) => m.topic === 'control');
+  const expect = [
+    buildClientControl({ eventType: 'presented', rootMailId: 1, recipientSession: 's-9', agent: 'RedStone' }),
+    buildClientControl({ eventType: 'choice', rootMailId: 1, recipientSession: 's-9', agent: 'RedStone', choice: 'approve', reason: '可以' }),
+    buildClientControl({ eventType: 'session.closed', rootMailId: null, recipientSession: 's-9', agent: 'RedStone', reason: 'prompt_input_exit' }),
+  ];
+  assert.deepEqual(controls.map((m) => JSON.parse(m.body_md)), expect);
+  assert.deepEqual(controls.map((m) => m.to), [['JadeBluff'], ['JadeBluff'], ['JadeBluff']]);
+  assert.equal(controls[0].thread_id, req.threadId);
+  const keys = controls.map((m) => JSON.parse(m.body_md)).map((c) => clientControlKey({ groupId: 'group-a', eventType: c.event_type, rootMailId: c.root_mail_id, agent: 'RedStone', recipientSession: 's-9' }));
+  // Re-sending the same choice replays on the same key (no second record).
+  await win.run('choice', {}, { args: [String(req.messageId), 'approve', '可以'] });
+  assert.equal(hub.messages.filter((m) => m.topic === 'control').length, 3);
+  assert.equal(new Set(keys).size, 3);
+});
+
+test('choice is refused before the request is staged locally, and with anything but approve|reject', async () => {
+  const hub = createFakeHub();
+  const win = machine(hub);
+  await win.run('start');
+  assert.match((await win.run('choice', {}, { args: ['42', 'approve'] })).stderr, /本機找不到 #42/);
+  assert.match((await win.run('choice', {}, { args: ['42', 'yes'] })).stderr, /用法/);
+});
+
+test('with clock_agent unset (template placeholder) nothing is sent to a guessed name, and start warns', async () => {
+  const hub = createFakeHub();
+  const mac = machine(hub, { agent: 'BlueLake', alive: () => false });
+  writeFileSync(join(mac.projectDir, 'hub-client.json'), JSON.stringify({ ...CONFIG, clock_agent: '<H-02 bootstrap 產生的 HubClock 名稱>' }));
+  const c = ctx(await mac.run('start', { session_id: 's-1' }));
+  assert.match(c, /HubClock 名稱未設定/);
+  const r = await mac.run('send', { to: ['RedStone'], subject: 'q', kind: 'help', intent: 'question', summary: 's', text: 't' });
+  assert.match(r.stdout, /已保存 #1.*HubClock 名稱未設定/);
+  await mac.run('end', { session_id: 's-1' });
+  assert.deepEqual(hub.messages.map((m) => m.cc), [[]]);
+  assert.equal(hub.messages.length, 1);
+});
+
+test('the shipped hub-client.json template loads: per-OS agents, N = 5, 15 s polling, clock name left for H-02', async () => {
+  const hub = createFakeHub();
+  const m = machine(hub);
+  writeFileSync(join(m.projectDir, 'hub-client.json'), readFileSync(new URL('../templates/hub-client.json', import.meta.url)));
+  const { loadConfig } = await import('../hub-hook.mjs');
+  const env = { ...m.env }; delete env.HUB_AGENT;
+  const mac = loadConfig({ env, platform: 'darwin' });
+  const win = loadConfig({ env, platform: 'win32' });
+  assert.deepEqual([mac.agent, win.agent, mac.recentN, mac.pollMs, mac.clockAgent, mac.handoffTo], ['BlueLake', 'RedStone', 5, 15_000, null, ['RedStone']]);
+  assert.equal(loadConfig({ env: { ...env, HUB_CLOCK_AGENT: 'JadeBluff' }, platform: 'darwin' }).clockAgent, 'JadeBluff');
 });

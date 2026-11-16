@@ -16,20 +16,22 @@ const PROJECT = '/data/projects/group-a';
 const skip = !(await mailBinAvailable()) && 'mcp-agent-mail binary not found (set MAIL_BIN)';
 const TEMPLATE = JSON.parse(await readFile(new URL('../templates/hub-client.json', import.meta.url), 'utf8'));
 
-let hub, tmp, mac, win, clockAgent;
+let hub, tmp, mac, win, clockAgent, clockName;
 
 async function register(name) {
-  const op = createMailClient({ url: hub.url, token: hub.token, projectKey: PROJECT, agentName: name });
+  // name undefined → Mail generates one (what H-02 does for HubClock, since 'HubClock' is rejected).
+  const op = createMailClient({ url: hub.url, token: hub.token, projectKey: PROJECT, agentName: name ?? 'tmp' });
   await op.callTool('ensure_project', { human_key: PROJECT });
-  const reg = await op.callTool('register_agent', { project_key: PROJECT, name, program: 'h04-it', model: 'none' });
-  await op.callTool('set_contact_policy', { project_key: PROJECT, agent_name: name, policy: 'open' });
-  return reg.registration_token;
+  const reg = await op.callTool('register_agent', { project_key: PROJECT, ...(name ? { name } : {}), program: 'h04-it', model: 'none' });
+  const agentName = reg.name ?? reg.agent?.name ?? name;
+  await op.callTool('set_contact_policy', { project_key: PROJECT, agent_name: agentName, policy: 'open' });
+  return name ? reg.registration_token : { agentName, token: reg.registration_token };
 }
 
 async function machine(agent, senderToken, { url, tag = agent } = {}) {
   const projectDir = join(tmp, `proj-${tag}`);
   await mkdir(projectDir, { recursive: true });
-  await writeFile(join(projectDir, 'hub-client.json'), JSON.stringify({ ...TEMPLATE, hub_mail_url: url ?? hub.url }));
+  await writeFile(join(projectDir, 'hub-client.json'), JSON.stringify({ ...TEMPLATE, hub_mail_url: url ?? hub.url, clock_agent: clockName }));
   const env = {
     ...process.env, HUB_TOKEN: hub.token, HUB_AGENT: agent, HUB_SENDER_TOKEN: senderToken,
     HUB_DATA_DIR: join(tmp, `data-${tag}`), CLAUDE_PROJECT_DIR: projectDir,
@@ -52,10 +54,11 @@ before(async () => {
   if (skip) return;
   hub = await startLocalMail();
   tmp = await mkdtemp(join(tmpdir(), 'hubhook-it-'));
+  const clock = await register(undefined);
+  clockName = clock.agentName;
+  clockAgent = createMailClient({ url: hub.url, token: hub.token, projectKey: PROJECT, agentName: clockName });
   mac = await machine('BlueLake', await register('BlueLake'));
   win = await machine('RedStone', await register('RedStone'));
-  clockAgent = createMailClient({ url: hub.url, token: hub.token, projectKey: PROJECT, agentName: TEMPLATE.clock_agent });
-  await register(TEMPLATE.clock_agent);
 });
 
 after(async () => {
@@ -90,14 +93,38 @@ test('TC-02 (simulated): Mac leaves a handoff and exits; a new Windows session g
   assert.match(ctxOf(s2), /沒有給你的新項目/);
 });
 
-test('session end reports session.closed to the clock agent on the real Hub', { skip }, async () => {
+test('session end reports session.closed to the (generated-name) HubClock on the real Hub, in the H-05 shape', { skip }, async () => {
+  assert.notEqual(clockName, 'HubClock');
   const { events } = await clockAgent.fetchEvents({});
   const closed = [];
   for (const e of events) closed.push(JSON.parse((await clockAgent.readMessage(e.message_id)).message.body_md));
-  assert.ok(closed.some((b) => b.event_type === 'session.closed' && b.recipient_session === 'mac-s1' && b.agent === 'BlueLake'));
+  assert.ok(closed.some((b) => b.v === 1 && b.event_type === 'session.closed' && b.root_mail_id === null && b.recipient_session === 'mac-s1' && b.agent === 'BlueLake'));
+});
+
+test('question → reply with replyTo: HubClock gets the question (CC) and an answer control; the reply stays in the root thread', { skip }, async () => {
+  await mac.run(['start'], { session_id: 'mac-q' });
+  await win.run(['start'], { session_id: 'win-q' });
+  const q = await mac.run(['send'], { to: ['RedStone'], subject: 'README 第一行？', kind: 'help', intent: 'question', summary: '問 README', text: 'README 第一行是什麼？' });
+  assert.equal(q.code, 0, q.stderr);
+  const qid = Number(q.stdout.match(/#(\d+)/)[1]);
+  await win.run(['inbox']);
+  const a = await win.run(['send'], { replyTo: qid, summary: '答', text: '# 燈塔專案' });
+  assert.equal(a.code, 0, a.stderr);
+  const aid = Number(a.stdout.match(/#(\d+)/)[1]);
+  const { events } = await clockAgent.fetchEvents({});
+  const got = [];
+  for (const e of events) got.push((await clockAgent.readMessage(e.message_id)).message);
+  assert.ok(got.some((m) => m.id === qid), 'question reaches HubClock');
+  assert.ok(!got.some((m) => m.id === aid), 'the answer item itself is not CC to HubClock');
+  const ans = got.map((m) => ({ m, c: JSON.parse(m.body_md) })).find(({ c }) => c.event_type === 'answer' && c.root_mail_id === qid);
+  assert.ok(ans, 'answer control reached HubClock');
+  const reply = (await win.run(['read', String(aid)])).stdout;
+  assert.match(reply, /同一串裡的回覆/);
+  await mac.run(['inbox']); await mac.run(['read', String(aid)]);
 });
 
 test('TC-04 (simulated): empty inbox is stated explicitly; an unreachable Hub is stated as "cannot fetch"', { skip }, async () => {
+  await mac.run(['start'], { session_id: 'mac-s2a' }); // takes in anything still unread from earlier tests
   const r = await mac.run(['start'], { session_id: 'mac-s2' });
   assert.match(ctxOf(r), /沒有給你的新項目/);
   const offline = await machine('BlueLake', mac.env.HUB_SENDER_TOKEN, { url: 'http://127.0.0.1:9/mcp/', tag: 'BlueLake-offline' });
