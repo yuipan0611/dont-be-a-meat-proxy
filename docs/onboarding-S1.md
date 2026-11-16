@@ -1,11 +1,11 @@
 # 08 組員接入手冊（S1 初稿：Mac 與 Windows 端）
 
 - **負責**：agy-junior-swe-2（Antigravity）｜**對應票號**：H-07｜**審查**：PM-Emily → 維護者
-- **版本**：v0.1 初稿（2026-11-17）
+- **版本**：v0.2 接入補充（2026-11-17）
 - **依據**：`docs/05-sds.md`（v0.3 權威）、`docs/04-sad.md`、`docs/research/F-08-hostinger-vscode.md`、`docs/06-test-plan.md`
 - **適用對象**：新手工程師、專案協作者（S1 階段供 維護者 於 Mac 與 Windows 操作；S2 開放組員時沿用）
 - **目標**：語言白話、步驟分明，**在 Windows 上照做 ≤ 15 分鐘接上**。
-- **狀態提醒**：本文件為 S1 初稿；待 H-02（VPS 部署）與 H-04（Hook 膠水）交付定稿後，由 PM 安排填入實際運行值。
+- **狀態提醒**：本文件補入 H-04 設定與信任確認；VPS 部署、真 Claude／Windows 驗收仍由 維護者 執行，尚未代表 S1 通過。
 
 ---
 
@@ -16,7 +16,7 @@
    - [A. Mac 使用者（zsh 終端機）](#a-mac-使用者zsh-終端機)
    - [B. Windows 使用者（PowerShell 終端機）](#b-windows-使用者powershell-終端機)
 3. [第二步：Claude Code 專案 `.mcp.json` 設定](#3-第二步claude-code-專案-mcpjson-設定)
-4. [第三步：自動化 Hook 設定（`.claude/settings.json`）【待 H-04 定稿】](#4-第三步自動化-hook-設定claudesettingsjson待-h-04-定稿)
+4. [第三步：自動化 Hook 設定（`.claude/settings.json`）](#4-第三步自動化-hook-設定claudesettingsjson)
 5. [第四步：如何確認成功接上？](#5-第四步如何確認成功接上)
 6. [常見其他工具沿用性（Codex、Antigravity、VS Code 擴充）](#6-常見其他工具沿用性codexantigravityvs-code-擴充)
 7. [常見錯誤與排查指引（401、連不上、Hook 沒反應）](#7-常見錯誤與排查指引401連不上hook-沒反應)
@@ -139,47 +139,93 @@ Write-Host "HUB_TOKEN 長度: $($env:HUB_TOKEN.Length) 字元"
 
 ---
 
-## 4. 第三步：自動化 Hook 設定（`.claude/settings.json`）【待 H-04 定稿】
+## 4. 第三步：自動化 Hook 設定（`.claude/settings.json`）
 
-在我們的架構中，AI 需要在「開工時自動讀取最近交接」、「工作時每隔一段時間檢查新訊息」、「結束時回報交接」。這套自動化依靠 Claude Code 的 Hook 機制執行。
+這裡接上開工讀交接、15 秒輪詢、checkpoint 與結束回報。**Node ≥22**；本次開發環境為 Node 24.18.0、Claude Code 2.1.325。先在專案根目錄執行 `node --version`、`claude --version`，找不到指令就先處理 PATH，不要繼續。
 
-> [!IMPORTANT]
-> **區塊狀態：【待 H-04 定稿】**
-> 目前 swe-Ben 正在進行 H-04 / H-04a 開發（`client/hub-hook.mjs` 與 `asyncRewake` 測試）。
-> 預計於 11-20～11-22 定稿。以下為 SDS v0.3 設計之標準設定內容，供預覽參考：
+### A. 放正確設定，保留已有內容
 
-設定檔路徑：專案目錄下之 `.claude/settings.json`
+1. 確認目前資料夾內有 `client/hub-hook.mjs`。用 [hub-client.json 範本](../client/templates/hub-client.json) 建立根目錄 `hub-client.json`；有舊檔就逐項核對，別覆蓋。`project_key` 是 Hub 上的 `/data/projects/group-a`，不是本機路徑；`agents` 與 `peers` 必須和 H-02 註冊一致。
+2. 向 PM 取得 HubClock 的**公開 canonical 名稱**，填入 `clock_agent`。來源是 VPS `hubclock.sender.json.agentName`，不是字面 `HubClock`；不要索取或複製 HubClock 的 sender token。placeholder 留著會跳過控制回報，不能當作接入完成。
+3. 把 [claude-settings.json 範本](../client/templates/claude-settings.json) 的 hooks 及專案所需 `permissions.allow` 合併進 `.claude/settings.json`。僅在目標檔不存在時整份複製；保留其他 hooks 與權限，不調整全域設定或 permission mode。範本用 exec form `command: node` 與 `args`，Mac／Windows 共用；Windows 的 Node 必須是可執行的 `node.exe`。
+4. 在根目錄驗 JSON：
 
-```json
-{
-  "hooks": {
-    "SessionStart": [{"hooks": [
-      {"type":"command","command":"node","args":["${CLAUDE_PROJECT_DIR}/client/hub-hook.mjs","start"],"timeout":20},
-      {"type":"command","command":"node","args":["${CLAUDE_PROJECT_DIR}/client/hub-hook.mjs","watch"],"asyncRewake":true,"timeout":3600}
-    ]}],
-    "Stop": [{"hooks": [
-      {"type":"command","command":"node","args":["${CLAUDE_PROJECT_DIR}/client/hub-hook.mjs","stop"],"timeout":15},
-      {"type":"command","command":"node","args":["${CLAUDE_PROJECT_DIR}/client/hub-hook.mjs","watch"],"asyncRewake":true,"timeout":3600}
-    ]}],
-    "SessionEnd": [{"hooks": [
-      {"type":"command","command":"node","args":["${CLAUDE_PROJECT_DIR}/client/hub-hook.mjs","end"],"timeout":5}
-    ]}]
-  }
+```sh
+node -e 'const fs=require("node:fs"); for (const p of ["hub-client.json",".claude/settings.json"]) { JSON.parse(fs.readFileSync(p,"utf8")); console.log(p+" JSON OK"); }'
+```
+
+Windows PowerShell 改用：
+
+```powershell
+foreach ($H04Config in @('hub-client.json', '.claude/settings.json')) {
+  Get-Content $H04Config -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop | Out-Null
+  Write-Output ($H04Config + ' JSON OK')
 }
 ```
 
-- **先決條件**：本機電腦必須安裝有 Node.js（終端機輸入 `node -v` 能正確印出版本，建議 LTS v18 或 v20 以上）。
-- **行為說明**：
-  - `SessionStart`：啟動 session 時，自動抓取未讀訊息與最近 5 則交接（G2+G3 已定 N=5）。
-  - `watch`（`asyncRewake: true`）：在背景每 15 秒檢查一次是否有新訊息，有訊息時喚醒 Claude Code。
-  - `Stop`：每段工作停止時檢查 checkpoint。
-  - `SessionEnd`：session 結束時上報狀態，避免懸掛未完成狀態。
+預期兩行 `JSON OK`。若 `ENOENT`，核對 cwd 與檔名；若 JSON 語法錯，檢查逗號、引號，不能把註解放進 JSON。
 
----
+### B. 載入這台裝置的兩種憑證
+
+第一步的 `HUB_TOKEN` 只管入口；Hook 送信另需 `HUB_SENDER_TOKEN`，必須與本機 `HUB_AGENT` 配對。以下讀 H-02 已交付的私密檔，只影響目前終端機；**不要把實際值打進指令歷史或貼回 PM**。從這個終端機啟動的 Claude 才會繼承。
+
+Mac（repo 根目錄；檔案已由 H-02 安全取得）：
+
+```zsh
+set -a
+source .hub-local/h02-client/mac.env
+set +a
+export HUB_AGENT="$(node -p 'JSON.parse(require("node:fs").readFileSync(".hub-local/h02-client/mac.sender.json","utf8")).agentName')"
+export HUB_SENDER_TOKEN="$(node -p 'JSON.parse(require("node:fs").readFileSync(".hub-local/h02-client/mac.sender.json","utf8")).senderToken')"
+node -e 'for (const k of ["HUB_TOKEN","HUB_AGENT","HUB_SENDER_TOKEN"]) { if (!process.env[k]) throw Error(k+" missing"); } console.log("device credentials present");'
+```
+
+Windows（PowerShell；只放此 Windows 裝置的檔案到自己的 `.hub-local/h02-client`，勿把 Mac sender token 混入）：
+
+```powershell
+Get-Content .hub-local/h02-client/windows.env -ErrorAction Stop | ForEach-Object {
+  $H04Pair = $_ -split '=', 2
+  if ($H04Pair.Count -eq 2 -and $H04Pair[0] -in @('HUB_TOKEN', 'HUB_MAIL_URL')) {
+    Set-Item -Path ('Env:' + $H04Pair[0]) -Value $H04Pair[1]
+  }
+}
+$H04Sender = Get-Content .hub-local/h02-client/windows.sender.json -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+$env:HUB_AGENT = $H04Sender.agentName
+$env:HUB_SENDER_TOKEN = $H04Sender.senderToken
+Remove-Variable H04Sender, H04Pair -ErrorAction SilentlyContinue
+foreach ($H04Key in @('HUB_TOKEN', 'HUB_AGENT', 'HUB_SENDER_TOKEN')) {
+  if ([string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($H04Key))) { throw ($H04Key + ' missing') }
+}
+Write-Output 'device credentials present'
+```
+
+預期只有 `device credentials present`，不印出密鑰。`missing` 就停下核對自己的檔案與環境；此檢查只證明有值，身分是否有效仍須真 Hub 送讀驗證。保持檔案私密並排除 Git，Mac 私密檔權限為 600；Windows 僅自己的使用者可讀。關閉終端機後重新載入，不需更改全域環境設定。
+
+### C. 信任資料夾，再確認 Hook 真的啟動
+
+1. 在剛才的**根目錄與同一終端機**執行 `claude`。如果有資料夾信任提示，核對顯示路徑與設定內容後，明確選中 **Yes, I trust this folder** 再 Enter。實際測試畫面曾預選 **No, exit**，直接 Enter 會退出；不要假設 Yes 是第幾項。
+2. 若未核准信任，interactive Claude 會暫停所有設定來源的 hooks。不要透過改全域權限、修改 `.claude.json` 或切換 permission mode 處理。`CLAUDE_CONFIG_DIR` 若有值，代表目前使用另一份 profile；保留原設定並告知 PM「有設定」即可。[官方 Workspace trust](https://code.claude.com/docs/en/hooks#workspace-trust)、[設定來源](https://code.claude.com/docs/en/settings)
+3. 進入後用 `/hooks` 核對 SessionStart／Stop／SessionEnd，指令路徑應指到此專案。另一終端機查看下列 `hook.log` 的**本次新事件**，應有 `ev: start` 和 `ev: watch-arm`。記下時間及 session ID，不能只憑舊事件判定。
+
+預設 log 位置（範本為 group-a、Mac BlueLake／Windows RedStone）：
+
+```zsh
+tail -n 10 "$HOME/Library/Application Support/hub-client/group-a/BlueLake/hook.log"
+```
+
+```powershell
+Get-Content "$env:LOCALAPPDATA/hub-client/group-a/RedStone/hook.log" -Tail 10
+```
+
+若有 `HUB_DATA_DIR`，改讀該目錄的 `hook.log`。log 與耐久收件含工作資訊，只在本機查看，分享前遮蔽；不要上傳整份目錄。
+
+4. `start.syncError` 應為 null；Claude 應明說無新項目，或逐字列出可取得的項目。出現「無法取得」就查憑證／連線，不能當成空收件匣。`watch-skip` 可能已有同 session watcher，需搭配 `watch-arm` 與程序確認；不能單看 skip 說成功。
+5. SessionStart 讀最近 5 則交接；watch 每 15 秒輪詢，有訊息 exit 2 喚醒，55 分鐘自行到期、Stop 重掛；SessionEnd 在預算內回報 `session.closed`。watch exit 2 是通知，不是部署壞掉。`/exit` 若顯示背景工作確認，選 **Exit and stop tasks** 才算關完。
+6. Windows 的 idle／回答中／長工具／正常退出／孤兒程序，照 [client README Windows 驗證](../client/README.md#yui-的-windows-驗證尚未實測) 執行並交回版本、ID、延遲表。未實測前保留「待驗」，不能以 Mac 模擬結果替代。
 
 ## 5. 第四步：如何確認成功接上？
 
-設定好 `.mcp.json` 與環境變數後，請依照以下步驟驗證連線：
+設定好 `.mcp.json` 與環境變數後，請依照以下步驟驗證連線。MCP Connected 只證明 MCP 接入；Hook 另依 §4 的 `/hooks` 與本次 start 事件確認。
 
 ### 驗證步驟 A：啟動 Claude Code 並輸入 `/mcp`
 
@@ -230,7 +276,7 @@ claude mcp list
   ```
 
 **判準**（PM 註：MCP 未先 initialize、缺 `Accept: application/json, text/event-stream` 時，伺服器可能回 400／406 而不是 200；實際判準待 H-02 部署後實測再定，目前只把 401 當作確定的判斷）：
-- 看到 `HTTP 狀態碼: 200`：恭喜！Token 正確且 Hub 連線順暢。
+- 看到 `HTTP 狀態碼: 200`：只證明 HTTP 回應，還須確認 MCP JSON 沒有 error；正式送讀請用 H-02 驗證指令，不能只據狀態碼報驗收成功。
 - 看到 `HTTP 狀態碼: 401`：Token 錯誤或已被撤銷。
 - 看到 `HTTP 狀態碼: 502` 或連線超時：Hub 後端維護中或網路受阻。
 
@@ -286,29 +332,32 @@ claude mcp list
 
 ### 錯誤三：Hook 沒觸發或開工報錯
 
-- **現象**：啟動 Claude Code 時沒有自動印出交接摘要，或終端機跳出 `command not found: node` / `spawn node ENOENT`。
-- **原因**：
-  1. 本機未安裝 Node.js，或 Node.js 沒有加入系統 PATH。
-  2. 專案尚未拉取最新的 `client/hub-hook.mjs` 檔案（此票目前為 S1 初稿階段，H-04 正在實作中）。
-  3. `.claude/settings.json` 的 JSON 格式有語法錯誤（例如少逗號或括號）。
-- **排查步驟**：
-  1. 檢查 Node 是否就緒：終端機執行 `node -v`。若顯示找不到指令，請先至 [Node.js 官方網站](https://nodejs.org/) 下載安裝 LTS 版本。
-  2. 檢查檔案是否存在：確認專案目錄下是否有 `client/hub-hook.mjs`。若檔案尚未存在，請暫時不要啟用 `.claude/settings.json`，等 H-04 定稿後再合併使用。
+按順序查：
+
+1. 是否仍停在資料夾信任提示，或按了預選 No, exit？核對後明確選 Yes；設定檔存在不代表已執行。
+2. cwd 是否是有 `.claude/settings.json`、`hub-client.json`、`client/hub-hook.mjs` 的根目錄？`/hooks` 是否列出本專案路徑？
+3. `node --version` 是否 ≥22？Windows `Get-Command node` 是否找到 node.exe？JSON 檢查是否兩個都 OK？
+4. 是否從載入憑證的同一個終端機啟動 Claude？`HUB_TOKEN`、`HUB_AGENT`、`HUB_SENDER_TOKEN` 是否都存在且配對？`clock_agent` 是否已換成真 canonical 名稱？不要印出 token。
+5. 是否使用 `--bare`、`--restricted` 或忽略 project 的 `--setting-sources`？本驗證使用正常 interactive 啟動。`-p` 的信任處理不同，不能當作 interactive hooks 證據。
+6. 是否有本次 `start`／`watch-arm`，`start.syncError` 是否為 null？PID 存在、`/mcp` 綠色、手動送信成功，皆不代表 Hook 載入。只有 `outbox-sent` 更不能代替 start。
+
+仍失敗就交回版本、cwd、`CLAUDE_CONFIG_DIR` 是否存在、錯誤類型、事件時間與 ID；不要傳設定檔中的 token 或整份 profile。詳見 [H-04 診斷](ops/H04-validation.md)。
 
 ---
 
 ## 8. Windows 新手 15 分鐘極速檢核清單（Checklist）
 
-維護者 或組員在 Windows 上設定時，可對照以下時間表，15 分鐘內輕鬆完成：
+以下是設定的目標時間，不含尚待執行的雙向真機驗收；未完成 §4 的 Windows 檢查前不能回報整體接入成功：
 
 | 時間（分） | 步驟 | 檢核動作 | 通過判準 |
 |---|---|---|---|
-| **00 ~ 03** | **步驟 1：設環境變數** | 打開 PowerShell，貼上 SetEnvironmentVariable 指令設定 `HUB_TOKEN` 與 `HUB_MAIL_URL`。關閉並重開 PowerShell。 | 執行 `Write-Host $env:HUB_TOKEN.Length`，數值 > 0。 |
+| **00 ~ 03** | **步驟 1：載入裝置憑證** | 在 PowerShell 依 §4 B 載入 Windows 私密檔，留在同一視窗。 | 印出 `device credentials present`，不印出值。 |
 | **03 ~ 06** | **步驟 2：放 `.mcp.json`** | 確保專案根目錄有 `.mcp.json`，內容參照第三節範本（使用 `${HUB_MAIL_URL}` 與 `${HUB_TOKEN}`）。 | 檔案存在且 JSON 語法無誤。 |
 | **06 ~ 10** | **步驟 3：驗證 MCP 連線** | 在專案路徑下執行 `claude`，進入後輸入 `/mcp`。 | 看到 `hub` 狀態為綠色或 Connected，且有 `send_message` 等工具。 |
-| **10 ~ 13** | **步驟 4：快速健康探測** | 在 PowerShell 執行 `curl.exe` 探測指令。 | 回傳 `HTTP 狀態碼: 200`。 |
-| **13 ~ 15** | **步驟 5：完成登記** | 在群組中回報「Windows 已接上 Hub」。 | 準備開始接收非同步交接任務！ |
+| **10 ~ 13** | **步驟 4：快速健康探測** | 在 PowerShell 執行 `curl.exe` 探測指令。 | HTTP 回應可達；MCP 送讀按 H-02 驗證，不能只看 200。 |
+| **13 ~ 15** | **步驟 5：完成登記** | 確認 `/hooks` 與本次 start，另完成 client README 的 Windows 驗證。 | 交回實際結果；未驗部分明列待驗。 |
 
 ---
 *文件維護紀錄：*
 - 2026-11-17：初稿建立（H-07，agy-junior-swe-2），遵循 SDS v0.3 與 F-08 調研，涵蓋 Mac/Win 獨立說明與 ≤15 分鐘流程。
+- 2026-11-17：H-04 收尾補入雙 token、真 canonical clock 名稱、workspace trust、啟動證據與 Windows 待驗步驟（Codex）。

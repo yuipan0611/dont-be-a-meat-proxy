@@ -6,6 +6,7 @@ services:
     env_file: ${HUB_PRIVATE_DIR:-/var/lib/neighbor-hub/private}/mail-a.env
     environment:
       HTTP_PATH: /mcp/
+      HTTP_ALLOWED_HOSTS: mail-a
       HTTP_JWT_ENABLED: "false"
       HTTP_ALLOW_LOCALHOST_UNAUTHENTICATED: "false"
       HTTP_RBAC_DEFAULT_ROLE: writer

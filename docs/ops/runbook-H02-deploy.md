@@ -2,7 +2,7 @@
 
 操作人：維護者。程式與手冊：codex-senior-swe。依據：[SDS API-01／02／05](../05-sds.md)、[VPS 實際盤點與 PM 調整](vps-inventory.md)、[MVP 工作票](../07-tickets-mvp.md)。本文件的 VPS 指令由 維護者 執行，agent 沒有 SSH 權限。
 
-目標是新增 `https://hub.example.invalid/mcp/`，同時保留 `office.example.invalid` 的既有行為。只跑 `mail-a` 容器；既有 `/usr/bin/caddy` 繼續服務 80／443。不要重啟 Caddy、重開機、更新系統套件、重設防火牆或改其他服務。
+目標是新增 `https://hub.example.invalid/mcp/`，同時保留 `office.example.invalid` 的既有行為。先啟 `mail-a`，完成驗收後再啟 H-05 HubClock 容器；既有 `/usr/bin/caddy` 繼續服務 80／443。不要重啟 Caddy、重開機、更新系統套件、重設防火牆或改其他服務。
 
 ## 1. 先把 Caddy 版本與原設定貼回 PM
 
@@ -218,9 +218,23 @@ sudo docker inspect --format '{{.State.StartedAt}}' "$H02_CONTAINER"
 sudo docker compose -p neighbor-hub -f deploy/compose.yaml restart mail-a
 sudo docker compose -p neighbor-hub -f deploy/compose.yaml up -d --wait --wait-timeout 120
 sudo docker inspect --format '{{.State.StartedAt}}' "$H02_CONTAINER"
+H02_READY=0
+for H02_ATTEMPT in $(seq 1 30); do
+  H02_HEALTH=$(curl --noproxy '*' --connect-timeout 1 --max-time 1 -s -o /dev/null \
+    -w '%{http_code}' http://127.0.0.1:8765/health/liveness) || H02_HEALTH=000
+  if [ "$H02_HEALTH" = 200 ]; then
+    H02_READY=1
+    printf 'READY TC-05 after Mail restart: health 200\n'
+    break
+  fi
+  sleep 1
+done
+if [ "$H02_READY" != 1 ]; then
+  printf 'FAIL TC-05 after Mail restart: health not 200 after 30 probes; stop before persistence/TC-10\n'
+fi
 ```
 
-預期 StartedAt 改變且 healthy。接著在 Mac 執行：
+**重啟後先等 health 200 再測**。預期 StartedAt 改變、healthy，並出現 `READY TC-05 after Mail restart: health 200`；上面最多 30 次，每次 curl 最長 1 秒、間隔 1 秒，等待約在 60 秒內結束。若看到 FAIL，先停止並查 Mail，不執行原文讀取或 TC-10；Compose 的 healthy 狀態不能代替這個實際 HTTP 檢查。確認 READY 後才在 Mac 執行：
 
 ```sh
 node ops/verify-h02.mjs persistence --credentials-dir .hub-local/h02-client
@@ -268,6 +282,60 @@ node ops/verify-h02.mjs mcp --credentials-dir .hub-local/h02-client
 
 最後再做第 4 節的 office 原狀比對，將去秘密的 PASS 行、StartedAt、MainPID、HTTP 回應碼與實機 Caddy 版本交給 PM。
 
+### 啟動 H-05 HubClock 容器，驗證第二實例 standby
+
+依 [H-05 驗證紀錄](H05-validation.md) 與既有 `deploy/hubclock/compose.hubclock.yaml`，將容器 override 疊在基本 Compose 上，不在 VPS 安裝 Node，也不啟用備案 systemd unit。以下在 VPS 的 `/opt/neighbor-hub` 執行，且第 5 節 bootstrap 已成功。
+
+HubClock 需要讀取 upstream env 與自己的 sender registry，並寫入 `/var/lib/neighbor-hub/hubclock`。這兩個 mode-600 檔案與新狀態目錄使用 UID/GID `10001:10001`，讓容器可用非 root 身分執行。root 的 H-02 CLI 仍可管理這兩個檔案，私密 registry 目錄維持 root 管理。若已有舊 HubClock 狀態，先停服務核對 owner，不直接覆蓋；不要對整個 private 目錄遞迴 chown。
+
+```sh
+cd /opt/neighbor-hub
+sudo chown 10001:10001 /var/lib/neighbor-hub/private/mail-a.env \
+  /var/lib/neighbor-hub/private/hubclock.sender.json
+sudo chmod 600 /var/lib/neighbor-hub/private/mail-a.env \
+  /var/lib/neighbor-hub/private/hubclock.sender.json
+sudo install -d -o 10001 -g 10001 -m 700 /var/lib/neighbor-hub/hubclock
+H02_CLOCK_UID=$(sudo stat -c %u /var/lib/neighbor-hub/private/hubclock.sender.json)
+H02_CLOCK_GID=$(sudo stat -c %g /var/lib/neighbor-hub/private/hubclock.sender.json)
+sudo stat -c '%u:%g %a %n' /var/lib/neighbor-hub/private/mail-a.env \
+  /var/lib/neighbor-hub/private/hubclock.sender.json /var/lib/neighbor-hub/hubclock
+h02_clock_stack() {
+  sudo env HUB_OPS_UID="$H02_CLOCK_UID" HUB_OPS_GID="$H02_CLOCK_GID" \
+    docker compose -p neighbor-hub -f /opt/neighbor-hub/deploy/compose.yaml \
+    -f /opt/neighbor-hub/deploy/hubclock/compose.hubclock.yaml "$@"
+}
+h02_clock_stack config --quiet
+h02_clock_stack pull hubclock
+h02_clock_stack up -d --wait --wait-timeout 120 hubclock
+h02_clock_stack ps
+```
+
+預期兩個憑證檔 `10001:10001 600`、狀態目錄 `10001:10001 700`，Mail healthy、HubClock running。Node image 已由 H-05 固定 digest；HubClock cap_drop ALL、read-only rootfs、128 MiB、不 publish port。只讀掛入 client、lifecycle 程式及自己的兩份憑證檔，狀態保存在上述主機目錄，不能換成未初始化 owner 的 root-owned named volume。
+
+Mail 的基本設定與 override 都保留 **`HTTP_ALLOWED_HOSTS: mail-a`**。HubClock 從專用網路呼叫 `http://mail-a:8765/mcp/`；此欄只填主機名 `mail-a`，不是 `mail-a:8765`。否則上游回 421；這不是 token 壞掉，不能因此關閉驗證或開放任意 Host。新增這個 Host 不改 127.0.0.1-only 發布規則。
+
+先在 VPS 本機看 log，等到真的完成一次 Mail tick，不能把 running 當成可用：
+
+```sh
+h02_clock_stack logs --no-color --tail 20 hubclock
+h02_clock_stack run --rm --no-deps hubclock node /app/ops/lifecycle/main.mjs status
+```
+
+預期出現 `"ev":"tick"` 及 ingested／sent 數字，status 能列出 cursor 與 outbox 摘要；首次空收件匣的數字可以是 0。`tick_failed`、`fatal`、`crash` 都不算成功；排查 owner、600 檔與 Host allowlist。只回報 tick／錯誤 code 摘要，異常 msg 留在自己的 VPS 檢查。
+
+主實例完成 tick 且仍在執行後，測第二個實例共用同一份狀態：
+
+```sh
+H02_STANDBY_EXIT=0
+h02_clock_stack run --rm --no-deps hubclock node /app/ops/lifecycle/main.mjs once || H02_STANDBY_EXIT=$?
+printf 'hubclock_secondary_exit=%s\n' "$H02_STANDBY_EXIT"
+h02_clock_stack ps hubclock
+```
+
+預期第二個實例印 `"ev":"standby"` 且 exit **3**，主服務繼續 running。exit 3 是單 writer lock 正常阻止第二個 writer，不能列成部署故障；exit 0 或其他錯誤則先查主服務與 lock，不刪 lock 檔硬搶。
+
+將實際 canonical name 交給 PM／H-04 填 `clock_agent`，來源是 600 的 `hubclock.sender.json`，不能寫死 `HubClock` 或 `hub-clock`。狀態路徑需交 H-06：目前備份預設仍為 `/var/lib/neighbor-hub/lifecycle`，部署備份時要明確指定 `--clock-dir /var/lib/neighbor-hub/hubclock`，並在一致性備份前停 HubClock、與 Mail 成套還原；只啟服務不代表備份排程已對齊。
+
 ## 7. office 有退步或部署失敗時回滾
 
 以下只移除本次 hub 入口，恢復初始 office 設定；不刪 volume、不還原舊 token registry、不清 Caddy 憑證、不執行 `down -v`。先確認 `pre-h02.path` 指向**第一次部署前**的 office 備份，不是已包含 hub import 的後續備份。
@@ -282,11 +350,16 @@ if sudo sh -c 'umask 077; /usr/bin/caddy validate --config /etc/caddy/Caddyfile 
 else
   printf 'rollback validate failed; do not restart Caddy; contact PM\n'
 fi
+H02_CLOCK_CONTAINER=$(sudo docker ps -q --filter label=com.docker.compose.project=neighbor-hub \
+  --filter label=com.docker.compose.service=hubclock)
+if [ -n "$H02_CLOCK_CONTAINER" ]; then
+  sudo docker stop "$H02_CLOCK_CONTAINER"
+fi
 sudo docker compose -p neighbor-hub -f deploy/compose.yaml stop mail-a
 sudo systemctl is-active caddy
 ```
 
-預期 office 原服務繼續 active，hub 不再匯入，Mail 停止但原文與 registry 留存。再從 Mac 比對 office 原回應碼與操作。若連已知備份都 validate 失敗，保留仍在運作的 Caddy、不要 restart，請 PM 協助。只讓 operator 在已核准範圍回退；不要為修 hub 去重灌整台主機。
+預期 office 原服務繼續 active，hub 不再匯入，HubClock／Mail 停止但原文、計時狀態與 registry 留存。再從 Mac 比對 office 原回應碼與操作。若連已知備份都 validate 失敗，保留仍在運作的 Caddy、不要 restart，請 PM 協助。只讓 operator 在已核准範圍回退；不要為修 hub 去重灌整台主機。
 
 ## 8. 常見錯誤與證據界線
 
@@ -301,6 +374,6 @@ sudo systemctl is-active caddy
 
 本機已驗 Compose、官方 amd64 image、私密 token 工具、原生 MCP、H-03 8 個整合測試與隔離 HTTP Caddy。**尚未執行** VPS 的 import／systemd reload、實機公共 TLS／ACME、真 office 原狀比對、Mac 對 VPS backend 的外部不可達驗證。這些由 維護者 照本手冊收齊，未跑就保留未執行。
 
-H-05 才部署 lifecycle 計時；H-06 才部署備份／還原排程；兩者不能由本票的 health／收發測試冒充。原文、token registry、sender registry 與 Caddy 設定必須納入 H-06 備份，恢復入口前先套用最新撤銷紀錄。
+H-05 的計時規則依其單元／整合測試，本手冊補容器部署與 standby 驗證；H-06 的備份／還原排程仍須另行部署，不能由 health／收發測試冒充。原文、token registry、sender registry、HubClock 狀態與 Caddy 設定必須納入 H-06 備份，恢復入口前先套用最新撤銷紀錄。
 
 官方參考：[Caddy import](https://caddyserver.com/docs/caddyfile/directives/import)、[Caddy Linux service 與 reload](https://caddyserver.com/docs/running#linux-service)、[Docker Compose port 綁定](https://docs.docker.com/reference/compose-file/services/#ports)。查詢日期：2026-11-17；以 VPS 實際 Caddy 版本驗證為準。

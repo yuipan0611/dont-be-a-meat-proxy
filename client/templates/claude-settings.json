@@ -1,0 +1,74 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node client/hub-hook.mjs:*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/client/hub-hook.mjs",
+              "start"
+            ],
+            "timeout": 20
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/client/hub-hook.mjs",
+              "watch"
+            ],
+            "asyncRewake": true,
+            "timeout": 3600
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/client/hub-hook.mjs",
+              "stop"
+            ],
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/client/hub-hook.mjs",
+              "watch"
+            ],
+            "asyncRewake": true,
+            "timeout": 3600
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/client/hub-hook.mjs",
+              "end"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

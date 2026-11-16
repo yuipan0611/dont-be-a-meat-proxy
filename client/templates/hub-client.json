@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "group_id": "group-a",
+  "project_key": "/data/projects/group-a",
+  "hub_mail_url": "https://hub.example.invalid/mcp/",
+  "agents": { "darwin": "BlueLake", "win32": "RedStone" },
+  "peers": ["BlueLake", "RedStone"],
+  "clock_agent": "<H-02 bootstrap 產生的 HubClock 名稱，見 hubclock.sender.json 的 agentName>",
+  "recent_handoffs": 5,
+  "poll_seconds": 15
+}
