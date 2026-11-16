@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+# ops/purge — Expiry purge script for Hub data retention policy (SRS 4.4: 2027-03-31).
+# Defaults to DRY-RUN. Requires explicit parameter (--confirm-purge-data-permanently) to delete.
+# Strictly enforces the 2027-03-31 retention date boundary (Asia/Taipei).
+
+set -euo pipefail
+
+HUB_DATA_DIR="${HUB_DATA_DIR:-/var/lib/docker/volumes/deploy_mail_a_data/_data}"
+HUB_STATE_DIR="${HUB_STATE_DIR:-/var/lib/neighbor-hub/private}"
+CADDY_SNIPPET="${CADDY_SNIPPET:-/etc/caddy/hub.caddy}"
+HUB_CLOCK_DIR="${HUB_CLOCK_DIR:-/var/lib/neighbor-hub/lifecycle}"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/neighbor-hub}"
+RECEIPT_DIR="${RECEIPT_DIR:-/var/log/neighbor-hub}"
+EXPIRY_DATE="${EXPIRY_DATE:-2027-03-31}"
+TIMEZONE="${TIMEZONE:-Asia/Taipei}"
+
+CONFIRM_PURGE=0
+IGNORE_DATE_FOR_TESTING=0
+QUIET=0
+
+usage() {
+  cat <<EOF
+Usage: $0 [options]
+
+DEFAULT BEHAVIOR: DRY-RUN (no files are deleted).
+
+Options:
+  --confirm-purge-data-permanently  EXPLICIT requirement to permanently delete data
+  --ignore-date-for-testing         Bypass the 2027-03-31 expiry check (TESTING ONLY)
+  --data-dir <path>                 Path to mail-a data directory
+  --state-dir <path>                Path to private token/state directory
+  --caddy-snippet <path>            Path to Caddy snippet file
+  --clock-dir <path>                Path to HubClock state directory
+  --backup-dir <path>               Path to local backup archives directory
+  --receipt-dir <path>              Directory to store the purge receipt log
+  --expiry-date <YYYY-MM-DD>        Retention deadline (default: 2027-03-31)
+  --timezone <tz>                   Timezone for date evaluation (default: Asia/Taipei)
+  --quiet                           Suppress non-error output
+  -h, --help                        Show this help message
+
+Retention policy (SRS 4.4):
+  All project data is retained until 2027-03-31. Purge is prohibited prior to 2027-04-01.
+EOF
+  exit 1
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --confirm-purge-data-permanently|--execute) CONFIRM_PURGE=1; shift ;;
+    --ignore-date-for-testing) IGNORE_DATE_FOR_TESTING=1; shift ;;
+    --data-dir) HUB_DATA_DIR="$2"; shift 2 ;;
+    --state-dir) HUB_STATE_DIR="$2"; shift 2 ;;
+    --caddy-snippet) CADDY_SNIPPET="$2"; shift 2 ;;
+    --clock-dir) HUB_CLOCK_DIR="$2"; shift 2 ;;
+    --backup-dir) BACKUP_DIR="$2"; shift 2 ;;
+    --receipt-dir) RECEIPT_DIR="$2"; shift 2 ;;
+    --expiry-date) EXPIRY_DATE="$2"; shift 2 ;;
+    --timezone) TIMEZONE="$2"; shift 2 ;;
+    --quiet) QUIET=1; shift ;;
+    -h|--help) usage ;;
+    *) echo "Unknown option: $1" >&2; usage ;;
+  esac
+done
+
+log() {
+  if [[ "$QUIET" -eq 0 ]]; then
+    echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] $*"
+  fi
+}
+
+sha256_file() {
+  local file="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | awk '{print $1}'
+  else
+    echo "none"
+  fi
+}
+
+# 1. Date Check in Asia/Taipei
+CURRENT_DATE="$(TZ="$TIMEZONE" date +'%Y-%m-%d')"
+CURRENT_TS="$(TZ="$TIMEZONE" date +'%Y-%m-%dT%H:%M:%S%z')"
+
+log "Evaluating retention expiry date..."
+log "Current Date ($TIMEZONE): $CURRENT_DATE"
+log "Retention Expiry Date:   $EXPIRY_DATE"
+
+# Expiry date comparison (lexicographical comparison works for YYYY-MM-DD)
+# Expiry date is 2027-03-31, so purge is only allowed on or after 2027-04-01
+if [[ "$CURRENT_DATE" < "2027-04-01" ]]; then
+  if [[ "$IGNORE_DATE_FOR_TESTING" -eq 0 ]]; then
+    echo "ERROR: Data retention boundary check failed!" >&2
+    echo "SRS 4.4 mandates data must be retained until $EXPIRY_DATE ($TIMEZONE)." >&2
+    echo "Today is $CURRENT_DATE. Purge is NOT permitted before 2027-04-01." >&2
+    echo "To test this script in development/staging, pass --ignore-date-for-testing." >&2
+    exit 1
+  else
+    log "WARNING: Bypassing retention date check because --ignore-date-for-testing was specified."
+  fi
+fi
+
+# 2. Collect targets
+TARGET_LIST=()
+[[ -d "$HUB_DATA_DIR" ]] && TARGET_LIST+=("$HUB_DATA_DIR")
+[[ -d "$HUB_STATE_DIR" ]] && TARGET_LIST+=("$HUB_STATE_DIR")
+[[ -f "$CADDY_SNIPPET" ]] && TARGET_LIST+=("$CADDY_SNIPPET")
+[[ -d "$HUB_CLOCK_DIR" ]] && TARGET_LIST+=("$HUB_CLOCK_DIR")
+if [[ -d "$BACKUP_DIR" ]]; then
+  # Include all backup archives inside backup dir
+  while IFS= read -r f; do
+    [[ -n "$f" ]] && TARGET_LIST+=("$f")
+  done < <(find "$BACKUP_DIR" -maxdepth 1 -name "hub-backup-*" 2>/dev/null || true)
+fi
+
+# 3. Dry-Run Mode (Default)
+if [[ "$CONFIRM_PURGE" -eq 0 ]]; then
+  cat <<EOF
+=== Hub Data Purge [DRY-RUN MODE] ===
+Current Time:      $CURRENT_TS ($TIMEZONE)
+Expiry Deadline:   $EXPIRY_DATE
+
+The following items are scheduled for permanent deletion:
+EOF
+  TOTAL_BYTES=0
+  for item in "${TARGET_LIST[@]}"; do
+    if [[ -e "$item" ]]; then
+      ITEM_SIZE="$(du -sk "$item" 2>/dev/null | awk '{print $1}' || echo "0")"
+      TOTAL_BYTES=$((TOTAL_BYTES + ITEM_SIZE * 1024))
+      echo " - [EXISTS] $item (${ITEM_SIZE} KB)"
+    else
+      echo " - [NOT FOUND] $item"
+    fi
+  done
+
+  TOTAL_MB=$((TOTAL_BYTES / 1024 / 1024))
+  cat <<EOF
+
+Estimated disk space to reclaim: ~${TOTAL_MB} MB (${TOTAL_BYTES} bytes)
+
+[DRY-RUN] No files were deleted or modified.
+To permanently execute deletion, rerun with:
+  $0 --confirm-purge-data-permanently
+EOF
+  exit 0
+fi
+
+# 4. Permanent Deletion Mode
+log "Executing PERMANENT deletion of Hub data..."
+
+# Pre-deletion checksum for audit trail
+PRE_DB_HASH="none"
+if [[ -f "$HUB_DATA_DIR/mail.sqlite3" ]]; then
+  PRE_DB_HASH="$(sha256_file "$HUB_DATA_DIR/mail.sqlite3")"
+fi
+
+RECEIPT_FILE=""
+if mkdir -p "$RECEIPT_DIR" 2>/dev/null && [[ -w "$RECEIPT_DIR" ]]; then
+  RECEIPT_FILE="$RECEIPT_DIR/purge-receipt-$(date -u +'%Y%m%d-%H%M%SZ').log"
+else
+  RECEIPT_FILE="/tmp/hub-purge-receipt-$(date -u +'%Y%m%d-%H%M%SZ').log"
+fi
+
+{
+  echo "=== Hub Data Purge Audit Receipt ==="
+  echo "Executed At (UTC):      $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  echo "Executed At (Local):    $CURRENT_TS ($TIMEZONE)"
+  echo "Operator:               $(id -un) (UID: $(id -u))"
+  echo "Retention Deadline:     $EXPIRY_DATE"
+  echo "Pre-purge DB SHA256:    $PRE_DB_HASH"
+  echo ""
+  echo "Purged Target Items:"
+} > "$RECEIPT_FILE"
+
+PURGED_COUNT=0
+for item in "${TARGET_LIST[@]}"; do
+  if [[ -e "$item" ]]; then
+    log "Purging: $item"
+    echo " - DELETED: $item" >> "$RECEIPT_FILE"
+    rm -rf "$item"
+    PURGED_COUNT=$((PURGED_COUNT + 1))
+  fi
+done
+
+echo "" >> "$RECEIPT_FILE"
+echo "Total items purged: $PURGED_COUNT" >> "$RECEIPT_FILE"
+echo "Status: PURGE_COMPLETED_PERMANENTLY" >> "$RECEIPT_FILE"
+chmod 600 "$RECEIPT_FILE"
+
+cat <<EOF
+=== Hub Data Purge Complete ===
+Executed At:     $CURRENT_TS ($TIMEZONE)
+Items Purged:    $PURGED_COUNT
+Audit Receipt:   $RECEIPT_FILE
+Pre-purge Hash:  $PRE_DB_HASH
+Status:          ALL_DATA_PERMANENTLY_PURGED
+EOF

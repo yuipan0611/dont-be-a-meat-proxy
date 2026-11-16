@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+# ops/restore — Restore Hub mail-a data from backup to a clean volume.
+# Verifies sha256 checksums, SQLite database integrity, and restores permissions.
+
+set -euo pipefail
+
+HUB_DATA_DIR="${HUB_DATA_DIR:-/var/lib/docker/volumes/deploy_mail_a_data/_data}"
+HUB_STATE_DIR="${HUB_STATE_DIR:-/var/lib/neighbor-hub/private}"
+CADDY_SNIPPET="${CADDY_SNIPPET:-/etc/caddy/hub.caddy}"
+HUB_CLOCK_DIR="${HUB_CLOCK_DIR:-/var/lib/neighbor-hub/lifecycle}"
+
+BACKUP_ARCHIVE=""
+TARGET_DATA_DIR=""
+TARGET_STATE_DIR=""
+TARGET_CADDY_SNIPPET=""
+TARGET_CLOCK_DIR=""
+FORCE=0
+VERIFY_ONLY=0
+QUIET=0
+
+usage() {
+  cat <<EOF
+Usage: $0 --backup <archive.tar.gz> [options]
+
+Required:
+  --backup <path>             Path to hub-backup-*.tar.gz file or extracted backup dir
+
+Options:
+  --target-data-dir <path>    Target directory for mail-a data (default: HUB_DATA_DIR)
+  --target-state-dir <path>   Target directory for credentials/tokens (optional)
+  --target-caddy-snippet <path> Target file for Caddy snippet (optional)
+  --target-clock-dir <path>   Target directory for HubClock state (optional)
+  --force                     Overwrite target directories if not empty
+  --verify-only               Verify backup integrity without restoring files
+  --quiet                     Suppress non-error output
+  -h, --help                  Show this help message
+EOF
+  exit 1
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --backup) BACKUP_ARCHIVE="$2"; shift 2 ;;
+    --target-data-dir) TARGET_DATA_DIR="$2"; shift 2 ;;
+    --target-state-dir) TARGET_STATE_DIR="$2"; shift 2 ;;
+    --target-caddy-snippet) TARGET_CADDY_SNIPPET="$2"; shift 2 ;;
+    --target-clock-dir) TARGET_CLOCK_DIR="$2"; shift 2 ;;
+    --force) FORCE=1; shift ;;
+    --verify-only) VERIFY_ONLY=1; shift ;;
+    --quiet) QUIET=1; shift ;;
+    -h|--help) usage ;;
+    *)
+      if [[ -z "$BACKUP_ARCHIVE" && "$1" != -* ]]; then
+        BACKUP_ARCHIVE="$1"; shift
+      else
+        echo "Unknown option: $1" >&2; usage
+      fi
+      ;;
+  esac
+done
+
+if [[ -z "$BACKUP_ARCHIVE" ]]; then
+  echo "ERROR: --backup <archive.tar.gz> is required." >&2
+  usage
+fi
+
+if [[ -z "$TARGET_DATA_DIR" ]]; then
+  TARGET_DATA_DIR="$HUB_DATA_DIR"
+fi
+
+log() {
+  if [[ "$QUIET" -eq 0 ]]; then
+    echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] $*"
+  fi
+}
+
+sha256_file() {
+  local file="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | awk '{print $1}'
+  else
+    echo "ERROR: Neither sha256sum nor shasum is available." >&2
+    exit 1
+  fi
+}
+
+if ! command -v sqlite3 >/dev/null 2>&1; then
+  echo "ERROR: sqlite3 CLI is required for database verification and restore." >&2
+  exit 1
+fi
+
+STAGING_DIR="$(mktemp -d -t "hub-restore-staging-XXXXXX")"
+trap 'rm -rf "$STAGING_DIR"' EXIT
+
+log "Inspecting backup source: $BACKUP_ARCHIVE"
+
+# 1. Unpack or stage backup
+if [[ -f "$BACKUP_ARCHIVE" ]]; then
+  # Check sha256 if checksum file exists alongside archive
+  CHECKSUM_FILE="${BACKUP_ARCHIVE}.sha256"
+  if [[ -f "$CHECKSUM_FILE" ]]; then
+    log "Verifying archive sha256 checksum..."
+    EXPECTED_HASH="$(awk '{print $1}' "$CHECKSUM_FILE")"
+    ACTUAL_HASH="$(sha256_file "$BACKUP_ARCHIVE")"
+    if [[ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]]; then
+      echo "ERROR: Archive checksum mismatch!" >&2
+      echo "Expected: $EXPECTED_HASH" >&2
+      echo "Actual:   $ACTUAL_HASH" >&2
+      exit 1
+    fi
+    log "Archive checksum matches: $ACTUAL_HASH"
+  fi
+  log "Extracting archive to staging..."
+  tar -xzf "$BACKUP_ARCHIVE" -C "$STAGING_DIR"
+elif [[ -d "$BACKUP_ARCHIVE" ]]; then
+  log "Using directory backup source..."
+  cp -a "$BACKUP_ARCHIVE"/* "$STAGING_DIR/"
+else
+  echo "ERROR: Backup source not found: $BACKUP_ARCHIVE" >&2
+  exit 1
+fi
+
+# 2. Check manifest.json
+MANIFEST="$STAGING_DIR/manifest.json"
+if [[ ! -f "$MANIFEST" ]]; then
+  echo "ERROR: Corrupt backup: manifest.json not found in archive." >&2
+  exit 1
+fi
+
+BACKUP_ID="unknown"
+EXPECTED_DB_HASH=""
+if command -v grep >/dev/null 2>&1; then
+  BACKUP_ID="$(grep -o '"backup_id": *"[^"]*"' "$MANIFEST" | head -1 | cut -d'"' -f4 || echo "unknown")"
+  EXPECTED_DB_HASH="$(grep -o '"sha256": *"[^"]*"' "$MANIFEST" | head -1 | cut -d'"' -f4 || echo "")"
+fi
+
+log "Backup ID: $BACKUP_ID"
+
+# 3. Verify database integrity & sha256
+RESTORE_DB="$STAGING_DIR/mail-data/mail.sqlite3"
+MSG_COUNT="0"
+if [[ -f "$RESTORE_DB" ]]; then
+  log "Verifying SQLite integrity of $RESTORE_DB..."
+  INTEGRITY="$(sqlite3 "$RESTORE_DB" "PRAGMA integrity_check;")"
+  if [[ "$INTEGRITY" != "ok" ]]; then
+    echo "ERROR: Database integrity check failed: $INTEGRITY" >&2
+    exit 1
+  fi
+  ACTUAL_DB_HASH="$(sha256_file "$RESTORE_DB")"
+  if [[ -n "$EXPECTED_DB_HASH" && "$EXPECTED_DB_HASH" != "$ACTUAL_DB_HASH" ]]; then
+    echo "ERROR: mail.sqlite3 checksum mismatch with manifest!" >&2
+    echo "Manifest SHA256: $EXPECTED_DB_HASH" >&2
+    echo "Actual SHA256:   $ACTUAL_DB_HASH" >&2
+    exit 1
+  fi
+  log "Database SHA256 verified: $ACTUAL_DB_HASH"
+  
+  if sqlite3 "$RESTORE_DB" "SELECT 1 FROM sqlite_master WHERE type='table' AND name='messages';" | grep -q 1; then
+    MSG_COUNT="$(sqlite3 "$RESTORE_DB" "SELECT COUNT(*) FROM messages;")"
+  fi
+  log "Database verified successfully. Message count: $MSG_COUNT"
+fi
+
+if [[ "$VERIFY_ONLY" -eq 1 ]]; then
+  cat <<EOF
+=== Hub Backup Verification Succeeded ===
+Backup ID:    $BACKUP_ID
+DB Integrity: ok
+DB SHA256:    $ACTUAL_DB_HASH
+Messages:     $MSG_COUNT
+Verification: PASSED (verify-only mode, no files modified)
+EOF
+  exit 0
+fi
+
+# 4. Check target data directory
+if [[ -d "$TARGET_DATA_DIR" ]] && [[ "$(ls -A "$TARGET_DATA_DIR" 2>/dev/null)" ]]; then
+  if [[ "$FORCE" -eq 0 ]]; then
+    echo "ERROR: Target data directory $TARGET_DATA_DIR is not empty. Pass --force to overwrite." >&2
+    exit 1
+  fi
+  log "Warning: Target data directory $TARGET_DATA_DIR is not empty. Overwriting due to --force..."
+fi
+
+mkdir -p "$TARGET_DATA_DIR"
+
+# 5. Restore mail-a data
+log "Restoring mail-a data to $TARGET_DATA_DIR..."
+if [[ -d "$STAGING_DIR/mail-data" ]]; then
+  cp -a "$STAGING_DIR/mail-data"/* "$TARGET_DATA_DIR/"
+fi
+
+# If running as root, set container ownership (10001:10001 for mail-a)
+if [[ "$(id -u)" -eq 0 ]]; then
+  log "Setting container ownership (10001:10001) on $TARGET_DATA_DIR..."
+  chown -R 10001:10001 "$TARGET_DATA_DIR"
+fi
+
+# 6. Restore private credentials/tokens if requested
+if [[ -n "$TARGET_STATE_DIR" && -d "$STAGING_DIR/tokens" ]]; then
+  log "Restoring private tokens to $TARGET_STATE_DIR..."
+  mkdir -p "$TARGET_STATE_DIR"
+  chmod 700 "$TARGET_STATE_DIR"
+  cp -a "$STAGING_DIR/tokens"/* "$TARGET_STATE_DIR/" 2>/dev/null || true
+  find "$TARGET_STATE_DIR" -type f -exec chmod 600 {} +
+fi
+
+# 7. Restore Caddy snippet if requested
+if [[ -n "$TARGET_CADDY_SNIPPET" && -d "$STAGING_DIR/caddy" ]]; then
+  log "Restoring Caddy snippet to $TARGET_CADDY_SNIPPET..."
+  mkdir -p "$(dirname "$TARGET_CADDY_SNIPPET")"
+  if [[ -f "$STAGING_DIR/caddy/$(basename "$TARGET_CADDY_SNIPPET")" ]]; then
+    cp -a "$STAGING_DIR/caddy/$(basename "$TARGET_CADDY_SNIPPET")" "$TARGET_CADDY_SNIPPET"
+  elif [[ -n "$(ls -A "$STAGING_DIR/caddy" 2>/dev/null)" ]]; then
+    cp -a "$STAGING_DIR/caddy"/* "$TARGET_CADDY_SNIPPET"
+  fi
+fi
+
+# 8. Restore HubClock state if requested
+if [[ -n "$TARGET_CLOCK_DIR" && -d "$STAGING_DIR/hubclock" ]]; then
+  log "Restoring HubClock state to $TARGET_CLOCK_DIR..."
+  mkdir -p "$TARGET_CLOCK_DIR"
+  cp -a "$STAGING_DIR/hubclock"/* "$TARGET_CLOCK_DIR/" 2>/dev/null || true
+fi
+
+# 9. Final post-restore verification
+RESTORED_TARGET_DB="$TARGET_DATA_DIR/mail.sqlite3"
+if [[ -f "$RESTORED_TARGET_DB" ]]; then
+  TARGET_INTEGRITY="$(sqlite3 "$RESTORED_TARGET_DB" "PRAGMA integrity_check;")"
+  TARGET_HASH="$(sha256_file "$RESTORED_TARGET_DB")"
+  if [[ "$TARGET_INTEGRITY" != "ok" || "$TARGET_HASH" != "$ACTUAL_DB_HASH" ]]; then
+    echo "ERROR: Restored database in target directory does not match original backup!" >&2
+    exit 1
+  fi
+fi
+
+log "Restore completed successfully."
+cat <<EOF
+=== Hub Restore Receipt ===
+Backup ID:        $BACKUP_ID
+Target Data Dir:  $TARGET_DATA_DIR
+DB SHA256:        $TARGET_HASH
+DB Integrity:     $TARGET_INTEGRITY
+Message Count:    $MSG_COUNT
+Status:           RESTORE_SUCCEEDED
+EOF
