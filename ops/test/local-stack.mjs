@@ -15,6 +15,8 @@ const workspace = join(root, '.hub-local/h02');
 await mkdir(workspace, { recursive: true, mode: 0o700 });
 const dir = await mkdtemp(join(workspace, 'stack-'));
 const state = join(dir, 'private');
+const clockState = join(dir, 'hubclock');
+await mkdir(clockState, { mode: 0o700 });
 const snippet = join(dir, 'caddy-private/auth.caddy');
 const config = join(dir, 'Caddyfile');
 const caddy = process.env.CADDY_BIN || join(root, 'spikes/f01b/bin/caddy');
@@ -52,8 +54,10 @@ const backend = '127.0.0.1:' + mailPort;
 const base = 'http://127.0.0.1:' + hubPort;
 const officeUrl = 'http://127.0.0.1:' + officePort;
 const env = { ...process.env, HUB_PRIVATE_DIR: state, HUB_MAIL_PORT: String(mailPort), TMPDIR: dir,
+  HUBCLOCK_STATE_DIR: clockState, HUB_OPS_UID: String(process.getuid()), HUB_OPS_GID: String(process.getgid()),
   XDG_DATA_HOME: join(dir, 'caddy-data'), XDG_CONFIG_HOME: join(dir, 'caddy-config') };
-const composeArgs = ['compose', '-p', project, '-f', join(root, 'deploy/compose.yaml')];
+const composeArgs = ['compose', '-p', project, '-f', join(root, 'deploy/compose.yaml'),
+  '-f', join(root, 'deploy/hubclock/compose.hubclock.yaml')];
 const compose = (...args) => run('docker', [...composeArgs, ...args], env);
 const ops = (command, ...args) => run('python3', [join(root, 'ops', command), '--state-dir', state, ...args], env);
 
@@ -76,6 +80,28 @@ async function waitOffice() {
   throw new Error('Private office fixture did not start');
 }
 
+async function waitHubClockTick(container) {
+  const deadline = performance.now() + 30_000;
+  while (performance.now() < deadline) {
+    const logs = spawnSync('docker', ['logs', container], {
+      encoding: 'utf8', timeout: Math.max(1, Math.min(2000, Math.ceil(deadline - performance.now()))),
+    });
+    if (logs.status === 0) {
+      for (const line of (logs.stdout + '\n' + logs.stderr).split('\n')) {
+        let event;
+        try { event = JSON.parse(line); } catch { continue; }
+        if (event.ev === 'tick') return;
+        if (['fatal', 'crash', 'tick_failed'].includes(event.ev)) {
+          throw new Error('HubClock startup reported ' + event.ev + '; details suppressed');
+        }
+      }
+    }
+    const pause = Math.min(250, deadline - performance.now());
+    if (pause > 0) await new Promise((r) => setTimeout(r, pause));
+  }
+  throw new Error('HubClock startup did not complete a Mail tick within 30000 ms');
+}
+
 try {
   console.log('STEP isolated credentials + compose config');
   ops('init-secrets');
@@ -83,12 +109,13 @@ try {
   containerCreated = true;
   phase = 'initial Mail startup';
   console.log('STEP pinned linux/amd64 mail-a startup');
-  compose('up', '-d', '--wait', '--wait-timeout', '120');
+  compose('up', '-d', '--wait', '--wait-timeout', '120', 'mail-a');
   const container = compose('ps', '-q', 'mail-a');
   const inspect = JSON.parse(run('docker', ['inspect', container]))[0];
   assert.equal(inspect.Config.User, '10001:10001');
   assert.equal(inspect.HostConfig.Memory, 512 * 1024 * 1024);
   assert.equal(inspect.HostConfig.ReadonlyRootfs, true);
+  assert.ok(inspect.Config.Env.includes('HTTP_ALLOWED_HOSTS=mail-a'));
   assert.deepEqual(inspect.HostConfig.CapDrop, ['ALL']);
   assert.deepEqual(inspect.HostConfig.PortBindings['8765/tcp'].map((b) => b.HostIp), ['127.0.0.1']);
   const image = JSON.parse(run('docker', ['image', 'inspect', inspect.Image]))[0];
@@ -136,7 +163,7 @@ try {
 
   phase = 'TC-05 Mail restart';
   compose('restart', 'mail-a');
-  compose('up', '-d', '--wait', '--wait-timeout', '120');
+  compose('up', '-d', '--wait', '--wait-timeout', '120', 'mail-a');
   await waitMail('TC-05 after Mail restart', credentials.windows.token);
   phase = 'TC-05 persistence read';
   await persistence(base + '/mcp/', state);
@@ -171,6 +198,29 @@ try {
   assert.equal((await session.request('tools/list', {})).status, 401);
   assert.equal((await fetch(officeUrl)).status, 200);
   console.log('PASS explicit revoke -> issue: replacement Windows credential works; old session remains 401; office 200');
+
+  phase = 'HubClock primary startup';
+  console.log('STEP HubClock primary tick and second-instance standby');
+  compose('up', '-d', '--wait', '--wait-timeout', '120', 'hubclock');
+  const clockContainer = compose('ps', '-q', 'hubclock');
+  const clockInspect = JSON.parse(run('docker', ['inspect', clockContainer]))[0];
+  assert.equal(clockInspect.Config.User, env.HUB_OPS_UID + ':' + env.HUB_OPS_GID);
+  assert.equal(clockInspect.HostConfig.ReadonlyRootfs, true);
+  assert.equal(clockInspect.HostConfig.Memory, 128 * 1024 * 1024);
+  assert.deepEqual(clockInspect.HostConfig.CapDrop, ['ALL']);
+  assert.equal(Object.keys(clockInspect.HostConfig.PortBindings || {}).length, 0);
+  await waitHubClockTick(clockContainer);
+  const firstLock = JSON.parse(await readFile(join(clockState, 'hubclock.lock'), 'utf8'));
+  phase = 'HubClock second-instance standby';
+  const secondary = spawnSync('docker', [...composeArgs, 'run', '--rm', '--no-deps', 'hubclock',
+    'node', '/app/ops/lifecycle/main.mjs', 'once'], { env, encoding: 'utf8', timeout: 30_000 });
+  assert.equal(secondary.status, 3, 'Second HubClock must exit 3 while the primary holds the lock');
+  assert.match(secondary.stdout, /"ev":"standby"/);
+  const afterLock = JSON.parse(await readFile(join(clockState, 'hubclock.lock'), 'utf8'));
+  assert.equal(afterLock.owner, firstLock.owner, 'Second instance must not replace the primary writer');
+  assert.equal(run('docker', ['inspect', '--format', '{{.State.Running}}', clockContainer]), 'true');
+  console.log('PASS HubClock primary completed Mail tick via Host mail-a; 128 MiB/read-only/no published ports');
+  console.log('PASS HubClock second instance -> standby, exit 3; primary lock owner unchanged and service running');
   console.log('PASS H-02 local acceptance (HTTP fixture; production DNS/TLS/systemd remain operator checks)');
 } catch (error) {
   console.error('FAIL H-02 local acceptance [' + phase + ']: ' + error.message);
