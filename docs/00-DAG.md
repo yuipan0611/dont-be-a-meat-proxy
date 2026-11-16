@@ -130,9 +130,9 @@ flowchart TD
 | H-04a asyncRewake spike | <ORCA_ID> | <ORCA_ID> | swe-Ben | 11-19 | ✅ succeeded（f30ad4b，已併入 master），PM 重跑 9/9；結論部分可行：閒置 1.3–1.4 秒，忙碌時排到目前這一步結束 |
 | H-07 接入手冊＋轉貼紀錄表 | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-2 | 11-21 | ✅ 初稿 succeeded（605ea75），PM 修正後收入 docs/onboarding-S1.md、docs/metrics/G-01-paste-log.md；H-02／H-04 定稿後補實際值 |
 | H-04 hub-hook | （follow-up） | <ORCA_ID> | swe-Ben | 11-22 | 進行中 |
-| H-02 部署 mail-a（沿用系統 Caddy） | <ORCA_ID> | <ORCA_ID> | codex-senior-swe | 11-20 | 進行中 |
+| H-02 部署 mail-a（沿用系統 Caddy） | <ORCA_ID> | <ORCA_ID> | codex-senior-swe | 11-20 | ✅ 程式＋runbook succeeded（b42e7ef/d33d2d8，已併入 master bf983c4）；PM 重跑 ops/test 7 OK、local-stack 1 次 flaky＋1 次全 PASS → 已請 Codex 補 readiness 等待；**VPS 實機部署待 維護者 照 runbook-H02** |
 | H-06 備份/還原/到期刪除（先對本機做） | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-1 | 11-22 | ✅ succeeded（c9bb154，已併入 master），PM 重跑還原演練通過（3 則原文 sha256 一致、purge dry-run／日期防線）；H-02 定稿後對齊 VPS 路徑 |
-| H-05 ops/lifecycle | <ORCA_ID> | <ORCA_ID> | swe-Tom | 11-22 | 進行中 |
+| H-05 ops/lifecycle | <ORCA_ID> | <ORCA_ID> | swe-Tom | 11-22 | ✅ succeeded（651edf3，已併入 master），PM 重跑單元＋整合 31/31；對齊項已轉給 H-02／H-04／H-06 |
 | T14 F-10 InsForge 評估（維護者 建議參考） | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-1 | 11-19 | ✅ succeeded，PM 抽查屬實，已收入 docs/research/F-10；結論 (b)：不進主系統，推薦給組員做團隊專題後端 |
 | T15 Supabase 規格資料層（維護者 2026-11-17：照 Supabase 規格、先不跑整套；MVP 照舊） | <ORCA_ID> | <ORCA_ID> | swe-Tom | 11-18 | ✅ succeeded（d8d495a，已併入 master），PM 用 postgres:17 獨立重跑 11/11 PASS；待對齊項見 docs/08 §8 |
 
