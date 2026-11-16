@@ -130,7 +130,8 @@ flowchart TD
 | H-04a asyncRewake spike | <ORCA_ID> | <ORCA_ID> | swe-Ben | 11-19 | ✅ succeeded（f30ad4b，已併入 master），PM 重跑 9/9；結論部分可行：閒置 1.3–1.4 秒，忙碌時排到目前這一步結束 |
 | H-07 接入手冊＋轉貼紀錄表 | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-2 | 11-21 | ✅ 初稿 succeeded（605ea75），PM 修正後收入 docs/onboarding-S1.md、docs/metrics/G-01-paste-log.md；H-02／H-04 定稿後補實際值 |
 | H-04 hub-hook | （follow-up） | <ORCA_ID> | swe-Ben | 11-22 | 進行中 |
-| H-02、H-05、H-06 | — | — | codex／agy-1 | 11-20～22 | 等 維護者 SSH 盤點 |
+| H-02 部署 mail-a（沿用系統 Caddy） | <ORCA_ID> | <ORCA_ID> | codex-senior-swe | 11-20 | 進行中 |
+| H-05、H-06 | — | — | codex／agy-1 | 11-22 | 等 H-02 |
 | T14 F-10 InsForge 評估（維護者 建議參考） | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-1 | 11-19 | ✅ succeeded，PM 抽查屬實，已收入 docs/research/F-10；結論 (b)：不進主系統，推薦給組員做團隊專題後端 |
 | T15 Supabase 規格資料層（維護者 2026-11-17：照 Supabase 規格、先不跑整套；MVP 照舊） | <ORCA_ID> | <ORCA_ID> | swe-Tom | 11-18 | 進行中 |
 
