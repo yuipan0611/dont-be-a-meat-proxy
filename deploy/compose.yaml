@@ -1,0 +1,56 @@
+services:
+  mail-a:
+    image: ghcr.io/dicklesworthstone/mcp_agent_mail_rust@sha256:49a3c779f509bdacbc4edd21db193c3105438f627e8b00ed5590766a32ede0e1
+    platform: linux/amd64
+    command: [serve, --no-tui, --host, 0.0.0.0, --port, "8765", --no-reuse-running]
+    env_file: ${HUB_PRIVATE_DIR:-/var/lib/neighbor-hub/private}/mail-a.env
+    environment:
+      HTTP_PATH: /mcp/
+      HTTP_JWT_ENABLED: "false"
+      HTTP_ALLOW_LOCALHOST_UNAUTHENTICATED: "false"
+      HTTP_RBAC_DEFAULT_ROLE: writer
+      DATABASE_URL: sqlite:////data/mail.sqlite3
+      STORAGE_ROOT: /data/archive
+      XDG_DATA_HOME: /data/xdg-data
+      XDG_CONFIG_HOME: /data/xdg-config
+      XDG_CACHE_HOME: /data/xdg-cache
+      MESSAGING_SESSION_IDENTITY: "true"
+      MESSAGING_FAIL_CLOSED_SEND_PROFILE: "true"
+      MESSAGING_AUTO_REGISTER_RECIPIENTS: "false"
+      AM_SEARCH_SEMANTIC_ENABLED: "false"
+      LLM_ENABLED: "false"
+      TOOLS_LOG_ENABLED: "false"
+      LOG_RICH_ENABLED: "false"
+      HTTP_REQUEST_LOG_ENABLED: "false"
+      RUST_LOG: warn
+    user: "10001:10001"
+    ports:
+      - "127.0.0.1:${HUB_MAIL_PORT:-8765}:8765"
+    volumes:
+      - mail_a_data:/data
+    networks:
+      - mail_a_net
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=64m
+    mem_limit: 512m
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --max-time, "3", http://127.0.0.1:8765/health/liveness]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+networks:
+  mail_a_net:
+    driver: bridge
+volumes:
+  mail_a_data:
