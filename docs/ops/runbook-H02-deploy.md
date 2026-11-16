@@ -218,9 +218,23 @@ sudo docker inspect --format '{{.State.StartedAt}}' "$H02_CONTAINER"
 sudo docker compose -p neighbor-hub -f deploy/compose.yaml restart mail-a
 sudo docker compose -p neighbor-hub -f deploy/compose.yaml up -d --wait --wait-timeout 120
 sudo docker inspect --format '{{.State.StartedAt}}' "$H02_CONTAINER"
+H02_READY=0
+for H02_ATTEMPT in $(seq 1 30); do
+  H02_HEALTH=$(curl --noproxy '*' --connect-timeout 1 --max-time 1 -s -o /dev/null \
+    -w '%{http_code}' http://127.0.0.1:8765/health/liveness) || H02_HEALTH=000
+  if [ "$H02_HEALTH" = 200 ]; then
+    H02_READY=1
+    printf 'READY TC-05 after Mail restart: health 200\n'
+    break
+  fi
+  sleep 1
+done
+if [ "$H02_READY" != 1 ]; then
+  printf 'FAIL TC-05 after Mail restart: health not 200 after 30 probes; stop before persistence/TC-10\n'
+fi
 ```
 
-預期 StartedAt 改變且 healthy。接著在 Mac 執行：
+**重啟後先等 health 200 再測**。預期 StartedAt 改變、healthy，並出現 `READY TC-05 after Mail restart: health 200`；上面最多 30 次，每次 curl 最長 1 秒、間隔 1 秒，等待約在 60 秒內結束。若看到 FAIL，先停止並查 Mail，不執行原文讀取或 TC-10；Compose 的 healthy 狀態不能代替這個實際 HTTP 檢查。確認 READY 後才在 Mac 執行：
 
 ```sh
 node ops/verify-h02.mjs persistence --credentials-dir .hub-local/h02-client

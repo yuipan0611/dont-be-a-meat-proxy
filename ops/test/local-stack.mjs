@@ -8,6 +8,7 @@ import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
 import { deviceCredentials, unauthorized, mcpChecks, persistence, openSession } from '../verify-h02.mjs';
+import { waitForHealth } from './readiness.mjs';
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const workspace = join(root, '.hub-local/h02');
@@ -21,6 +22,7 @@ await access(caddy, constants.X_OK); // Fail before creating any Docker resource
 const project = 'neighbor-h02-' + Date.now();
 let caddyProcess;
 let containerCreated = false;
+let phase = 'initial setup';
 
 function run(executable, args, env = process.env) {
   const result = spawnSync(executable, args, { cwd: root, env, encoding: 'utf8', timeout: 240_000 });
@@ -55,6 +57,12 @@ const composeArgs = ['compose', '-p', project, '-f', join(root, 'deploy/compose.
 const compose = (...args) => run('docker', [...composeArgs, ...args], env);
 const ops = (command, ...args) => run('python3', [join(root, 'ops', command), '--state-dir', state, ...args], env);
 
+async function waitMail(step, token) {
+  phase = step;
+  await waitForHealth(base + '/health/liveness', { step, headers: { authorization: 'Bearer ' + token } });
+  console.log('READY [' + step + ']: Mail through Caddy HTTP 200');
+}
+
 async function waitOffice() {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
@@ -73,6 +81,7 @@ try {
   ops('init-secrets');
   compose('config', '--quiet');
   containerCreated = true;
+  phase = 'initial Mail startup';
   console.log('STEP pinned linux/amd64 mail-a startup');
   compose('up', '-d', '--wait', '--wait-timeout', '120');
   const container = compose('ps', '-q', 'mail-a');
@@ -86,9 +95,10 @@ try {
   console.log('IMAGE version=' + image.Config.Labels['org.opencontainers.image.version'] +
     ' revision=' + image.Config.Labels['org.opencontainers.image.revision']);
   console.log('PASS runtime guardrails: UID 10001, 512 MiB cap, cap_drop ALL, read-only rootfs, host binding 127.0.0.1');
-  assert.equal((await fetch('http://' + backend + '/health/liveness')).status, 200);
+  await waitForHealth('http://' + backend + '/health/liveness', { step: 'initial host -> Mail health' });
   console.log('PASS host -> loopback backend health 200 on dedicated bridge network');
 
+  phase = 'Caddy validation and startup';
   ops('render-caddy', '--prepare-only', '--owner', 'self', '--output', snippet, '--upstream', backend);
   const productionSite = (await readFile(join(root, 'deploy/caddy/hub.caddy'), 'utf8'))
     .replace('/etc/caddy/hub-private/auth.caddy', JSON.stringify(snippet));
@@ -102,32 +112,45 @@ try {
     base + ' {\n import ' + JSON.stringify(snippet) + '\n}\n', { mode: 0o600 });
   caddyProcess = spawn(caddy, ['run', '--config', config, '--adapter', 'caddyfile'], { env, stdio: 'ignore' });
   await waitOffice();
+  phase = 'TC-01 unauthorized requests';
   await unauthorized(base + '/mcp/');
+  phase = 'MCP bootstrap';
   console.log(ops('bootstrap', '--url', 'http://' + backend + '/mcp/'));
   console.log(ops('bootstrap', '--url', 'http://' + backend + '/mcp/'));
-  await mcpChecks(base + '/mcp/', state);
   const credentials = await deviceCredentials(state);
+  await waitMail('initial MCP readiness', credentials.mac.token);
+  phase = 'MCP send/read, cursor and TC-11';
+  await mcpChecks(base + '/mcp/', state);
   assert.equal((await fetch(base + '/memory/mcp/group-a/', {
     headers: { authorization: 'Bearer ' + credentials.mac.token },
   })).status, 503);
   console.log('PASS authorized memory path returns 503 in MVP');
 
   console.log('STEP H-03 existing integration assertions against this container');
+  phase = 'H-03 integration tests';
   const integration = run('node', ['--test', 'client/test/mail-client.integration.test.mjs'], {
     ...env, MAIL_TEST_URL: 'http://' + backend + '/mcp/', MAIL_TEST_ENV_FILE: join(state, 'mail-a.env'),
   });
   console.log(integration);
   assert.ok(!/skipped [1-9]/.test(integration), 'H-03 tests must not be skipped');
 
+  phase = 'TC-05 Mail restart';
   compose('restart', 'mail-a');
   compose('up', '-d', '--wait', '--wait-timeout', '120');
+  await waitMail('TC-05 after Mail restart', credentials.windows.token);
+  phase = 'TC-05 persistence read';
   await persistence(base + '/mcp/', state);
   const started = run('docker', ['inspect', '--format', '{{.State.StartedAt}}', container]);
+  await waitMail('TC-10 before Windows MCP session', credentials.windows.token);
+  phase = 'TC-10 Windows MCP initialize';
   const session = await openSession(base + '/mcp/', credentials.windows.token);
+  phase = 'TC-10 Windows revocation';
   ops('revoke', '--device', 'windows', '--owner', 'self', '--output', snippet,
     '--config', config, '--upstream', backend, '--caddy-bin', caddy,
     '--reload-mode', 'caddy', '--admin', '127.0.0.1:' + adminPort,
     '--probe-url', base + '/health/liveness');
+  await waitMail('TC-10 after revoke / Mac readiness', credentials.mac.token);
+  phase = 'TC-10 retained Windows session and Mac session';
   assert.equal((await session.request('tools/list', {})).status, 401);
   await openSession(base + '/mcp/', credentials.mac.token);
   assert.equal(run('docker', ['inspect', '--format', '{{.State.StartedAt}}', container]), started);
@@ -135,19 +158,22 @@ try {
   assert.equal(await (await fetch(officeUrl)).text(), 'office preserved');
   assert.equal(caddyProcess.exitCode, null);
   console.log('PASS TC-10 SAME Windows MCP session -> 401; Mac 200; Mail start time unchanged; office 200/content unchanged');
+  phase = 'Windows replacement token issuance';
   ops('issue', '--device', 'windows', '--owner', 'self', '--output', snippet,
     '--config', config, '--upstream', backend, '--caddy-bin', caddy,
     '--reload-mode', 'caddy', '--admin', '127.0.0.1:' + adminPort,
     '--probe-url', base + '/health/liveness');
   const replacement = await deviceCredentials(state);
   assert.notEqual(replacement.windows.token, credentials.windows.token);
+  await waitMail('reissue before replacement Windows session', replacement.windows.token);
+  phase = 'replacement Windows session and office preservation';
   await openSession(base + '/mcp/', replacement.windows.token);
   assert.equal((await session.request('tools/list', {})).status, 401);
   assert.equal((await fetch(officeUrl)).status, 200);
   console.log('PASS explicit revoke -> issue: replacement Windows credential works; old session remains 401; office 200');
   console.log('PASS H-02 local acceptance (HTTP fixture; production DNS/TLS/systemd remain operator checks)');
 } catch (error) {
-  console.error('FAIL H-02 local acceptance: ' + error.message);
+  console.error('FAIL H-02 local acceptance [' + phase + ']: ' + error.message);
   process.exitCode = 1;
 } finally {
   if (caddyProcess && caddyProcess.exitCode === null) {

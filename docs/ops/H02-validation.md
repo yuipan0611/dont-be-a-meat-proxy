@@ -76,3 +76,11 @@ H-03 的 `client/mail-client.mjs` 與整合測試斷言未改，只在既有 hel
 5. 明確 issue Windows 替代 token，再安全取回自己的裝置設定；H-05／H-06 接續計時與備份，H-02 不冒充兩票已部署。
 
 本 worker 的實際遠端寫入為零。此交付完成程式與本機驗證，**沒有宣告 H-02 的 VPS 部署或真 office 驗收已完成**。
+
+## 重啟 readiness 補強（PM 重跑回報後）
+
+Compose healthy 後，harness 會透過實際 Caddy 路徑輪詢 Mail health 200，再讀 TC-05 原文；TC-05 之後建立 TC-10 session、撤銷後檢查 Mac、核發後建立新 Windows session 之前也各有 readiness gate。每階段最多 30 秒、單次 probe 最多 2 秒、間隔 250 ms；失敗訊息含階段與最後 HTTP 狀態或連線錯誤。只重試 health GET，不重送 MCP 寫入、撤銷或任何驗收斷言。
+
+`node --test ops/test/readiness.test.mjs`：3 pass／0 fail／0 skip，涵蓋斷線／503 後恢復、總逾時與無秘密的階段診斷、200 headers 但 body 卡住仍須在期限內失敗。`python3 -m unittest discover -s ops/test -v`：7 tests OK；runbook 22 段 shell 範例均通過 `bash -n`。
+
+連續執行 `node ops/test/local-stack.mjs` 三次，全部 exit 0，各輪 H-03 都是 8 pass／0 skip，TC-05／TC-10／明確 issue 及清理都通過。原始輸出：[第 1 輪](evidence/H02-readiness-run-1.txt)、[第 2 輪](evidence/H02-readiness-run-2.txt)、[第 3 輪](evidence/H02-readiness-run-3.txt)。這是本機回歸結果，不是對原本間歇失敗根因或 VPS readiness 的完整證明。
