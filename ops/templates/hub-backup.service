@@ -1,0 +1,22 @@
+[Unit]
+Description=Hub mail-a Daily Backup Service
+After=network.target docker.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Environment="HUB_DATA_DIR=/var/lib/docker/volumes/deploy_mail_a_data/_data"
+Environment="HUB_STATE_DIR=/var/lib/neighbor-hub/private"
+Environment="CADDY_SNIPPET=/etc/caddy/hub.caddy"
+Environment="HUB_CLOCK_DIR=/var/lib/neighbor-hub/lifecycle"
+Environment="BACKUP_DIR=/var/backups/neighbor-hub"
+Environment="RETENTION_DAYS=7"
+ExecStart=/opt/neighbor-hub/ops/backup
+
+# Hardening
+ProtectSystem=strict
+ReadWritePaths=/var/backups/neighbor-hub /tmp
+ReadOnlyPaths=/var/lib/docker/volumes/deploy_mail_a_data/_data /var/lib/neighbor-hub/private /etc/caddy
+NoNewPrivileges=true
+PrivateTmp=true
