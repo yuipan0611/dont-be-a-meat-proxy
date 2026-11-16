@@ -3,7 +3,7 @@
 // that is deleted on stop(). Env mirrors SDS API-01 mail-a settings.
 
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm, access } from 'node:fs/promises';
+import { mkdtemp, rm, access, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { createServer } from 'node:net';
@@ -14,6 +14,7 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 export const MAIL_BIN = process.env.MAIL_BIN || join(repoRoot, '.hub-local', 'bin', 'mcp-agent-mail');
 
 export async function mailBinAvailable() {
+  if (process.env.MAIL_TEST_URL) return true;
   try {
     await access(MAIL_BIN);
     return true;
@@ -34,6 +35,18 @@ function freePort() {
 }
 
 export async function startLocalMail({ dataDir } = {}) {
+  // H-02 can run the unchanged assertions against its isolated Docker container.
+  // The invoking harness owns that container's lifecycle; never stop a remote service here.
+  if (process.env.MAIL_TEST_URL) {
+    const url = new URL(process.env.MAIL_TEST_URL);
+    if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') {
+      throw new Error('MAIL_TEST_URL must point to an isolated loopback HTTP test server');
+    }
+    const env = await readFile(process.env.MAIL_TEST_ENV_FILE, 'utf8');
+    const token = env.match(/^HTTP_BEARER_TOKEN=([A-Za-z0-9_-]+)$/m)?.[1];
+    if (!token) throw new Error('MAIL_TEST_ENV_FILE lacks the test upstream credential');
+    return { url: url.href, token, async stop() {} };
+  }
   const dir = dataDir ?? (await mkdtemp(join(tmpdir(), 'hub-mail-it-')));
   const port = await freePort();
   const upstreamToken = randomBytes(24).toString('base64url');

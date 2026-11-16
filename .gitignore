@@ -1,1 +1,3 @@
 .hub-local/
+__pycache__/
+deploy/private/

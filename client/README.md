@@ -111,6 +111,8 @@ node --test test/mail-client.integration.test.mjs     # 對本機 mcp_agent_mail
 
 整合測試會自己起一個暫時的 Mail 程序（隨機 port、暫存資料夾、隨機 upstream token，測完關掉並刪資料），設定照 SDS API-01 的 `mail-a` 環境變數。binary 取自 `MAIL_BIN`，預設 `<repo>/.hub-local/bin/mcp-agent-mail`（已在 `.gitignore`）。沒有 binary 時整合測試會標 skip，不算通過。
 
+H-02 也可用 `MAIL_TEST_URL=http://127.0.0.1:<port>/mcp/` 與 `MAIL_TEST_ENV_FILE=<私密mail-a.env路徑>`，讓同一套斷言連到隔離容器。只接受 loopback HTTP；指定後不再因缺少 binary 而 skip。容器生命週期由呼叫端管理，helper 的 stop 不會停止它；`node ops/test/local-stack.mjs` 會建立並清理自己的容器、網路與 volume。不要把這組測試指向已在使用的正式 Mail，它會 bootstrap 測試身分與寫入合成訊息。
+
 取得 binary（F-01b 已建好的同一版本，SHA-256 `4c3804fe…5bead`）：
 
 ```sh
