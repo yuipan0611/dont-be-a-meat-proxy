@@ -5,11 +5,12 @@
 
 set -euo pipefail
 
-HUB_DATA_DIR="${HUB_DATA_DIR:-/var/lib/docker/volumes/deploy_mail_a_data/_data}"
+HUB_DATA_DIR="${HUB_DATA_DIR:-/var/lib/docker/volumes/neighbor-hub_mail_a_data/_data}"
 HUB_STATE_DIR="${HUB_STATE_DIR:-/var/lib/neighbor-hub/private}"
 CADDY_SNIPPET="${CADDY_SNIPPET:-/etc/caddy/hub.caddy}"
-HUB_CLOCK_DIR="${HUB_CLOCK_DIR:-/var/lib/neighbor-hub/lifecycle}"
-BACKUP_DIR="${BACKUP_DIR:-/var/backups/neighbor-hub}"
+CADDY_PRIVATE_DIR="${CADDY_PRIVATE_DIR:-/etc/caddy/hub-private}"
+HUB_CLOCK_DIR="${HUB_CLOCK_DIR:-${HUBCLOCK_STATE_DIR:-/var/lib/neighbor-hub/hubclock}}"
+BACKUP_DIR="${BACKUP_DIR:-/var/lib/neighbor-hub/backups}"
 RECEIPT_DIR="${RECEIPT_DIR:-/var/log/neighbor-hub}"
 EXPIRY_DATE="${EXPIRY_DATE:-2027-03-31}"
 TIMEZONE="${TIMEZONE:-Asia/Taipei}"
@@ -106,6 +107,7 @@ TARGET_LIST=()
 [[ -d "$HUB_DATA_DIR" ]] && TARGET_LIST+=("$HUB_DATA_DIR")
 [[ -d "$HUB_STATE_DIR" ]] && TARGET_LIST+=("$HUB_STATE_DIR")
 [[ -f "$CADDY_SNIPPET" ]] && TARGET_LIST+=("$CADDY_SNIPPET")
+[[ -d "$CADDY_PRIVATE_DIR" ]] && TARGET_LIST+=("$CADDY_PRIVATE_DIR")
 [[ -d "$HUB_CLOCK_DIR" ]] && TARGET_LIST+=("$HUB_CLOCK_DIR")
 if [[ -d "$BACKUP_DIR" ]]; then
   # Include all backup archives inside backup dir

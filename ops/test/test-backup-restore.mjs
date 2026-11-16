@@ -12,7 +12,7 @@
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readdir, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, readdir, readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,8 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createMailClient } from '../../client/mail-client.mjs';
 import { startLocalMail, mailBinAvailable } from '../../client/test/helpers/local-mail-server.mjs';
+import { createFileStore } from '../../ops/lifecycle/store-file.mjs';
+import { createLifecycle } from '../../ops/lifecycle/lifecycle.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..');
@@ -38,21 +40,32 @@ test('H-06: Full backup, restore, and sha256 consistency drill', async (t) => {
   const dataDir = join(baseTmp, 'data');
   const stateDir = join(baseTmp, 'private');
   const backupDir = join(baseTmp, 'backups');
-  const clockDir = join(baseTmp, 'lifecycle');
+  const clockDir = join(baseTmp, 'hubclock');
   const caddySnippet = join(baseTmp, 'hub.caddy');
+  const caddyPrivateDir = join(baseTmp, 'hub-private');
   const receiptDir = join(baseTmp, 'receipts');
 
   await mkdir(dataDir, { recursive: true });
   await mkdir(stateDir, { recursive: true });
   await mkdir(backupDir, { recursive: true });
   await mkdir(clockDir, { recursive: true });
+  await mkdir(caddyPrivateDir, { recursive: true });
   await mkdir(receiptDir, { recursive: true });
 
-  // Prepare dummy tokens and Caddy snippet to verify auxiliary backup
+  // Prepare H-02 actual files to verify auxiliary backup
   await writeFile(join(stateDir, 'tokens.json'), JSON.stringify({ version: 1, revision: 1, group_id: 'group-a' }, null, 2));
-  await writeFile(join(stateDir, 'mail-a.env'), 'HTTP_BEARER_TOKEN=mock_secret_token_12345678\x3901234567890\n');
-  await writeFile(caddySnippet, 'hub.example.invalid { respond "OK" 200 }\n');
-  await writeFile(join(clockDir, 'hubclock.sqlite3'), ''); // empty mock DB
+  await writeFile(join(stateDir, 'mail-a.env'), 'HTTP_BEARER_TOKEN=mock_upstream_token_1234567890\n');
+  await writeFile(join(stateDir, 'mac.env'), 'HUB_MAIL_URL=https://hub.example.invalid/mcp/\nHUB_TOKEN=mock_mac_token\n');
+  await writeFile(join(stateDir, 'windows.env'), 'HUB_MAIL_URL=https://hub.example.invalid/mcp/\nHUB_TOKEN=mock_windows_token\n');
+  await writeFile(join(stateDir, 'mac.sender.json'), JSON.stringify({ agentName: 'BlueLake', senderToken: 'token_mac_reg' }, null, 2));
+  await writeFile(join(stateDir, 'windows.sender.json'), JSON.stringify({ agentName: 'RedStone', senderToken: 'token_win_reg' }, null, 2));
+  let hubclockContent = JSON.stringify({ agentName: 'OrangeFox', senderToken: 'token_hubclock_reg' }, null, 2);
+  await writeFile(join(stateDir, 'hubclock.sender.json'), hubclockContent);
+
+  await writeFile(caddySnippet, 'hub.example.invalid { import /etc/caddy/hub-private/auth.caddy }\n');
+  const authCaddyContent = '@allowed {\n  header Authorization "Bearer mock_mac_token"\n}\n';
+  await writeFile(join(caddyPrivateDir, 'auth.caddy'), authCaddyContent);
+  await writeFile(join(clockDir, 'hubclock.sqlite3'), ''); // mock DB
 
   // Step 1: Start local mail-a
   console.log('[Step 1] Starting local mail-a server...');
@@ -65,8 +78,14 @@ test('H-06: Full backup, restore, and sha256 consistency drill', async (t) => {
   await op.callTool('ensure_project', { human_key: PROJECT });
   const regMac = await op.callTool('register_agent', { project_key: PROJECT, name: 'BlueLake', program: 'h06-it', model: 'none' });
   const regWin = await op.callTool('register_agent', { project_key: PROJECT, name: 'RedStone', program: 'h06-it', model: 'none' });
+  const regClock = await op.callTool('register_agent', { project_key: PROJECT, name: 'OrangeFox', program: 'hubclock', model: 'none' });
   await op.callTool('set_contact_policy', { project_key: PROJECT, agent_name: 'BlueLake', policy: 'open' });
   await op.callTool('set_contact_policy', { project_key: PROJECT, agent_name: 'RedStone', policy: 'open' });
+  await op.callTool('set_contact_policy', { project_key: PROJECT, agent_name: 'OrangeFox', policy: 'open' });
+
+  // Update hubclock.sender.json with actual registration token
+  hubclockContent = JSON.stringify({ agentName: 'OrangeFox', senderToken: regClock.registration_token }, null, 2);
+  await writeFile(join(stateDir, 'hubclock.sender.json'), hubclockContent);
 
   const macClient = createMailClient({
     url: hub.url,
@@ -74,7 +93,7 @@ test('H-06: Full backup, restore, and sha256 consistency drill', async (t) => {
     projectKey: PROJECT,
     agentName: 'BlueLake',
     senderToken: regMac.registration_token,
-    roster: ['RedStone'],
+    roster: ['RedStone', 'OrangeFox'],
   });
 
   const winClient = createMailClient({
@@ -83,7 +102,29 @@ test('H-06: Full backup, restore, and sha256 consistency drill', async (t) => {
     projectKey: PROJECT,
     agentName: 'RedStone',
     senderToken: regWin.registration_token,
-    roster: ['BlueLake'],
+    roster: ['BlueLake', 'OrangeFox'],
+  });
+
+  const clockClient = createMailClient({
+    url: hub.url,
+    token: hub.token,
+    projectKey: PROJECT,
+    agentName: 'OrangeFox',
+    senderToken: regClock.registration_token,
+    roster: ['BlueLake', 'RedStone'],
+  });
+
+  // Initialize HubClock store and lifecycle
+  const fakeClock = { nowMs: () => 1731800000000 };
+  const initialStore = createFileStore({ dir: clockDir, clock: fakeClock, owner: 'hubclock-worker-initial' });
+  const initialLockRes = await initialStore.acquireLock();
+  assert.equal(initialLockRes.acquired, true, 'must acquire lock on fresh clockDir');
+
+  const lifecycle = createLifecycle({
+    client: clockClient,
+    store: initialStore,
+    clock: fakeClock,
+    groupId: 'group-a',
   });
 
   // Step 3: Write messages with Traditional Chinese & Emoji & Code Blocks
@@ -119,6 +160,7 @@ test('H-06: Full backup, restore, and sha256 consistency drill', async (t) => {
   for (const msg of testMessages) {
     const res = await macClient.sendItem({
       to: ['RedStone'],
+      cc: ['OrangeFox'],
       subject: msg.subject,
       kind: msg.kind,
       intent: msg.intent,
@@ -135,6 +177,43 @@ test('H-06: Full backup, restore, and sha256 consistency drill', async (t) => {
     });
     console.log(`[Step 3] Sent message #${res.messageId}: ${msg.subject} (SHA256: ${sha256(msg.text)})`);
   }
+
+  // Pre-backup HubClock tick: ingest all 3 messages, commit cursor and processed
+  console.log('[Step 3.1] Running pre-backup HubClock tick to ingest events and advance cursor...');
+  const preTick = await lifecycle.tick();
+  assert.ok(preTick.ingested >= 3, `HubClock should have ingested at least 3 messages (got ${preTick.ingested})`);
+
+  // Record a sent notification in outbox to verify no-replay after restore
+  await initialStore.transact(async (tx) => {
+    tx.putOutbox({
+      eventKey: 'hubclock:group-a:1:RedStone:approved',
+      requestKey: '1:RedStone',
+      target: 'mail',
+      state: 'sent',
+      attempts: 1,
+      nextTryAt: 1731800000000,
+      resultMailId: 9999,
+      lastError: null,
+      payload: {
+        to: ['BlueLake'],
+        subject: '[HubClock] approved｜#1',
+        threadId: 'test-thread',
+        control: { v: 1, event_type: 'result' },
+      },
+    });
+  });
+
+  const preState = await initialStore.snapshot();
+  assert.ok(preState.cursor !== null && preState.cursor >= 3, 'HubClock cursor must be advanced');
+  assert.ok(preState.processed.length >= 3, 'HubClock processed array must record message IDs');
+  assert.equal(Object.keys(preState.outbox).length, 1, 'HubClock outbox must contain sent record');
+
+  // Leave a lock file in clockDir to verify restore cleans it up
+  await writeFile(join(clockDir, 'hubclock.lock'), JSON.stringify({ owner: 'old-process', heartbeatAt: 1731800000000 }));
+
+  const preClockStateRaw = await readFile(join(clockDir, 'hubclock-state.json'), 'utf8');
+  const preClockStateHash = sha256(preClockStateRaw);
+  console.log(`[Step 3.1] Pre-backup HubClock state: cursor=${preState.cursor}, processed=${preState.processed.length}, outbox=${Object.keys(preState.outbox).length}, sha256=${preClockStateHash}`);
 
   // Step 4: Record pre-backup events & cursors
   console.log('[Step 4] Reading pre-backup events and cursor...');
@@ -153,6 +232,7 @@ test('H-06: Full backup, restore, and sha256 consistency drill', async (t) => {
     '--data-dir', dataDir,
     '--state-dir', stateDir,
     '--caddy-snippet', caddySnippet,
+    '--caddy-private', caddyPrivateDir,
     '--clock-dir', clockDir,
     '--backup-dir', backupDir,
     '--retention-days', '7',
@@ -163,9 +243,12 @@ test('H-06: Full backup, restore, and sha256 consistency drill', async (t) => {
   assert.equal(backupFiles.length, 1, 'exactly one backup archive should be created');
   const backupArchive = join(backupDir, backupFiles[0]);
 
-  // Step 7: Destroy data completely
-  console.log('[Step 7] Destroying original data directory completely...');
+  // Step 7: Destroy data, state, clockDir, and caddy private completely
+  console.log('[Step 7] Destroying original data, state, and clock directories completely...');
   await rm(dataDir, { recursive: true, force: true });
+  await rm(stateDir, { recursive: true, force: true });
+  await rm(clockDir, { recursive: true, force: true });
+  await rm(caddyPrivateDir, { recursive: true, force: true });
   await mkdir(dataDir, { recursive: true });
   const emptyFiles = await readdir(dataDir);
   assert.equal(emptyFiles.length, 0, 'dataDir must be completely empty');
@@ -177,6 +260,7 @@ test('H-06: Full backup, restore, and sha256 consistency drill', async (t) => {
     '--target-data-dir', dataDir,
     '--target-state-dir', stateDir,
     '--target-caddy-snippet', caddySnippet,
+    '--target-caddy-private', caddyPrivateDir,
     '--target-clock-dir', clockDir,
   ], { encoding: 'utf8' });
   console.log(restoreOut);
@@ -212,6 +296,76 @@ test('H-06: Full backup, restore, and sha256 consistency drill', async (t) => {
       assert.equal(restoredHash, rec.sha256, `message #${rec.id} sha256 must match`);
       console.log(`[Step 10] Verified message #${rec.id} SHA256: ${restoredHash} == ${rec.sha256} ✅`);
     }
+
+    // Verify H-02 actual files restored with correct content & mode 0600
+    const restoredHubclock = await readFile(join(stateDir, 'hubclock.sender.json'), 'utf8');
+    assert.equal(restoredHubclock, hubclockContent, 'hubclock.sender.json must be restored byte-for-byte');
+    const hubclockStat = await stat(join(stateDir, 'hubclock.sender.json'));
+    assert.equal(hubclockStat.mode & 0o777, 0o600, 'hubclock.sender.json must have mode 0600');
+
+    const restoredAuthCaddy = await readFile(join(caddyPrivateDir, 'auth.caddy'), 'utf8');
+    assert.equal(restoredAuthCaddy, authCaddyContent, 'auth.caddy must be restored byte-for-byte');
+    const authCaddyStat = await stat(join(caddyPrivateDir, 'auth.caddy'));
+    assert.equal(authCaddyStat.mode & 0o777, 0o600, 'auth.caddy must have mode 0600');
+    console.log('[Step 10] Verified hubclock.sender.json and auth.caddy restored with mode 0600 ✅');
+
+    // Step 10.1: HubClock state restoration & No-replay drill
+    console.log('[Step 10.1] Verifying HubClock state restoration and no-replay behavior...');
+    const restoredClockStatePath = join(clockDir, 'hubclock-state.json');
+    const restoredClockRaw = await readFile(restoredClockStatePath, 'utf8');
+    const restoredClockHash = sha256(restoredClockRaw);
+    assert.equal(restoredClockHash, preClockStateHash, 'hubclock-state.json must be restored byte-for-byte');
+
+    const clockDirStat = await stat(clockDir);
+    assert.equal(clockDirStat.mode & 0o777, 0o700, 'clockDir must have mode 0700');
+    const clockFileStat = await stat(restoredClockStatePath);
+    assert.equal(clockFileStat.mode & 0o777, 0o600, 'hubclock-state.json must have mode 0600');
+
+    // Verify lock file was purged during restore so restored HubClock acquires lock immediately
+    const clockDirEntries = await readdir(clockDir);
+    assert.ok(!clockDirEntries.includes('hubclock.lock'), 'hubclock.lock must not exist in restored directory');
+
+    // Instantiate restored HubClock file store
+    const restoredStore = createFileStore({ dir: clockDir, clock: fakeClock, owner: 'hubclock-worker-restored' });
+    const lockAcquired = await restoredStore.acquireLock();
+    assert.equal(lockAcquired.acquired, true, 'HubClock must acquire lock cleanly on restored state');
+
+    const restoredState = await restoredStore.snapshot();
+    assert.equal(restoredState.cursor, preState.cursor, 'restored cursor must not rewind');
+    assert.equal(restoredState.processed.length, preState.processed.length, 'restored processed items must match');
+    assert.equal(Object.keys(restoredState.outbox).length, 1, 'restored outbox items must match');
+    assert.equal(restoredState.outbox['hubclock:group-a:1:RedStone:approved'].state, 'sent');
+
+    const restoredClockClient = createMailClient({
+      url: restoredHub.url,
+      token: restoredHub.token,
+      projectKey: PROJECT,
+      agentName: 'OrangeFox',
+      senderToken: regClock.registration_token,
+      roster: ['BlueLake', 'RedStone'],
+    });
+
+    const restoredLifecycle = createLifecycle({
+      client: restoredClockClient,
+      store: restoredStore,
+      clock: fakeClock,
+      groupId: 'group-a',
+    });
+
+    const beforeTickEvents = await restoredWinClient.fetchEvents({ limit: 100 });
+
+    // Execute tick on restored HubClock to prove NO-REPLAY
+    console.log('[Step 10.1] Executing HubClock restart tick...');
+    const restartTick = await restoredLifecycle.tick();
+    assert.equal(restartTick.ingested, 0, 'ingested must be 0: cursor did not rewind and existing events are marked processed');
+    assert.equal(restartTick.resolved, 0, 'resolved must be 0: no pending deadlines triggered');
+    assert.equal(restartTick.sent, 0, 'sent must be 0: already-sent outbox items must never be re-sent');
+
+    const afterTickEvents = await restoredWinClient.fetchEvents({ limit: 100 });
+    assert.equal(afterTickEvents.events.length, beforeTickEvents.events.length, 'mail inbox message count must not change on HubClock restart');
+
+    await restoredStore.releaseLock();
+    console.log('[Step 10.1] Verified HubClock no-replay on restart: cursor retained, processed deduplicated, outbox not re-sent ✅');
   } finally {
     await restoredHub.stop({ keepData: true });
   }
