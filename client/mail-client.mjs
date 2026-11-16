@@ -171,6 +171,7 @@ export function createMailClient(opts) {
         sender_name: agentName,
         sender_token: senderToken,
         to: item.to,
+        ...(item.cc?.length ? { cc: item.cc } : {}),
         subject: item.subject,
         topic: item.kind,
         thread_id: item.threadId ?? clientEventId,
@@ -218,16 +219,15 @@ export function createMailClient(opts) {
   }
 
   /**
-   * sendItem with backoff on retryable errors, always reusing the same idempotency key.
+   * Runs one send with backoff on retryable errors, always reusing the same idempotency key.
    * 401 / validation / recipient errors stop immediately. If any attempt ended 'unconfirmed',
    * the final error stays 'unconfirmed' even if a later attempt was a clean 429.
    */
-  async function sendWithRetry(item, { maxAttempts = 3, baseDelayMs = 1000, maxDelayMs = 30_000 } = {}) {
-    const fixed = { ...item, clientEventId: item.clientEventId ?? randomUUID() };
+  async function withRetry(sendOnce, key, { maxAttempts = 3, baseDelayMs = 1000, maxDelayMs = 30_000 } = {}) {
     let sawUnconfirmed = false;
     for (let attempt = 1; ; attempt++) {
       try {
-        const res = await sendItem(fixed);
+        const res = await sendOnce();
         return { ...res, attempts: attempt };
       } catch (e) {
         if (!(e instanceof MailError) || !e.retryable) throw e;
@@ -235,7 +235,7 @@ export function createMailClient(opts) {
         if (attempt >= maxAttempts) {
           if (sawUnconfirmed && e.delivery !== 'unconfirmed') {
             throw new MailError('E-HUB', UNCONFIRMED, {
-              reason: e.reason, delivery: 'unconfirmed', retryable: true, idempotencyKey: fixed.clientEventId, details: e.details,
+              reason: e.reason, delivery: 'unconfirmed', retryable: true, idempotencyKey: key, details: e.details,
             });
           }
           throw e;
@@ -246,15 +246,66 @@ export function createMailClient(opts) {
     }
   }
 
+  async function sendWithRetry(item, opts) {
+    const fixed = { ...item, clientEventId: item.clientEventId ?? randomUUID() };
+    return withRetry(() => sendItem(fixed), fixed.clientEventId, opts);
+  }
+
+  /**
+   * Sends a typed control record (SDS API-06: presented / answer / choice / session.closed / result)
+   * as topic 'control'. Not an item: no kind/intent, never shown as work to do.
+   * `idempotencyKey` is required and must be deterministic for the event, so a resend is a replay.
+   */
+  async function sendControl({ to, cc, subject, threadId, control, idempotencyKey }) {
+    if (!Array.isArray(to) || to.length === 0 || !to.every(nonEmpty)) throw fieldError('to', '收件者至少一位');
+    if (!nonEmpty(subject)) throw fieldError('subject', '主旨必填');
+    if (!control || control.v !== CONTROL_VERSION || !nonEmpty(control.event_type)) {
+      throw fieldError('control', `control 須為 { v:${CONTROL_VERSION}, event_type, ... }`);
+    }
+    if (!UUID_RE.test(idempotencyKey ?? '')) throw fieldError('idempotencyKey', 'idempotency key 須為 UUID');
+    let receipt;
+    try {
+      receipt = await callTool('send_message', {
+        project_key: projectKey,
+        sender_name: agentName,
+        sender_token: senderToken,
+        to,
+        ...(cc?.length ? { cc } : {}),
+        subject,
+        topic: 'control',
+        thread_id: threadId ?? idempotencyKey,
+        body_md: JSON.stringify(control),
+        idempotency_key: idempotencyKey,
+        convert_images: false,
+      });
+    } catch (e) {
+      if (e instanceof MailError) e.idempotencyKey = idempotencyKey;
+      throw e;
+    }
+    return {
+      status: 'saved',
+      messageId: receipt.message_id,
+      createdTs: receipt.created_ts,
+      threadId: receipt.thread_id,
+      idempotencyKey,
+      replay: receipt.idempotent_replay === true,
+    };
+  }
+
+  async function sendControlWithRetry(msg, opts) {
+    return withRetry(() => sendControl(msg), msg.idempotencyKey, opts);
+  }
+
   /** Marks one message read for this agent. Call only after the agent has actually taken the original. */
   async function markRead(messageId) {
     return callTool('mark_message_read', { project_key: projectKey, agent_name: agentName, message_id: messageId });
   }
 
-  return { sendItem, sendWithRetry, fetchEvents, readMessage, markRead, callTool, agentName, projectKey };
+  return { sendItem, sendWithRetry, sendControl, sendControlWithRetry, fetchEvents, readMessage, markRead, callTool, agentName, projectKey };
 }
 
 export const ENVELOPE_VERSION = 1;
+export const CONTROL_VERSION = 1;
 export const MAX_TEXT_CODE_POINTS = 20_000;
 export const KINDS = Object.freeze(['handoff', 'help', 'decision', 'task']);
 export const INTENTS = Object.freeze(['question', 'action']);

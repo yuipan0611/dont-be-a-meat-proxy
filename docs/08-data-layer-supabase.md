@@ -100,7 +100,7 @@ bot、bank-proxy、ops 可以分三個 login role（同上，各自密碼），�
 
 | 票 | 改動 |
 |---|---|
-| H-05（Codex，MVP） | **MVP 不改**，仍用 SQLite／狀態檔。只請求：狀態欄位命名對齊 `hub_clock_requests`（kind、status 八值、deadline 規則）並經 `GlueStore` 介面存取，L 換 PG 實作；附一次性「狀態檔→PG」匯入腳本（11-24～30） |
+| H-05（Tom，MVP） | **已做**（`ops/lifecycle/`）：MVP 用檔案 Store，介面對應 hub_clock_* 表；`20261118000000_hub_clock_align_h05.sql` 補 `recipient_agent`、session 可空、`hub_clock_processed` 等，上線批次只需寫 `store-pg.mjs` |
 | H-02（Codex，MVP） | MVP 不改。L：`ops/render-caddy` 輸入從手寫清單改為 `caddy_allowlist_export`＋私密檔 hash 核對；`ops/revoke` 改走 §5 流程 |
 | H-06（agy-1） | L：每日備份加 `pg_dump hub`；2027-03-31 清除含 `hub` database（`set hub.audit_purge='on'` 或直接 `drop database hub`） |
 | 新票 L-DB | 在 Hindsight Postgres 建 `hub` database、login role、`hub-db-net`；`supabase db push --db-url` 套 migration；跑 `rls_test.sql` |

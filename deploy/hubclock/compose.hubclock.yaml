@@ -1,0 +1,56 @@
+# HubClock (H-05) — RECOMMENDED on the VPS: H-02 decided not to install Node on the host, so HubClock
+# runs as a container next to mail-a. Use as a Compose override together with H-02's deploy/compose.yaml:
+#
+#   cd /opt/neighbor-hub            # wherever H-02 checked out this repo (read-only code is enough)
+#   # state dir on the host, owned by the same user as the credential files (named volumes are root-owned
+#   # and the container runs non-root → EACCES; found in the 2026-11-17 Linux run):
+#   sudo install -d -o "$(stat -c %u /var/lib/neighbor-hub/private/hubclock.sender.json)" \
+#        -g "$(stat -c %g /var/lib/neighbor-hub/private/hubclock.sender.json)" -m 700 /var/lib/neighbor-hub/hubclock
+#   HUB_OPS_UID=$(stat -c %u /var/lib/neighbor-hub/private/hubclock.sender.json) \
+#   HUB_OPS_GID=$(stat -c %g /var/lib/neighbor-hub/private/hubclock.sender.json) \
+#   docker compose -f deploy/compose.yaml -f deploy/hubclock/compose.hubclock.yaml up -d hubclock
+#
+# One replica only. The file lock in the state volume still protects against a manual
+# `docker compose run hubclock once` racing the service (that run just stands by, exit 3).
+services:
+  # Mail rejects unknown Host headers with HTTP 421 (DNS-rebinding guard). HubClock reaches it as
+  # `mail-a:8765` on mail_a_net, so that host is added to Mail's allow-list (merged into H-02's service).
+  mail-a:
+    environment:
+      HTTP_ALLOWED_HOSTS: mail-a          # hostname only; the port is not part of the match (verified)
+
+  hubclock:
+    # node:24-alpine multi-arch index digest, pulled 2026-11-17 (node v24.22.3).
+    image: node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
+    command: [node, /app/ops/lifecycle/main.mjs, run]
+    working_dir: /app
+    environment:
+      HUBCLOCK_MAIL_URL: http://mail-a:8765/mcp/   # inside mail_a_net; never via Caddy / the public URL
+      HUB_PRIVATE_DIR: /run/hub-private
+      HUBCLOCK_DATA_DIR: /data
+      HUB_GROUP_ID: group-a
+      HUBCLOCK_INTERVAL_S: "15"
+      TZ: UTC
+    # Must equal the owner of the mode-600 credential files (main.mjs refuses group/other-readable files).
+    user: "${HUB_OPS_UID:?set HUB_OPS_UID}:${HUB_OPS_GID:?set HUB_OPS_GID}"
+    volumes:
+      - ../client:/app/client:ro      # relative to deploy/ (the first compose file's dir)
+      - ../ops/lifecycle:/app/ops/lifecycle:ro
+      - ${HUB_PRIVATE_DIR:-/var/lib/neighbor-hub/private}/mail-a.env:/run/hub-private/mail-a.env:ro
+      - ${HUB_PRIVATE_DIR:-/var/lib/neighbor-hub/private}/hubclock.sender.json:/run/hub-private/hubclock.sender.json:ro
+      - ${HUBCLOCK_STATE_DIR:-/var/lib/neighbor-hub/hubclock}:/data   # back up with mail_a_data (H-06)
+    networks: [mail_a_net]
+    depends_on:
+      mail-a:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=16m
+    mem_limit: 128m
+    restart: unless-stopped
+    stop_grace_period: 20s          # SIGTERM → finish the tick, release the lock
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
