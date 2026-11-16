@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+# ops/backup — Daily backup for Hub mail-a data, Caddy snippet, tokens, and HubClock state.
+# Retention: 7-day rolling rotation.
+# Zero dependencies beyond standard unix tools and sqlite3.
+
+set -euo pipefail
+
+# Default configuration (overridable via environment variables or CLI flags)
+HUB_DATA_DIR="${HUB_DATA_DIR:-/var/lib/docker/volumes/deploy_mail_a_data/_data}"
+HUB_STATE_DIR="${HUB_STATE_DIR:-/var/lib/neighbor-hub/private}"
+CADDY_SNIPPET="${CADDY_SNIPPET:-/etc/caddy/hub.caddy}"
+HUB_CLOCK_DIR="${HUB_CLOCK_DIR:-/var/lib/neighbor-hub/lifecycle}"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/neighbor-hub}"
+RETENTION_DAYS="${RETENTION_DAYS:-7}"
+QUIET=0
+
+usage() {
+  cat <<EOF
+Usage: $0 [options]
+
+Options:
+  --data-dir <path>       Path to mail-a data directory (contains mail.sqlite3, archive/)
+  --state-dir <path>      Path to private credentials/token directory (tokens.json, etc.)
+  --caddy-snippet <path>  Path to Caddy snippet file for hub
+  --clock-dir <path>      Path to HubClock / lifecycle state directory
+  --backup-dir <path>     Directory where backup archives will be stored
+  --retention-days <num>  Number of days to keep backups (default: 7)
+  --quiet                 Suppress non-error output
+  -h, --help              Show this help message
+
+Environment variables:
+  HUB_DATA_DIR, HUB_STATE_DIR, CADDY_SNIPPET, HUB_CLOCK_DIR, BACKUP_DIR, RETENTION_DAYS
+EOF
+  exit 1
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --data-dir) HUB_DATA_DIR="$2"; shift 2 ;;
+    --state-dir) HUB_STATE_DIR="$2"; shift 2 ;;
+    --caddy-snippet) CADDY_SNIPPET="$2"; shift 2 ;;
+    --clock-dir) HUB_CLOCK_DIR="$2"; shift 2 ;;
+    --backup-dir) BACKUP_DIR="$2"; shift 2 ;;
+    --retention-days) RETENTION_DAYS="$2"; shift 2 ;;
+    --quiet) QUIET=1; shift ;;
+    -h|--help) usage ;;
+    *) echo "Unknown option: $1" >&2; usage ;;
+  esac
+done
+
+log() {
+  if [[ "$QUIET" -eq 0 ]]; then
+    echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] $*"
+  fi
+}
+
+sha256_file() {
+  local file="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | awk '{print $1}'
+  else
+    echo "ERROR: Neither sha256sum nor shasum is available." >&2
+    exit 1
+  fi
+}
+
+# Verify sqlite3
+if ! command -v sqlite3 >/dev/null 2>&1; then
+  echo "ERROR: sqlite3 CLI is required for consistent database backup." >&2
+  exit 1
+fi
+
+TIMESTAMP="$(date -u +'%Y%m%d-%H%M%SZ')"
+BACKUP_ID="hub-backup-${TIMESTAMP}"
+STAGING_DIR="$(mktemp -d -t "hub-backup-staging-XXXXXX")"
+trap 'rm -rf "$STAGING_DIR"' EXIT
+
+log "Starting backup $BACKUP_ID..."
+log "Source data: $HUB_DATA_DIR"
+log "Backup destination: $BACKUP_DIR"
+
+mkdir -p "$BACKUP_DIR"
+mkdir -p "$STAGING_DIR/mail-data"
+mkdir -p "$STAGING_DIR/caddy"
+mkdir -p "$STAGING_DIR/tokens"
+mkdir -p "$STAGING_DIR/hubclock"
+
+# 1. Consistent SQLite backup for mail-a
+DB_FILE="$HUB_DATA_DIR/mail.sqlite3"
+DB_BACKUP="$STAGING_DIR/mail-data/mail.sqlite3"
+DB_HASH=""
+DB_INTEGRITY="skipped"
+MSG_COUNT="0"
+
+if [[ -f "$DB_FILE" ]]; then
+  log "Creating consistent SQLite snapshot of mail.sqlite3..."
+  # Use SQLite's online backup API via .backup command (safe with active WAL)
+  sqlite3 "$DB_FILE" ".backup '$DB_BACKUP'"
+  
+  # Verify integrity of the backup file
+  DB_INTEGRITY="$(sqlite3 "$DB_BACKUP" "PRAGMA integrity_check;")"
+  if [[ "$DB_INTEGRITY" != "ok" ]]; then
+    echo "ERROR: SQLite integrity check failed on backup copy: $DB_INTEGRITY" >&2
+    exit 1
+  fi
+  DB_HASH="$(sha256_file "$DB_BACKUP")"
+  
+  # Try to read message count if messages table exists
+  if sqlite3 "$DB_BACKUP" "SELECT 1 FROM sqlite_master WHERE type='table' AND name='messages';" | grep -q 1; then
+    MSG_COUNT="$(sqlite3 "$DB_BACKUP" "SELECT COUNT(*) FROM messages;")"
+  fi
+  log "SQLite backup verified ok (hash: $DB_HASH, messages: $MSG_COUNT)"
+else
+  log "WARNING: Database file $DB_FILE does not exist. Backing up archive/state only."
+fi
+
+# 2. Archive tree (git repository and attachments)
+if [[ -d "$HUB_DATA_DIR/archive" ]]; then
+  log "Copying storage root archive/..."
+  cp -a "$HUB_DATA_DIR/archive" "$STAGING_DIR/mail-data/"
+fi
+
+# Also copy home/xdg if present
+for extra_dir in home xdg-data xdg-config; do
+  if [[ -d "$HUB_DATA_DIR/$extra_dir" ]]; then
+    cp -a "$HUB_DATA_DIR/$extra_dir" "$STAGING_DIR/mail-data/"
+  fi
+done
+
+# 3. Caddy snippet
+if [[ -f "$CADDY_SNIPPET" ]]; then
+  log "Copying Caddy snippet from $CADDY_SNIPPET..."
+  cp -a "$CADDY_SNIPPET" "$STAGING_DIR/caddy/"
+fi
+
+# 4. Token registry & private credentials
+if [[ -d "$HUB_STATE_DIR" ]]; then
+  log "Copying private tokens from $HUB_STATE_DIR (permissions preserved 600)..."
+  cp -a "$HUB_STATE_DIR"/* "$STAGING_DIR/tokens/" 2>/dev/null || true
+  chmod 700 "$STAGING_DIR/tokens"
+  find "$STAGING_DIR/tokens" -type f -exec chmod 600 {} +
+fi
+
+# 5. HubClock state
+if [[ -d "$HUB_CLOCK_DIR" ]]; then
+  log "Copying HubClock lifecycle state from $HUB_CLOCK_DIR..."
+  for clock_db in "$HUB_CLOCK_DIR"/*.sqlite3 "$HUB_CLOCK_DIR"/*.db; do
+    if [[ -f "$clock_db" ]]; then
+      db_base="$(basename "$clock_db")"
+      sqlite3 "$clock_db" ".backup '$STAGING_DIR/hubclock/$db_base'" 2>/dev/null || cp -a "$clock_db" "$STAGING_DIR/hubclock/"
+    fi
+  done
+  find "$HUB_CLOCK_DIR" -maxdepth 1 -type f ! -name "*.sqlite3" ! -name "*.db" ! -name "*-wal" ! -name "*-shm" -exec cp -a {} "$STAGING_DIR/hubclock/" + 2>/dev/null || true
+fi
+
+# 6. Generate manifest.json
+MANIFEST="$STAGING_DIR/manifest.json"
+cat <<EOF > "$MANIFEST"
+{
+  "backup_id": "$BACKUP_ID",
+  "created_at_utc": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
+  "version": 1,
+  "database": {
+    "file": "mail-data/mail.sqlite3",
+    "sha256": "$DB_HASH",
+    "integrity_check": "$DB_INTEGRITY",
+    "message_count": $MSG_COUNT
+  },
+  "sources": {
+    "data_dir": "$HUB_DATA_DIR",
+    "state_dir": "$HUB_STATE_DIR",
+    "caddy_snippet": "$CADDY_SNIPPET",
+    "clock_dir": "$HUB_CLOCK_DIR"
+  },
+  "retention_policy_days": $RETENTION_DAYS
+}
+EOF
+
+# 7. Package tarball
+ARCHIVE_FILE="$BACKUP_DIR/${BACKUP_ID}.tar.gz"
+CHECKSUM_FILE="$BACKUP_DIR/${BACKUP_ID}.tar.gz.sha256"
+
+log "Creating archive $ARCHIVE_FILE..."
+# Restrict umask so backup archive has mode 0600
+(
+  umask 077
+  tar -czf "$ARCHIVE_FILE" -C "$STAGING_DIR" .
+)
+chmod 600 "$ARCHIVE_FILE"
+
+ARCHIVE_HASH="$(sha256_file "$ARCHIVE_FILE")"
+echo "$ARCHIVE_HASH  $(basename "$ARCHIVE_FILE")" > "$CHECKSUM_FILE"
+chmod 600 "$CHECKSUM_FILE"
+
+log "Backup created successfully: $ARCHIVE_FILE (SHA256: $ARCHIVE_HASH)"
+
+# 8. Retention: 7-day rolling rotation
+log "Enforcing $RETENTION_DAYS-day backup retention policy..."
+REMOVED_COUNT=0
+# Delete archives older than retention days
+if command -v find >/dev/null 2>&1; then
+  # On macOS find -mtime +N works, but let's also support clean cleanup
+  while IFS= read -r old_file; do
+    if [[ -n "$old_file" ]]; then
+      log "Removing expired backup: $old_file"
+      rm -f "$old_file" "${old_file}.sha256"
+      REMOVED_COUNT=$((REMOVED_COUNT + 1))
+    fi
+  done < <(find "$BACKUP_DIR" -maxdepth 1 -name "hub-backup-*.tar.gz" -type f -mtime "+${RETENTION_DAYS}" 2>/dev/null || true)
+fi
+
+RETAINED_COUNT="$(find "$BACKUP_DIR" -maxdepth 1 -name "hub-backup-*.tar.gz" -type f | wc -l | tr -d ' ')"
+log "Backup complete. Retained: $RETAINED_COUNT backups. Rotated out: $REMOVED_COUNT old backups."
+
+# Print receipt
+cat <<EOF
+=== Hub Backup Receipt ===
+Backup ID:    $BACKUP_ID
+Archive:      $ARCHIVE_FILE
+Checksum:     $ARCHIVE_HASH
+DB SHA256:    $DB_HASH
+DB Integrity: $DB_INTEGRITY
+Retained:     $RETAINED_COUNT (Rolling $RETENTION_DAYS days)
+EOF

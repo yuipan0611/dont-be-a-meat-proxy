@@ -1,0 +1,11 @@
+# Imported at top level, after the existing office site has explicit braces.
+# Tokens are imported from a VPS-local file owned by caddy, mode 600.
+hub.example.invalid {
+  tls {
+    issuer acme {
+      dir https://acme-v02.api.letsencrypt.org/directory
+      disable_tlsalpn_challenge
+    }
+  }
+  import /etc/caddy/hub-private/auth.caddy
+}

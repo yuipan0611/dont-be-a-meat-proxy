@@ -1,0 +1,3 @@
+# /etc/cron.d/hub-backup or crontab entry for root
+# Daily backup at 03:15 server time, rotating backups older than 7 days
+15 3 * * * root /opt/neighbor-hub/ops/backup >> /var/log/hub-backup.log 2>&1

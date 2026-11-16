@@ -403,3 +403,70 @@ test('HTTP 200 with an unparseable body after send is unconfirmed, not a crash',
   const fetch = fakeFetch((rpc) => handshake(rpc) ?? { status: 200, body: '<html>proxy page</html>' });
   await rejectsWith(client(fetch).sendItem(baseItem()), { code: 'E-HUB', reason: 'protocol', delivery: 'unconfirmed' });
 });
+
+// ---- H-05 additions: cc on items, typed control records ----
+const CTL_KEY = '3b0c6f1e-' + '2d4a-5b7c-a1d2-0123456789ab';
+
+function captureSend() {
+  return fakeFetch((rpc) => {
+    const hs = handshake(rpc);
+    if (hs) return hs;
+    return toolResult(rpc.id, { message_id: 7, thread_id: rpc.params.arguments.thread_id, created_ts: '2026-11-17T01:00:00Z' });
+  });
+}
+const sentArgs = (fetch) => fetch.calls.find((c) => c.rpc.method === 'tools/call').rpc.params.arguments;
+
+test('sendItem forwards cc (e.g. the HubClock agent) to send_message', async () => {
+  const fetch = captureSend();
+  await client(fetch).sendItem(baseItem({ cc: ['QuietHarbor'] }));
+  assert.deepEqual(sentArgs(fetch).cc, ['QuietHarbor']);
+});
+
+test('sendItem without cc sends no cc field', async () => {
+  const fetch = captureSend();
+  await client(fetch).sendItem(baseItem());
+  assert.equal('cc' in sentArgs(fetch), false);
+});
+
+test('sendControl sends topic=control, the JSON record verbatim and the given fixed key', async () => {
+  const fetch = captureSend();
+  const control = { v: 1, event_type: 'presented', root_mail_id: 12, recipient_session: 'win-s1', agent: 'RedStone' };
+  const r = await client(fetch).sendControl({ to: ['QuietHarbor'], subject: 'presented #12', threadId: EVENT_ID, control, idempotencyKey: CTL_KEY });
+  const a = sentArgs(fetch);
+  assert.equal(a.topic, 'control');
+  assert.equal(a.idempotency_key, CTL_KEY);
+  assert.equal(a.thread_id, EVENT_ID);
+  assert.deepEqual(JSON.parse(a.body_md), control);
+  assert.equal(a.attachment_paths, undefined);
+  assert.equal(r.status, 'saved');
+  assert.equal(r.idempotencyKey, CTL_KEY);
+});
+
+test('sendControl rejects a missing/invalid key or non-v1 record before any network call', async () => {
+  const fetch = captureSend();
+  const c = client(fetch);
+  const control = { v: 1, event_type: 'choice' };
+  await assert.rejects(c.sendControl({ to: ['X'], subject: 's', control }), (e) => e.code === 'E-FIELD' && e.details.field === 'idempotencyKey');
+  await assert.rejects(c.sendControl({ to: ['X'], subject: 's', control: { v: 2, event_type: 'x' }, idempotencyKey: CTL_KEY }), (e) => e.details.field === 'control');
+  await assert.rejects(c.sendControl({ to: [], subject: 's', control, idempotencyKey: CTL_KEY }), (e) => e.details.field === 'to');
+  assert.equal(fetch.calls.length, 0);
+});
+
+test('sendControlWithRetry reuses the same key across a 503 and succeeds', async () => {
+  let n = 0;
+  const fetch = fakeFetch((rpc) => {
+    const hs = handshake(rpc);
+    if (hs) return hs;
+    if (++n === 1) return { status: 503, body: '' };
+    return toolResult(rpc.id, { message_id: 8, thread_id: CTL_KEY, created_ts: '2026-11-17T01:00:00Z' });
+  });
+  const clock = new FakeClock();
+  const p = client(fetch, { clock }).sendControlWithRetry(
+    { to: ['QuietHarbor'], subject: 's', control: { v: 1, event_type: 'session.closed' }, idempotencyKey: CTL_KEY },
+    { baseDelayMs: 1000 });
+  await clock.advance(1000);
+  const r = await p;
+  assert.equal(r.attempts, 2);
+  const keys = fetch.calls.filter((c) => c.rpc.method === 'tools/call').map((c) => c.rpc.params.arguments.idempotency_key);
+  assert.deepEqual(keys, [CTL_KEY, CTL_KEY]);
+});
