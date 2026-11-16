@@ -130,6 +130,6 @@ flowchart TD
 | H-04a asyncRewake spike | <ORCA_ID> | <ORCA_ID> | swe-Ben | 11-19 | 進行中 |
 | H-07 接入手冊＋轉貼紀錄表 | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-2 | 11-21 | ✅ 初稿 succeeded（605ea75），PM 修正後收入 docs/onboarding-S1.md、docs/metrics/G-01-paste-log.md；H-02／H-04 定稿後補實際值 |
 | H-02、H-05、H-06 | — | — | codex／agy-1 | 11-20～22 | 等 H-01 |
-| T14 F-10 InsForge 評估（維護者 建議參考） | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-1 | 11-19 | 進行中，不阻塞 MVP |
+| T14 F-10 InsForge 評估（維護者 建議參考） | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-1 | 11-19 | ✅ succeeded，PM 抽查屬實，已收入 docs/research/F-10；結論 (b)：不進主系統，推薦給組員做團隊專題後端 |
 
 註：Codex worker 沒有 Hostinger MCP 工具（escalation <ORCA_ID>）→ DNS／防火牆改由 PM 端 Hostinger MCP 處理，Codex 只寫 runbook＋hPanel 手動備案。
