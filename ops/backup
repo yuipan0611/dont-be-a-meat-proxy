@@ -10,7 +10,7 @@ HUB_DATA_DIR="${HUB_DATA_DIR:-/var/lib/docker/volumes/neighbor-hub_mail_a_data/_
 HUB_STATE_DIR="${HUB_STATE_DIR:-/var/lib/neighbor-hub/private}"
 CADDY_SNIPPET="${CADDY_SNIPPET:-/etc/caddy/hub.caddy}"
 CADDY_PRIVATE_DIR="${CADDY_PRIVATE_DIR:-/etc/caddy/hub-private}"
-HUB_CLOCK_DIR="${HUB_CLOCK_DIR:-/var/lib/neighbor-hub/lifecycle}"
+HUB_CLOCK_DIR="${HUB_CLOCK_DIR:-${HUBCLOCK_STATE_DIR:-/var/lib/neighbor-hub/hubclock}}"
 BACKUP_DIR="${BACKUP_DIR:-/var/lib/neighbor-hub/backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-7}"
 QUIET=0
@@ -24,7 +24,7 @@ Options:
   --state-dir <path>      Path to private credentials/token directory (tokens.json, hubclock.sender.json, etc.)
   --caddy-snippet <path>  Path to Caddy snippet file for hub (/etc/caddy/hub.caddy)
   --caddy-private <path>  Path to Caddy private auth snippet (/etc/caddy/hub-private)
-  --clock-dir <path>      Path to HubClock / lifecycle state directory
+  --clock-dir <path>      Path to HubClock state directory (/var/lib/neighbor-hub/hubclock)
   --backup-dir <path>     Directory where backup archives will be stored (/var/lib/neighbor-hub/backups)
   --retention-days <num>  Number of days to keep backups (default: 7)
   --quiet                 Suppress non-error output
@@ -158,16 +158,56 @@ if [[ -d "$HUB_STATE_DIR" ]]; then
   fi
 fi
 
-# 5. HubClock state
+# 5. HubClock state (/var/lib/neighbor-hub/hubclock)
+HAS_HUBCLOCK_STATE="false"
+HUBCLOCK_HASH=""
+HUBCLOCK_CURSOR="null"
+HUBCLOCK_OUTBOX_COUNT="0"
+HUBCLOCK_PROCESSED_COUNT="0"
+
 if [[ -d "$HUB_CLOCK_DIR" ]]; then
-  log "Copying HubClock lifecycle state from $HUB_CLOCK_DIR..."
-  for clock_db in "$HUB_CLOCK_DIR"/*.sqlite3 "$HUB_CLOCK_DIR"/*.db; do
-    if [[ -f "$clock_db" ]]; then
-      db_base="$(basename "$clock_db")"
-      sqlite3 "$clock_db" ".backup '$STAGING_DIR/hubclock/$db_base'" 2>/dev/null || cp -a "$clock_db" "$STAGING_DIR/hubclock/"
+  log "Copying HubClock state from $HUB_CLOCK_DIR..."
+  for item in "$HUB_CLOCK_DIR"/*; do
+    if [[ -f "$item" ]]; then
+      base="$(basename "$item")"
+      case "$base" in
+        *.sqlite3|*.db)
+          sqlite3 "$item" ".backup '$STAGING_DIR/hubclock/$base'" 2>/dev/null || cp -a "$item" "$STAGING_DIR/hubclock/"
+          ;;
+        *-wal|*-shm|*.lock|*.tmp|*.stale-*|hubclock.lock)
+          # Explicitly exclude locks, leases, and temp files
+          ;;
+        *)
+          cp -a "$item" "$STAGING_DIR/hubclock/"
+          ;;
+      esac
     fi
   done
-  find "$HUB_CLOCK_DIR" -maxdepth 1 -type f ! -name "*.sqlite3" ! -name "*.db" ! -name "*-wal" ! -name "*-shm" -exec cp -a {} "$STAGING_DIR/hubclock/" + 2>/dev/null || true
+  
+  chmod 700 "$STAGING_DIR/hubclock" 2>/dev/null || true
+  find "$STAGING_DIR/hubclock" -type f -exec chmod 600 {} + 2>/dev/null || true
+
+  HUBCLOCK_STATE_FILE="$STAGING_DIR/hubclock/hubclock-state.json"
+  if [[ -f "$HUBCLOCK_STATE_FILE" ]]; then
+    HAS_HUBCLOCK_STATE="true"
+    HUBCLOCK_HASH="$(sha256_file "$HUBCLOCK_STATE_FILE")"
+    if command -v node >/dev/null 2>&1; then
+      eval "$(node -e '
+        const fs = require("node:fs");
+        try {
+          const s = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+          console.log(`HUBCLOCK_CURSOR=${JSON.stringify(s.cursor ?? null)}`);
+          console.log(`HUBCLOCK_OUTBOX_COUNT=${Object.keys(s.outbox ?? {}).length}`);
+          console.log(`HUBCLOCK_PROCESSED_COUNT=${(s.processed ?? []).length}`);
+        } catch (e) {
+          console.log("HUBCLOCK_CURSOR=null");
+          console.log("HUBCLOCK_OUTBOX_COUNT=0");
+          console.log("HUBCLOCK_PROCESSED_COUNT=0");
+        }
+      ' "$HUBCLOCK_STATE_FILE" 2>/dev/null || true)"
+    fi
+    log "HubClock state preserved (hash: $HUBCLOCK_HASH, cursor: $HUBCLOCK_CURSOR, outbox: $HUBCLOCK_OUTBOX_COUNT, processed: $HUBCLOCK_PROCESSED_COUNT)"
+  fi
 fi
 
 # 6. Generate manifest.json
@@ -192,6 +232,13 @@ cat <<EOF > "$MANIFEST"
   },
   "credentials": {
     "has_hubclock_sender": $HAS_HUBCLOCK_SENDER
+  },
+  "hubclock": {
+    "present": $HAS_HUBCLOCK_STATE,
+    "sha256": "$HUBCLOCK_HASH",
+    "cursor": $HUBCLOCK_CURSOR,
+    "outbox_count": $HUBCLOCK_OUTBOX_COUNT,
+    "processed_count": $HUBCLOCK_PROCESSED_COUNT
   },
   "retention_policy_days": $RETENTION_DAYS
 }

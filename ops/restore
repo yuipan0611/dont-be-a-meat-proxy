@@ -8,7 +8,7 @@ HUB_DATA_DIR="${HUB_DATA_DIR:-/var/lib/docker/volumes/neighbor-hub_mail_a_data/_
 HUB_STATE_DIR="${HUB_STATE_DIR:-/var/lib/neighbor-hub/private}"
 CADDY_SNIPPET="${CADDY_SNIPPET:-/etc/caddy/hub.caddy}"
 CADDY_PRIVATE_DIR="${CADDY_PRIVATE_DIR:-/etc/caddy/hub-private}"
-HUB_CLOCK_DIR="${HUB_CLOCK_DIR:-/var/lib/neighbor-hub/lifecycle}"
+HUB_CLOCK_DIR="${HUB_CLOCK_DIR:-${HUBCLOCK_STATE_DIR:-/var/lib/neighbor-hub/hubclock}}"
 
 BACKUP_ARCHIVE=""
 TARGET_DATA_DIR=""
@@ -32,7 +32,7 @@ Options:
   --target-state-dir <path>   Target directory for credentials/tokens/hubclock.sender.json (optional)
   --target-caddy-snippet <path> Target file for Caddy snippet (optional)
   --target-caddy-private <path> Target directory for Caddy private auth snippet (optional)
-  --target-clock-dir <path>   Target directory for HubClock state (optional)
+  --target-clock-dir <path>   Target directory for HubClock state (/var/lib/neighbor-hub/hubclock)
   --force                     Overwrite target directories if not empty
   --verify-only               Verify backup integrity without restoring files
   --quiet                     Suppress non-error output
@@ -230,11 +230,41 @@ if [[ -n "$TARGET_CADDY_PRIVATE" && -d "$STAGING_DIR/caddy/hub-private" ]]; then
   find "$TARGET_CADDY_PRIVATE" -type f -exec chmod 600 {} + 2>/dev/null || true
 fi
 
-# 8. Restore HubClock state if requested
+# 8. Restore HubClock state (/var/lib/neighbor-hub/hubclock) if requested
+RESTORED_CLOCK_STATUS="skipped"
+RESTORED_CLOCK_HASH=""
+RESTORED_CLOCK_CURSOR="n/a"
+
 if [[ -n "$TARGET_CLOCK_DIR" && -d "$STAGING_DIR/hubclock" ]]; then
   log "Restoring HubClock state to $TARGET_CLOCK_DIR..."
   mkdir -p "$TARGET_CLOCK_DIR"
+  chmod 700 "$TARGET_CLOCK_DIR" 2>/dev/null || true
   cp -a "$STAGING_DIR/hubclock"/* "$TARGET_CLOCK_DIR/" 2>/dev/null || true
+  
+  # Ensure strict permissions
+  chmod 700 "$TARGET_CLOCK_DIR" 2>/dev/null || true
+  find "$TARGET_CLOCK_DIR" -type f -exec chmod 600 {} + 2>/dev/null || true
+
+  # Crucial for clean restart: eliminate any stale lock file from target
+  rm -f "$TARGET_CLOCK_DIR/hubclock.lock" "$TARGET_CLOCK_DIR"/*.tmp 2>/dev/null || true
+
+  RESTORED_STATE_FILE="$TARGET_CLOCK_DIR/hubclock-state.json"
+  if [[ -f "$RESTORED_STATE_FILE" ]]; then
+    RESTORED_CLOCK_HASH="$(sha256_file "$RESTORED_STATE_FILE")"
+    if command -v node >/dev/null 2>&1; then
+      eval "$(node -e '
+        const fs = require("node:fs");
+        try {
+          const s = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+          console.log(`RESTORED_CLOCK_CURSOR=${JSON.stringify(s.cursor ?? null)}`);
+        } catch (e) {
+          console.log("RESTORED_CLOCK_CURSOR=corrupted");
+        }
+      ' "$RESTORED_STATE_FILE" 2>/dev/null || true)"
+    fi
+    RESTORED_CLOCK_STATUS="restored (cursor: $RESTORED_CLOCK_CURSOR, hash: $RESTORED_CLOCK_HASH)"
+    log "HubClock state restored successfully: $RESTORED_CLOCK_STATUS"
+  fi
 fi
 
 # 9. Final post-restore verification
@@ -256,5 +286,6 @@ Target Data Dir:  $TARGET_DATA_DIR
 DB SHA256:        $TARGET_HASH
 DB Integrity:     $TARGET_INTEGRITY
 Message Count:    $MSG_COUNT
+HubClock State:   $RESTORED_CLOCK_STATUS
 Status:           RESTORE_SUCCEEDED
 EOF

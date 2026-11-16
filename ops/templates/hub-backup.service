@@ -10,7 +10,7 @@ Environment="HUB_DATA_DIR=/var/lib/docker/volumes/neighbor-hub_mail_a_data/_data
 Environment="HUB_STATE_DIR=/var/lib/neighbor-hub/private"
 Environment="CADDY_SNIPPET=/etc/caddy/hub.caddy"
 Environment="CADDY_PRIVATE_DIR=/etc/caddy/hub-private"
-Environment="HUB_CLOCK_DIR=/var/lib/neighbor-hub/lifecycle"
+Environment="HUB_CLOCK_DIR=/var/lib/neighbor-hub/hubclock"
 Environment="BACKUP_DIR=/var/lib/neighbor-hub/backups"
 Environment="RETENTION_DAYS=7"
 ExecStart=/opt/neighbor-hub/ops/backup
@@ -18,6 +18,6 @@ ExecStart=/opt/neighbor-hub/ops/backup
 # Hardening
 ProtectSystem=strict
 ReadWritePaths=/var/lib/neighbor-hub/backups /tmp
-ReadOnlyPaths=/var/lib/docker/volumes/neighbor-hub_mail_a_data/_data /var/lib/neighbor-hub/private /etc/caddy
+ReadOnlyPaths=/var/lib/docker/volumes/neighbor-hub_mail_a_data/_data /var/lib/neighbor-hub/private /etc/caddy /var/lib/neighbor-hub/hubclock
 NoNewPrivileges=true
 PrivateTmp=true

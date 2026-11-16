@@ -43,7 +43,7 @@ sqlite3 --version
 | `HUB_STATE_DIR` | `/var/lib/neighbor-hub/private` | 私密憑證目錄（含 `tokens.json`、`*.env`、`*.sender.json`，含 `hubclock.sender.json`） | 目錄 `0700`、檔案 `0600` |
 | `CADDY_SNIPPET` | `/etc/caddy/hub.caddy` | 系統 Caddy 的 hub 站點配置片段 | root:root `0644` |
 | `CADDY_PRIVATE_DIR` | `/etc/caddy/hub-private` | 系統 Caddy 私密認證片段目錄（含 `auth.caddy`） | 目錄 `0750`、檔案 `0600`（caddy 用戶） |
-| `HUB_CLOCK_DIR` | `/var/lib/neighbor-hub/lifecycle` | HubClock / lifecycle 排程狀態目錄 | 服務用戶可讀寫 |
+| `HUB_CLOCK_DIR` | `/var/lib/neighbor-hub/hubclock` | HubClock 狀態目錄（存放 `hubclock-state.json`、cursor、outbox） | 目錄 `0700`、檔案 `0600` |
 | `BACKUP_DIR` | `/var/lib/neighbor-hub/backups` | 本地備份封裝目錄（滾動保留 7 天，與 H-02 之 `pre-h02.path` 共存不衝突） | 目錄 `0700`、檔案 `0600` |
 | `RETENTION_DAYS` | `7` | 保留天數 | 正整數 |
 
@@ -55,7 +55,7 @@ sqlite3 --version
 - mail-a 資料庫 `mail.sqlite3` 與 storage root `archive/`
 - Caddy 配置片段：`/etc/caddy/hub.caddy` 與私密認證 `/etc/caddy/hub-private/auth.caddy`
 - 私密憑證與 token 檔：`/var/lib/neighbor-hub/private/`（`tokens.json`、`mail-a.env`、`mac.env`、`windows.env`、`mac.sender.json`、`windows.sender.json`、`hubclock.sender.json`）
-- HubClock lifecycle 排程狀態檔
+- HubClock 狀態檔：`/var/lib/neighbor-hub/hubclock/hubclock-state.json`（保留 cursor、outbox、requests、processed，排除臨時 lock 檔）
 - 自動生成 `manifest.json`（記錄備份時間、各檔案 SHA256、SQLite `PRAGMA integrity_check` 結果與資料庫筆數）
 
 ### 2.1 手動執行與單次驗證（VPS）
@@ -228,6 +228,7 @@ sudo /opt/neighbor-hub/ops/restore \
   --target-state-dir /var/lib/neighbor-hub/private \
   --target-caddy-snippet /etc/caddy/hub.caddy \
   --target-caddy-private /etc/caddy/hub-private \
+  --target-clock-dir /var/lib/neighbor-hub/hubclock \
   --force
 
 # 步驟 5：重新啟動 mail-a 服務
@@ -246,6 +247,7 @@ Target Data Dir:  /var/lib/docker/volumes/neighbor-hub_mail_a_data/_data
 DB SHA256:        413d6668fb3e6d6a27876d13b35237bf7a511cb4fa2eb5f8e7ba531db0c24c5a
 DB Integrity:     ok
 Message Count:    42
+HubClock State:   restored (cursor: 42, hash: e3b0c442...)
 Status:           RESTORE_SUCCEEDED
 ```
 
@@ -254,6 +256,24 @@ Status:           RESTORE_SUCCEEDED
 還原後使用 `client/mail-client.mjs` 透過 `fetchEvents` 與 `readMessage` 讀回訊息：
 1. `events.length` 與 `tailCursor` 必須與備份前一致。
 2. 逐則計算 `readMessage(id)` 的 `message.body_md` 內 `text` 欄位 SHA256，必須與備份前雜湊 100% 逐字吻合。
+
+### 4.3 HubClock 重啟後不重發校驗（No-Replay on Restart Verification）
+
+災難還原後，HubClock 重新啟動時必須確保「重啟後不重發」：
+1. **Cursor 不倒退**：`hubclock-state.json` 內的 `cursor` 完整保留，HubClock 不會從第 0 號事件重新拉取整份 Mail inbox。
+2. **事件不重跑**：`processed` 陣列記錄的已處理 message ID 仍存在，歷史訊息不會被重複解析或觸發。
+3. **Outbox 不重發**：`outbox` 中已標記為 `state: "sent"` 的通知項目不會重複向 Mail 發送信件（`flush()` 僅拉取 `state: "pending"`）。
+
+**驗證方式（以容器或本機 CLI 執行單次 tick 驗收）**：
+```bash
+# 啟動 HubClock 執行一次生命週期 tick
+docker compose -f /opt/neighbor-hub/deploy/compose.yaml -f /opt/neighbor-hub/deploy/hubclock/compose.hubclock.yaml run --rm hubclock node /app/ops/lifecycle/main.mjs once
+```
+**預期結果**：
+- `ingested: 0`（無新增事件需要消費）
+- `resolved: 0`（無過期需決議之項目）
+- `sent: 0`（已送出的通知絕不重複發送）
+- Mail inbox 訊息總數未增加，未產生重複通知郵件。
 
 ---
 
