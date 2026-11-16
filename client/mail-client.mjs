@@ -108,7 +108,11 @@ export function createMailClient(opts) {
       throw new MailError('E-HUB', `Hub 拒絕請求（HTTP ${res.status}）`, { reason: 'rejected', details: { status: res.status } });
     }
     if (notify) return null;
-    return parseRpcBody(text, res.headers.get('content-type'));
+    try {
+      return parseRpcBody(text, res.headers.get('content-type'));
+    } catch {
+      throw new MailError('E-HUB', UNCONFIRMED, { reason: 'protocol', delivery: 'unconfirmed', retryable: true, details: { status: res.status } });
+    }
   }
 
   async function ensureSession() {
@@ -138,7 +142,10 @@ export function createMailClient(opts) {
     if (msg.error) {
       throw new MailError('E-HUB', msg.error.message, { reason: 'rpc_error', details: msg.error });
     }
-    const payload = JSON.parse(msg.result.content[0].text);
+    const payload = tryParse(msg.result?.content?.[0]?.text);
+    if (payload === null || payload === undefined) {
+      throw new MailError('E-HUB', UNCONFIRMED, { reason: 'protocol', delivery: 'unconfirmed', retryable: true });
+    }
     if (msg.result.isError) throw toolError(payload);
     return payload;
   }
@@ -147,7 +154,7 @@ export function createMailClient(opts) {
     const clientEventId = item.clientEventId ?? randomUUID();
     validateItem({ ...item, clientEventId }, { roster });
     const envelope = {
-      v: 1,
+      v: ENVELOPE_VERSION,
       client_event_id: clientEventId,
       kind: item.kind,
       intent: item.intent ?? 'action',
@@ -210,7 +217,41 @@ export function createMailClient(opts) {
     return { raw, message: JSON.parse(raw) };
   }
 
-  return { sendItem, fetchEvents, readMessage, callTool, agentName, projectKey };
+  /**
+   * sendItem with backoff on retryable errors, always reusing the same idempotency key.
+   * 401 / validation / recipient errors stop immediately. If any attempt ended 'unconfirmed',
+   * the final error stays 'unconfirmed' even if a later attempt was a clean 429.
+   */
+  async function sendWithRetry(item, { maxAttempts = 3, baseDelayMs = 1000, maxDelayMs = 30_000 } = {}) {
+    const fixed = { ...item, clientEventId: item.clientEventId ?? randomUUID() };
+    let sawUnconfirmed = false;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const res = await sendItem(fixed);
+        return { ...res, attempts: attempt };
+      } catch (e) {
+        if (!(e instanceof MailError) || !e.retryable) throw e;
+        if (e.delivery === 'unconfirmed') sawUnconfirmed = true;
+        if (attempt >= maxAttempts) {
+          if (sawUnconfirmed && e.delivery !== 'unconfirmed') {
+            throw new MailError('E-HUB', UNCONFIRMED, {
+              reason: e.reason, delivery: 'unconfirmed', retryable: true, idempotencyKey: fixed.clientEventId, details: e.details,
+            });
+          }
+          throw e;
+        }
+        const backoff = Math.min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs);
+        await clock.sleep(e.details?.retryAfterMs ?? backoff);
+      }
+    }
+  }
+
+  /** Marks one message read for this agent. Call only after the agent has actually taken the original. */
+  async function markRead(messageId) {
+    return callTool('mark_message_read', { project_key: projectKey, agent_name: agentName, message_id: messageId });
+  }
+
+  return { sendItem, sendWithRetry, fetchEvents, readMessage, markRead, callTool, agentName, projectKey };
 }
 
 export const ENVELOPE_VERSION = 1;
@@ -307,12 +348,24 @@ function toolError(payload) {
         reason: 'recipient_not_found',
         details: { unknown: err.data?.unknown_local ?? [], hint: err.data?.hint },
       });
+    case 'CURSOR_EXPIRED':
+    case 'CURSOR_AHEAD':
+      return new MailError('E-CURSOR', '收件游標需恢復', { reason: err.type.toLowerCase(), delivery: 'n/a', details: err.data });
     case 'IDEMPOTENCY_KEY_CONFLICT':
       return new MailError('E-CONFLICT', '同一個 idempotency key 已用於不同內容；原訊息保留，不覆寫', {
         reason: 'idempotency_conflict',
       });
     default:
       return new MailError('E-HUB', err.message ?? 'Hub tool error', { reason: 'tool_error', details: { type: err.type } });
+  }
+}
+
+function tryParse(raw) {
+  if (typeof raw !== 'string') return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
   }
 }
 
@@ -346,7 +399,7 @@ export function createStaging({ dir }) {
     async get(id) {
       try {
         const raw = await readFile(join(msgDir, `${id}.json`), 'utf8');
-        return { raw, message: JSON.parse(raw) };
+        return { raw, message: tryParse(raw) };
       } catch (e) {
         if (e.code === 'ENOENT') return null;
         throw e;

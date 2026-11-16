@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createMailClient } from '../mail-client.mjs';
+import { createMailClient, createStaging, syncInbox } from '../mail-client.mjs';
 import { FakeClock, fakeFetch, toolResult, handshake } from './helpers/fakes.mjs';
 
 const PROJECT = '/data/projects/group-a';
@@ -250,4 +250,156 @@ test('ordinary text mentioning sk- or ghp_ briefly is not flagged', async () => 
   const fetch = recordingHub();
   const res = await client(fetch).sendItem(baseItem({ text: 'task-list 與 ghp_ 前綴說明；PRIVATE KEY 這個詞本身不算' }));
   assert.equal(res.status, 'saved');
+});
+
+// ---- retry with the same idempotency key (SDS: 429/503/timeout keep key, back off) ----
+
+function scriptedHub(statuses) {
+  // statuses: per tools/call attempt, a number (HTTP status) or 'ok'
+  let i = 0;
+  return fakeFetch((rpc) => {
+    const hs = handshake(rpc);
+    if (hs) return hs;
+    const s = statuses[Math.min(i++, statuses.length - 1)];
+    if (s === 'ok') return toolResult(rpc.id, { message_id: 9, created_ts: 't', thread_id: EVENT_ID });
+    return { status: s, body: { detail: 'x' }, headers: s === 429 ? { 'retry-after': '3' } : {} };
+  });
+}
+
+test('sendWithRetry retries 503 with backoff on the injected clock and keeps the same key', async () => {
+  const clock = new FakeClock();
+  const fetch = scriptedHub([503, 503, 'ok']);
+  const p = client(fetch, { clock }).sendWithRetry(baseItem(), { maxAttempts: 3, baseDelayMs: 1000 });
+  await clock.advance(999);
+  assert.equal(toolCalls(fetch).length, 1);
+  await clock.advance(1); // 1st backoff 1s
+  assert.equal(toolCalls(fetch).length, 2);
+  await clock.advance(2000); // 2nd backoff 2s
+  const res = await p;
+  assert.equal(res.messageId, 9);
+  assert.equal(res.attempts, 3);
+  const keys = toolCalls(fetch).map((c) => c.rpc.params.arguments.idempotency_key);
+  assert.deepEqual(keys, [EVENT_ID, EVENT_ID, EVENT_ID]);
+});
+
+test('sendWithRetry honours Retry-After on 429', async () => {
+  const clock = new FakeClock();
+  const fetch = scriptedHub([429, 'ok']);
+  const p = client(fetch, { clock }).sendWithRetry(baseItem(), { maxAttempts: 2, baseDelayMs: 100 });
+  await clock.advance(2999);
+  assert.equal(toolCalls(fetch).length, 1);
+  await clock.advance(1);
+  assert.equal((await p).messageId, 9);
+});
+
+test('sendWithRetry stops immediately on 401', async () => {
+  const fetch = scriptedHub([401, 'ok']);
+  await rejectsWith(client(fetch).sendWithRetry(baseItem(), { maxAttempts: 5 }), { code: 'E-AUTH' });
+  assert.equal(toolCalls(fetch).length, 1);
+});
+
+test('once any attempt was unconfirmed, exhausting retries still reports 保存結果未確認', async () => {
+  const clock = new FakeClock();
+  const fetch = scriptedHub([503, 429]);
+  const p = client(fetch, { clock }).sendWithRetry(baseItem(), { maxAttempts: 2, baseDelayMs: 10 });
+  p.catch(() => {});
+  await clock.advance(60_000);
+  await rejectsWith(p, { code: 'E-HUB', delivery: 'unconfirmed', idempotencyKey: EVENT_ID });
+});
+
+// ---- durable receive (SDS API-03) ----
+
+function inboxHub({ pages, messages, failRead = new Set(), cursorError }) {
+  return fakeFetch((rpc) => {
+    const hs = handshake(rpc);
+    if (hs) return hs;
+    if (rpc.method === 'resources/read') {
+      const id = Number(rpc.params.uri.match(/message\/(\d+)/)[1]);
+      if (failRead.has(id)) return { status: 503, body: 'down' };
+      return { jsonrpc: '2.0', id: rpc.id, result: { contents: [{ uri: rpc.params.uri, text: messages[id] }] } };
+    }
+    const a = rpc.params.arguments;
+    if (rpc.params.name === 'fetch_inbox_events') {
+      if (cursorError) return toolResult(rpc.id, { error: { type: cursorError, message: cursorError } }, true);
+      return toolResult(rpc.id, pages[a.after ?? 0]);
+    }
+    if (rpc.params.name === 'mark_message_read') return toolResult(rpc.id, { message_id: a.message_id, read: true });
+    throw new Error('unexpected ' + JSON.stringify(rpc));
+  });
+}
+
+const ev = (cursor, id) => ({ cursor, message_id: id, kind: 'to', delivered_ts: 't', subject: 's', from: 'BlueLake' });
+const rawMsg = (id) => `{"id":${id},"body_md":"原文 ${id} 😀","from":"BlueLake"}`;
+
+async function tmpStaging() {
+  const { mkdtemp } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  return createStaging({ dir: await mkdtemp(join(tmpdir(), 'hub-staging-unit-')) });
+}
+
+test('syncInbox pages oldest-first until has_more is false and commits the last cursor', async () => {
+  const fetch = inboxHub({
+    pages: {
+      0: { events: [ev(1, 10), ev(2, 11)], next_cursor: 2, has_more: true, tail_cursor: 3 },
+      2: { events: [ev(3, 12)], next_cursor: 3, has_more: false, tail_cursor: 3 },
+    },
+    messages: { 10: rawMsg(10), 11: rawMsg(11), 12: rawMsg(12) },
+  });
+  const staging = await tmpStaging();
+  const r = await syncInbox({ client: client(fetch, { agentName: 'RedStone' }), staging });
+  assert.deepEqual(r.staged, [10, 11, 12]);
+  assert.equal(await staging.getCursor(), 3);
+  assert.equal((await staging.get(11)).raw, rawMsg(11));
+  const evArgs = toolCalls(fetch).filter((c) => c.rpc.params.name === 'fetch_inbox_events').map((c) => c.rpc.params.arguments);
+  assert.ok(evArgs.every((a) => a.position_now === undefined && a.agent_name === 'RedStone'));
+  assert.equal(toolCalls(fetch).some((c) => c.rpc.params.name === 'mark_message_read'), false);
+});
+
+test('a read failure mid-page does not commit the cursor; the next sync stages the rest', async () => {
+  const pages = { 0: { events: [ev(1, 10), ev(2, 11)], next_cursor: 2, has_more: false, tail_cursor: 2 } };
+  const messages = { 10: rawMsg(10), 11: rawMsg(11) };
+  const staging = await tmpStaging();
+  await assert.rejects(
+    syncInbox({ client: client(inboxHub({ pages, messages, failRead: new Set([11]) })), staging }),
+    (e) => e.code === 'E-HUB',
+  );
+  assert.equal(await staging.getCursor(), null);
+  assert.deepEqual(await staging.list(), [10]);
+  const r = await syncInbox({ client: client(inboxHub({ pages, messages })), staging });
+  assert.deepEqual(r.staged, [11]);
+  assert.equal(await staging.getCursor(), 2);
+});
+
+for (const type of ['CURSOR_EXPIRED', 'CURSOR_AHEAD']) {
+  test(`${type} surfaces as E-CURSOR (收件游標需恢復) and leaves the cursor alone`, async () => {
+    const staging = await tmpStaging();
+    await staging.setCursor(5);
+    await assert.rejects(syncInbox({ client: client(inboxHub({ cursorError: type })), staging }), (e) => {
+      assert.equal(e.code, 'E-CURSOR');
+      assert.equal(e.message, '收件游標需恢復');
+      return true;
+    });
+    assert.equal(await staging.getCursor(), 5);
+  });
+}
+
+test('markRead calls mark_message_read for this agent only when asked', async () => {
+  const fetch = inboxHub({ pages: {}, messages: {} });
+  await client(fetch, { agentName: 'RedStone' }).markRead(12);
+  const [call] = toolCalls(fetch);
+  assert.equal(call.rpc.params.name, 'mark_message_read');
+  assert.deepEqual(call.rpc.params.arguments, { project_key: PROJECT, agent_name: 'RedStone', message_id: 12 });
+});
+
+test('staging.put never overwrites an already staged original', async () => {
+  const staging = await tmpStaging();
+  assert.equal(await staging.put(1, 'first'), true);
+  assert.equal(await staging.put(1, 'second'), false);
+  assert.equal((await staging.get(1)).raw, 'first');
+});
+
+test('HTTP 200 with an unparseable body after send is unconfirmed, not a crash', async () => {
+  const fetch = fakeFetch((rpc) => handshake(rpc) ?? { status: 200, body: '<html>proxy page</html>' });
+  await rejectsWith(client(fetch).sendItem(baseItem()), { code: 'E-HUB', reason: 'protocol', delivery: 'unconfirmed' });
 });
