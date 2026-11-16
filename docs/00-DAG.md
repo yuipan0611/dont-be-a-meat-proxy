@@ -120,3 +120,16 @@ flowchart TD
 - T7 經兩次追加對齊為 v0.3（<ORCA_ID>、<ORCA_ID>），已收入 `docs/04-sad.md`、`docs/05-sds.md`。
 - T9（PM）：`docs/07-tickets-mvp.md`（H-01～H-08）。
 - G2+G3 審查包：`docs/gates/G2G3-review.md`，✅ 2026-11-17 維護者 全部照建議核准。
+
+## MVP 實作（G2+G3 ✅ 2026-11-17；docs checkpoint d0a8d63）
+
+| 票 | Task ID | Dispatch ID | Agent | 期限 | 狀態 |
+|---|---|---|---|---|---|
+| H-01 runbook＋Hostinger MCP 代做 DNS／防火牆 | <ORCA_ID> | <ORCA_ID> | codex-senior-swe | 11-19 | runbook ✅ succeeded（719b04a），已收入 docs/ops/；待 維護者 跑 SSH 盤點＋PM 用 Hostinger MCP 加 DNS／防火牆 |
+| H-03 mail-client | <ORCA_ID> | <ORCA_ID> | swe-Tom | 11-20 | 進行中 |
+| H-04a asyncRewake spike | <ORCA_ID> | <ORCA_ID> | swe-Ben | 11-19 | 進行中 |
+| H-07 接入手冊＋轉貼紀錄表 | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-2 | 11-21 | ✅ 初稿 succeeded（605ea75），PM 修正後收入 docs/onboarding-S1.md、docs/metrics/G-01-paste-log.md；H-02／H-04 定稿後補實際值 |
+| H-02、H-05、H-06 | — | — | codex／agy-1 | 11-20～22 | 等 H-01 |
+| T14 F-10 InsForge 評估（維護者 建議參考） | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-1 | 11-19 | 進行中，不阻塞 MVP |
+
+註：Codex worker 沒有 Hostinger MCP 工具（escalation <ORCA_ID>）→ DNS／防火牆改由 PM 端 Hostinger MCP 處理，Codex 只寫 runbook＋hPanel 手動備案。
