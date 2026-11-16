@@ -32,6 +32,18 @@ export class MailError extends Error {
   }
 }
 
+const UNCONFIRMED = '保存結果未確認';
+// Errors where the TCP connection never opened, so the request cannot have reached the Hub.
+const NOT_CONNECTED_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);
+
+function parseRpcBody(text, contentType) {
+  if (contentType && contentType.includes('text/event-stream')) {
+    const data = text.split(/\r?\n/).filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim());
+    return JSON.parse(data[data.length - 1]);
+  }
+  return JSON.parse(text);
+}
+
 export function createMailClient(opts) {
   const {
     url,
@@ -42,6 +54,8 @@ export function createMailClient(opts) {
     clock = systemClock,
     fetch = globalThis.fetch,
     randomUUID = nodeRandomUUID,
+    timeoutMs = 10_000, // SDS SR-ERR-05 engineering value; recalibrate after WAN test
+    roster = null, // optional canonical peer names (hub-client.json); null = let the Hub decide
   } = opts;
   let nextId = 0;
   let sessionId = null;
@@ -56,25 +70,64 @@ export function createMailClient(opts) {
     if (sessionId) headers['mcp-session-id'] = sessionId;
     const body = { jsonrpc: '2.0', method, params };
     if (!notify) body.id = ++nextId;
-    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+
+    const ac = new AbortController();
+    const timer = clock.setTimeout(() => ac.abort(new Error('hub request timeout')), timeoutMs);
+    let res, text;
+    try {
+      res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: ac.signal });
+      text = await res.text();
+    } catch (e) {
+      if (ac.signal.aborted) {
+        throw new MailError('E-HUB', UNCONFIRMED, { reason: 'timeout', delivery: 'unconfirmed', retryable: true });
+      }
+      const code = e?.cause?.code ?? e?.code;
+      if (NOT_CONNECTED_CODES.has(code)) {
+        throw new MailError('E-HUB', '未送達：Hub 連不上', { reason: 'network', delivery: 'not_saved', retryable: true, details: { code } });
+      }
+      throw new MailError('E-HUB', UNCONFIRMED, { reason: 'network', delivery: 'unconfirmed', retryable: true, details: { code } });
+    } finally {
+      clock.clearTimeout(timer);
+    }
+
     const sid = res.headers.get('mcp-session-id');
     if (sid) sessionId = sid;
-    const text = await res.text();
     if (res.status === 401 || res.status === 403) {
       throw new MailError('E-AUTH', '連線未授權或已撤銷', { reason: 'unauthorized' });
     }
+    if (res.status === 429) {
+      const ra = Number(res.headers.get('retry-after'));
+      throw new MailError('E-HUB', '未送達：Hub 忙碌，稍後用同一 key 重送', {
+        reason: 'rate_limited', retryable: true, details: { retryAfterMs: Number.isFinite(ra) && ra > 0 ? ra * 1000 : null },
+      });
+    }
+    if (res.status >= 500) {
+      throw new MailError('E-HUB', UNCONFIRMED, { reason: 'unavailable', delivery: 'unconfirmed', retryable: true, details: { status: res.status } });
+    }
+    if (res.status >= 400) {
+      throw new MailError('E-HUB', `Hub 拒絕請求（HTTP ${res.status}）`, { reason: 'rejected', details: { status: res.status } });
+    }
     if (notify) return null;
-    return JSON.parse(text);
+    return parseRpcBody(text, res.headers.get('content-type'));
   }
 
   async function ensureSession() {
     if (initialized) return;
-    await rpc('initialize', {
-      protocolVersion: '2025-03-26',
-      capabilities: {},
-      clientInfo: { name: 'hub-mail-client', version: '1' },
-    });
-    await rpc('notifications/initialized', {}, { notify: true });
+    try {
+      await rpc('initialize', {
+        protocolVersion: '2025-03-26',
+        capabilities: {},
+        clientInfo: { name: 'hub-mail-client', version: '1' },
+      });
+      await rpc('notifications/initialized', {}, { notify: true });
+    } catch (e) {
+      // Nothing but the handshake was sent, so no message can have been stored.
+      if (e instanceof MailError && e.delivery === 'unconfirmed') {
+        e.delivery = 'not_saved';
+        e.message = '未送達：無法連線 Hub';
+      }
+      throw e;
+    }
     initialized = true;
   }
 
@@ -92,6 +145,7 @@ export function createMailClient(opts) {
 
   async function sendItem(item) {
     const clientEventId = item.clientEventId ?? randomUUID();
+    validateItem({ ...item, clientEventId }, { roster });
     const envelope = {
       v: 1,
       client_event_id: clientEventId,
@@ -157,6 +211,92 @@ export function createMailClient(opts) {
   }
 
   return { sendItem, fetchEvents, readMessage, callTool, agentName, projectKey };
+}
+
+export const ENVELOPE_VERSION = 1;
+export const MAX_TEXT_CODE_POINTS = 20_000;
+export const KINDS = Object.freeze(['handoff', 'help', 'decision', 'task']);
+export const INTENTS = Object.freeze(['question', 'action']);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Unicode code points, not UTF-16 units: one emoji = 1. */
+export function countCodePoints(s) {
+  let n = 0;
+  for (const _ of s) n++;
+  return n;
+}
+
+// SR-MSG-04 minimum categories. Length thresholds are engineering defaults (SDS: undecided);
+// bump SECRET_RULES_VERSION whenever a rule changes so server/client stay comparable.
+export const SECRET_RULES_VERSION = '2026-11-17.1';
+export const SECRET_RULES = Object.freeze([
+  { id: 'openai-sk', re: /\bsk-[A-Za-z0-9_-]{20,}/ },
+  { id: 'github-ghp', re: /\bghp_[A-Za-z0-9]{30,}/ },
+  { id: 'github-pat', re: /\bgithub_pat_[A-Za-z0-9_]{20,}/ },
+  { id: 'private-key-pem', re: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/ },
+]);
+
+/** Returns the rule IDs that match (never the matched text). */
+export function detectSecrets(...values) {
+  const hits = new Set();
+  for (const v of values.flat()) {
+    if (typeof v !== 'string') continue;
+    for (const r of SECRET_RULES) if (r.re.test(v)) hits.add(r.id);
+  }
+  return [...hits];
+}
+
+function fieldError(field, message, extra = {}) {
+  return new MailError('E-FIELD', message, { reason: 'field', details: { field, ...extra } });
+}
+
+const nonEmpty = (v) => typeof v === 'string' && v.trim().length > 0;
+function isUrl(v) {
+  try {
+    const u = new URL(v);
+    return u.protocol === 'https:' || u.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+/** Client-side pre-check (SDS API-02). Throws MailError; never mutates the item. */
+export function validateItem(item, { roster = null } = {}) {
+  if (item.attachments !== undefined || item.attachmentPaths !== undefined) {
+    throw new MailError('E-ATTACH', 'Hub 不收附件，請放 PR／commit 連結', { reason: 'attachment' });
+  }
+  if (!Array.isArray(item.to) || item.to.length === 0 || !item.to.every(nonEmpty)) {
+    throw fieldError('to', '收件者至少一位');
+  }
+  if (!nonEmpty(item.subject)) throw fieldError('subject', '主旨必填');
+  if (!KINDS.includes(item.kind)) throw fieldError('kind', `類型須為 ${KINDS.join('|')}`);
+  if (item.intent !== undefined && !INTENTS.includes(item.intent)) throw fieldError('intent', `性質須為 ${INTENTS.join('|')}`);
+  if (!nonEmpty(item.sourceSession)) throw fieldError('sourceSession', 'source_session 必填');
+  if (!nonEmpty(item.summary)) throw fieldError('summary', '摘要必填');
+  if (!nonEmpty(item.text)) throw fieldError('text', '內容必填');
+  const n = countCodePoints(item.text);
+  if (n > MAX_TEXT_CODE_POINTS) {
+    throw fieldError('text', `內容超過 ${MAX_TEXT_CODE_POINTS} 字，請改放 GitHub 連結`, { limit: MAX_TEXT_CODE_POINTS, actual: n });
+  }
+  const links = item.links ?? [];
+  if (!Array.isArray(links) || !links.every(isUrl)) throw fieldError('links', 'links 須為 http(s) URL 字串陣列');
+  const unfinished = item.unfinished ?? [];
+  if (!Array.isArray(unfinished) || !unfinished.every((u) => typeof u === 'string')) {
+    throw fieldError('unfinished', 'unfinished 須為字串陣列');
+  }
+  if (!UUID_RE.test(item.clientEventId)) throw fieldError('clientEventId', 'client_event_id 須為 UUID');
+  const rules = detectSecrets(item.subject, item.summary, item.text, links, unfinished);
+  if (rules.length) {
+    throw new MailError('E-SECRET', 'Hub 禁止存放密碼／API key', {
+      reason: 'secret', details: { rules, rulesVersion: SECRET_RULES_VERSION },
+    });
+  }
+  if (roster) {
+    const unknown = item.to.filter((r) => !roster.includes(r));
+    if (unknown.length) {
+      throw new MailError('E-RCPT', '收件者不存在', { reason: 'recipient_not_found', details: { unknown, roster: [...roster] } });
+    }
+  }
 }
 
 function toolError(payload) {
