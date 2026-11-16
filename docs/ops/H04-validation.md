@@ -125,3 +125,10 @@ Get-Content "$env:LOCALAPPDATA\hub-client\group-a\RedStone\hook.log" -Tail 20
 ```
 
 注意：Windows 不會「收養」孤兒程序，watcher 改用「父程序是否還活著」判斷；這段在 Mac 以單元測試＋真機驗過，Windows 上是第一次實測。強制結束後 watcher 最慢在下一次輪詢（≤15 秒）退出。
+
+## 清理（本次 Mac 測試留下的東西）
+
+- 本機測試 Mail、watcher、測試用 Claude session 都已停止（`ps` 查過無殘留）；單元測試的暫存資料夾改為測完自動刪除。
+- `spikes/h04/state/`（已 gitignore）：測試專案、本機 journal、tty 紀錄；不要了就 `rm -rf spikes/h04/state spikes/h04/state-hub.out`。
+- 測試 session 的 transcript 在目前 Claude profile 的 projects 目錄：`ls "$CLAUDE_CONFIG_DIR/projects" | grep -E 'spikes-h04-(state|probe)'`，確認後刪除。
+- 沒有改任何使用者層或全域設定；信任對話框只在測試資料夾出現過（profile 的 `.claude.json` 沒有新增這些資料夾的紀錄）。

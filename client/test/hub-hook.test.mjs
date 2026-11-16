@@ -1,6 +1,7 @@
 // Unit tests for hub-hook.mjs (H-04). Seam: runHook(mode, { input, env, deps }) → { stdout, stderr, exitCode }.
 // The Hub is an in-memory fake with the mail-client interface; time is a FakeClock.
-import { test } from 'node:test';
+import { test, after } from 'node:test';
+import { rmSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,11 +16,16 @@ const CONFIG = {
   recent_handoffs: 5, poll_seconds: 15,
 };
 
+const tempDirs = [];
+after(() => { for (const d of tempDirs) rmSync(d, { recursive: true, force: true }); });
+
 /** One machine: its project dir (with hub-client.json), its local data dir, and deps wired to the fake hub. */
 function machine(hub, { agent = 'RedStone', clock = new FakeClock(Date.parse('2026-11-18T01:00:00Z')), alive = () => true, revision = () => 'rev-0' } = {}) {
   const projectDir = mkdtempSync(join(tmpdir(), 'hubhook-proj-'));
+  tempDirs.push(projectDir);
   writeFileSync(join(projectDir, 'hub-client.json'), JSON.stringify(CONFIG));
   const dataDir = mkdtempSync(join(tmpdir(), 'hubhook-data-'));
+  tempDirs.push(dataDir);
   const env = { HUB_TOKEN: 'test-device-token', HUB_SENDER_TOKEN: 'test-sender', HUB_AGENT: agent, HUB_DATA_DIR: dataDir, CLAUDE_PROJECT_DIR: projectDir };
   const proc = { pid: 4242, ppid: 777 };
   const deps = {
