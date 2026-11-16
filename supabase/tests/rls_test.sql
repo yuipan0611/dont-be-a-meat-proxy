@@ -97,22 +97,40 @@ end $$;
 -- T7 HubClock 期限不變量：question 必須 +24h；action 未 presented 不能有 deadline
 do $$
 begin
-  insert into public.hub_clock_requests (group_id, root_mail_id, recipient_session, kind, root_created_at, deadline_at)
-  values ('group-a', 1, 'win-s1', 'question', '2026-12-01T00:00Z', '2026-12-01T12:00Z');
+  insert into public.hub_clock_requests (group_id, root_mail_id, recipient_agent, recipient_session, kind, root_created_at, deadline_at)
+  values ('group-a', 1, 'RedStone', 'win-s1', 'question', '2026-12-01T00:00Z', '2026-12-01T12:00Z');
   raise exception 'T7a FAIL: wrong question deadline accepted';
 exception when check_violation then
   raise notice 'T7a PASS: question deadline != created+24h rejected';
 end $$;
-insert into public.hub_clock_requests (group_id, root_mail_id, recipient_session, kind, root_created_at, deadline_at)
-values ('group-a', 2, 'win-s1', 'question', '2026-12-01T00:00Z', '2026-12-02T00:00Z');
+insert into public.hub_clock_requests (group_id, root_mail_id, recipient_agent, recipient_session, kind, root_created_at, deadline_at)
+values ('group-a', 2, 'RedStone', null, 'question', '2026-12-01T00:00Z', '2026-12-02T00:00Z');
 do $$
 begin
-  insert into public.hub_clock_requests (group_id, root_mail_id, recipient_session, kind, root_created_at, deadline_at)
-  values ('group-a', 3, 'win-s1', 'action', '2026-12-01T00:00Z', '2026-12-01T00:30Z');
+  insert into public.hub_clock_requests (group_id, root_mail_id, recipient_agent, recipient_session, kind, root_created_at, deadline_at)
+  values ('group-a', 3, 'RedStone', 'win-s1', 'action', '2026-12-01T00:00Z', '2026-12-01T00:30Z');
   raise exception 'T7b FAIL: action deadline without presented accepted';
 exception when check_violation then
   raise notice 'T7b PASS: action deadline before presented rejected';
 end $$;
+-- T7c（H-05）presented 必須綁 session；同一 root 對同一 agent 只有一筆
+do $$
+begin
+  insert into public.hub_clock_requests (group_id, root_mail_id, recipient_agent, recipient_session, kind, status, root_created_at, presented_at, deadline_at)
+  values ('group-a', 4, 'RedStone', null, 'action', 'presented', '2026-12-01T00:00Z', '2026-12-01T01:00Z', '2026-12-01T01:30Z');
+  raise exception 'T7c FAIL: presented without session accepted';
+exception when check_violation then
+  raise notice 'T7c PASS: presented without recipient_session rejected';
+end $$;
+do $$
+begin
+  insert into public.hub_clock_requests (group_id, root_mail_id, recipient_agent, kind, root_created_at, deadline_at)
+  values ('group-a', 2, 'RedStone', 'question', '2026-12-01T00:00Z', '2026-12-02T00:00Z');
+  raise exception 'T7d FAIL: duplicate (root, recipient_agent) accepted';
+exception when unique_violation then
+  raise notice 'T7d PASS: one request per (group, root, recipient_agent)';
+end $$;
+insert into public.hub_clock_processed (consumer, message_id) values ('group-a:JadeBluff', 1);
 reset role;
 
 -- T8 已撤銷的 anon／authenticated 不在 caddy view 上有權限
@@ -123,6 +141,17 @@ begin
   raise exception 'T8 FAIL: anon read caddy_allowlist_export';
 exception when insufficient_privilege then
   raise notice 'T8 PASS: anon select caddy_allowlist_export -> permission denied';
+end $$;
+reset role;
+
+-- T9 anon 讀不到 hub_clock_processed
+set local role anon;
+do $$
+begin
+  perform 1 from public.hub_clock_processed;
+  raise exception 'T9 FAIL: anon read hub_clock_processed';
+exception when insufficient_privilege then
+  raise notice 'T9 PASS: anon select hub_clock_processed -> permission denied';
 end $$;
 reset role;
 

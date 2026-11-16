@@ -1,0 +1,40 @@
+# HubClock (H-05) — ALTERNATIVE: systemd running Node on the host.
+# Only if 維護者 later decides to install Node ≥ 22 on the VPS (H-02 currently says no; prefer
+# compose.hubclock.yaml). Install:
+#   sudo useradd --system --home /var/lib/neighbor-hub/hubclock --shell /usr/sbin/nologin hubclock
+#   sudo chown hubclock: /var/lib/neighbor-hub/private/{mail-a.env,hubclock.sender.json}   # keep mode 600
+#   sudo install -d -o hubclock -m 700 /var/lib/neighbor-hub/hubclock
+#   sudo cp deploy/hubclock/hubclock.service /etc/systemd/system/ && sudo systemctl daemon-reload
+#   sudo systemctl enable --now hubclock && journalctl -u hubclock -f
+# Note: the mail-a.env owner change must not break H-02's tooling; agree with H-02 before using this.
+[Unit]
+Description=HubClock lifecycle timers (H-05)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hubclock
+Group=hubclock
+WorkingDirectory=/opt/neighbor-hub
+Environment=HUBCLOCK_MAIL_URL=http://127.0.0.1:8765/mcp/
+Environment=HUB_PRIVATE_DIR=/var/lib/neighbor-hub/private
+Environment=HUBCLOCK_DATA_DIR=/var/lib/neighbor-hub/hubclock
+Environment=HUB_GROUP_ID=group-a
+Environment=HUBCLOCK_INTERVAL_S=15
+ExecStart=/usr/bin/node /opt/neighbor-hub/ops/lifecycle/main.mjs run
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGTERM
+TimeoutStopSec=20
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/neighbor-hub/hubclock
+ReadOnlyPaths=/opt/neighbor-hub /var/lib/neighbor-hub/private
+CapabilityBoundingSet=
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target
