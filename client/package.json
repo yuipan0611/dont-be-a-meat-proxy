@@ -1,0 +1,11 @@
+{
+  "name": "hub-client",
+  "private": true,
+  "description": "Mac/Windows Node glue for the Hub (H-03 mail-client, H-04 hub-hook). Zero runtime dependencies.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test test/mail-client.test.mjs",
+    "test:integration": "node --test test/mail-client.integration.test.mjs",
+    "test:all": "node --test test/mail-client.test.mjs test/mail-client.integration.test.mjs"
+  }
+}
