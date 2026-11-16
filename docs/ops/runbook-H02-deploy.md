@@ -17,6 +17,14 @@ python3 --version
 
 預期：Caddy 實際版本、目前只有 office 的約 59 bytes 設定、服務帳號及 reload 命令。版本以實機輸出為準，不升級到本機驗證用的 v2.11.9。此時 Caddyfile 還沒有 hub token，可貼回 PM；後續的 `hub-private/auth.caddy`、`tokens.json`、`.env`、sender 檔與含秘密的錯誤 log 不貼。
 
+VPS 的驗證使用現有系統 `/usr/bin/caddy`，不依賴 gitignored 的 spike binary。若要在 VPS 的 repo 目錄執行 operator 測試：
+
+```sh
+CADDY_BIN=/usr/bin/caddy python3 -m unittest discover -s ops/test -v
+```
+
+預期 7 tests、OK，沒有 skip。測試只驗證暫存設定，不 reload 系統服務。本機開發的查找順序是可執行的 `CADDY_BIN` → PATH 上的 `caddy` → `spikes/f01b/bin/caddy`；全部找不到時，Caddy 設定驗證那項會明列 `skipped` 與原因，其餘 6 項繼續。`OK (skipped=1)` 不代表已驗過 Caddy 語法；若已找到 binary 但 validate 拒絕設定，仍會失敗，不能以 skip 略過。
+
 請 PM 核對 office site 已有明確 `{ … }` 區塊，才能在區塊外加 import。若原檔是省略大括號的單站點格式，先請 PM 依原內容給最小包裹方式，不自行重寫代理。若服務不是從這個 Caddyfile reload、或服務帳號不是 `caddy`，先回報，不能硬套後面的預設路徑／owner。`command not found` 或 Python <3.10 也先回報。
 
 在 Mac 另開 Terminal，記下 office 原狀與回應碼：

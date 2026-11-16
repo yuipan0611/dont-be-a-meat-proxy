@@ -1,8 +1,10 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -39,6 +41,14 @@ class OperatorTests(unittest.TestCase):
         self.assertTrue(all(v not in result.stdout + result.stderr for v in values))
 
     def test_prepared_allowlist_is_private_and_valid_with_existing_office_site(self):
+        caddy = (shutil.which(os.environ.get('CADDY_BIN', ''))
+                 or shutil.which('caddy')
+                 or shutil.which(str(ROOT / 'spikes/f01b/bin/caddy')))
+        if caddy is None:
+            reason = ('Caddy executable not found via CADDY_BIN, PATH, or spikes/f01b/bin/caddy; '
+                      'real Caddy configuration validation was not run')
+            print(reason, file=sys.stderr)
+            self.skipTest(reason)
         self.assertEqual(self.run_op('init-secrets').returncode, 0)
         output = self.dir / 'caddy-private' / 'auth.caddy'
         result = self.run_op('render-caddy', '--output', str(output), '--owner', 'self', '--prepare-only')
@@ -48,7 +58,6 @@ class OperatorTests(unittest.TestCase):
         config.write_text('{\n admin off\n auto_https off\n}\n'
                           'http://office.localhost:18880 {\n respond "office untouched" 200\n}\n'
                           'http://hub.localhost:18881 {\n import ' + json.dumps(str(output)) + '\n}\n')
-        caddy = os.environ.get('CADDY_BIN', str(ROOT / 'spikes/f01b/bin/caddy'))
         checked = subprocess.run([caddy, 'validate', '--config', str(config), '--adapter', 'caddyfile'],
                                  capture_output=True, text=True)
         self.assertEqual(checked.returncode, 0, 'Caddy rejected the prepared configuration')
