@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "D5 Discord 查進度（上線）",
+    "locale": "zh-TW",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/D5-discord-status.html"
+  },
+  "lanes": [
+    { "id": "yui", "label": "維護者（手機 Discord）" },
+    { "id": "bot", "label": "Discord bot＋專案助理" },
+    { "id": "data", "label": "唯讀資料來源" },
+    { "id": "fail", "label": "拒絕／無資料", "variant": "exception" }
+  ],
+  "mainPath": ["ask", "perm", "budget", "assistant", "compose", "reply"],
+  "nodes": [
+    { "id": "ask", "lane": "yui", "col": 0, "type": "external", "label": "問「現在做到哪」", "sublabel": "觸發方式見 GAP-17" },
+    { "id": "reply", "lane": "yui", "col": 5, "type": "frontend", "label": "只有提問者看見", "sublabel": "可選擇公開" },
+    { "id": "perm", "lane": "bot", "col": 1, "type": "security", "label": "是成員？", "sublabel": "permissions 白名單" },
+    { "id": "budget", "lane": "bot", "col": 2, "type": "security", "label": "今日額度？", "sublabel": "每日上限" },
+    { "id": "assistant", "lane": "bot", "col": 3, "type": "backend", "label": "專案助理 LLM", "sublabel": "只掛唯讀工具" },
+    { "id": "compose", "lane": "bot", "col": 5, "type": "backend", "label": "組回覆", "sublabel": "附 ID＋時間；草稿／正式分開" },
+    { "id": "recall", "lane": "data", "col": 3, "type": "database", "label": "Hindsight recall", "sublabel": "bank 代理＋原文" },
+    { "id": "issues", "lane": "data", "col": 4, "type": "database", "label": "GitHub Issues", "sublabel": "進行中任務" },
+    { "id": "deny", "lane": "fail", "col": 1, "type": "security", "label": "拒絕", "sublabel": "不透露專案內容" },
+    { "id": "quota", "lane": "fail", "col": 2, "type": "security", "label": "今日額度已用完", "sublabel": "不再產生費用；通知 維護者" },
+    { "id": "nodata", "lane": "fail", "col": 5, "type": "messagebus", "label": "記憶中沒有", "sublabel": "不臆測" }
+  ],
+  "edges": [
+    { "id": "q1", "from": "ask", "to": "perm" },
+    { "id": "q2", "from": "perm", "to": "budget", "label": "是", "variant": "emphasis" },
+    { "id": "q3", "from": "perm", "to": "deny", "label": "否", "variant": "security", "role": "error" },
+    { "id": "q4", "from": "budget", "to": "assistant", "label": "未超過", "variant": "emphasis" },
+    { "id": "q5", "from": "budget", "to": "quota", "label": "已超過", "variant": "security", "role": "error" },
+    { "id": "q6", "from": "assistant", "to": "recall", "label": "唯讀查詢" },
+    { "id": "q7", "from": "assistant", "to": "issues", "label": "唯讀查詢", "fromSide": "right", "toSide": "top" },
+    { "id": "q8", "from": "assistant", "to": "compose", "label": "依據", "variant": "emphasis" },
+    { "id": "q9", "from": "compose", "to": "reply", "label": "ephemeral", "variant": "emphasis" },
+    { "id": "q10", "from": "compose", "to": "nodata", "label": "查無依據", "variant": "dashed", "role": "branch" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "批次與驗收", "items": ["上線（11-30）：全部", "MVP 不含（無 Hindsight、無 bot）", "驗收：G-04、AC-08.1～08.6"] },
+    { "dot": "rose", "title": "缺口（見 README）", "items": ["GAP-16 交接如何進 Hindsight（誰寫、何時）", "GAP-17 ephemeral 只適用 slash，一般訊息做不到", "GAP-18 LLM 供應商（D-4）與費用上限機制", "GAP-19 回覆要引用的「ID」是哪一種"] }
+  ]
+}

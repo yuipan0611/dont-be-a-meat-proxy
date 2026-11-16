@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "D3 auto mode（批次待對齊，建議上線）",
+    "locale": "zh-TW",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/D3-auto-mode.html"
+  },
+  "lanes": [
+    { "id": "a", "label": "發送 agent A" },
+    { "id": "owner", "label": "收件人（B 的擁有者）" },
+    { "id": "bagent", "label": "收件 agent B" },
+    { "id": "fail", "label": "拒絕／回到確認", "variant": "exception" },
+    { "id": "discord", "label": "Discord〔上線批次〕" }
+  ],
+  "mainPath": ["open", "validate", "record", "check", "autoexec", "close", "notify"],
+  "nodes": [
+    { "id": "aaction", "lane": "a", "col": 3, "type": "frontend", "label": "A 送出 action", "sublabel": "寫檔／執行／接任務" },
+    { "id": "open", "lane": "owner", "col": 0, "type": "external", "label": "開啟 auto mode", "sublabel": "指定對象＋時長" },
+    { "id": "validate", "lane": "bagent", "col": 1, "type": "security", "label": "檢查設定", "sublabel": "預設 1h、最長 4h" },
+    { "id": "record", "lane": "bagent", "col": 2, "type": "database", "label": "記錄開啟", "sublabel": "開啟者／對象／起訖" },
+    { "id": "check", "lane": "bagent", "col": 3, "type": "security", "label": "對 A 有效且未到期？", "sublabel": "其他對象不適用" },
+    { "id": "autoexec", "lane": "bagent", "col": 4, "type": "backend", "label": "自動執行", "sublabel": "每次記錄結果" },
+    { "id": "close", "lane": "bagent", "col": 5, "type": "backend", "label": "到期／提前關閉", "sublabel": "立即失效" },
+    { "id": "invalid", "lane": "fail", "col": 1, "type": "security", "label": "拒絕設定", "sublabel": "缺對象、超過 4h、非收件人" },
+    { "id": "fallback", "lane": "fail", "col": 3, "type": "messagebus", "label": "改走 D2 確認", "sublabel": "其他對象或已到期" },
+    { "id": "notify", "lane": "discord", "col": 5, "type": "messagebus", "label": "通知 維護者", "sublabel": "開啟／每次執行／結束" }
+  ],
+  "edges": [
+    { "id": "m1", "from": "open", "to": "validate", "label": "本機指令" },
+    { "id": "m2", "from": "validate", "to": "record", "label": "通過", "variant": "emphasis" },
+    { "id": "m3", "from": "validate", "to": "invalid", "label": "不合規", "variant": "security", "role": "error" },
+    { "id": "m4", "from": "record", "to": "check", "label": "生效中" },
+    { "id": "m5", "from": "aaction", "to": "check", "label": "經 Hub 投遞", "variant": "emphasis" },
+    { "id": "m6", "from": "check", "to": "autoexec", "label": "是", "variant": "emphasis" },
+    { "id": "m7", "from": "check", "to": "fallback", "label": "否", "variant": "security", "role": "error" },
+    { "id": "m8", "from": "autoexec", "to": "close", "label": "時間到", "variant": "dashed" },
+    { "id": "m9", "from": "close", "to": "notify", "label": "結束通知", "variant": "dashed", "role": "async" },
+    { "id": "m10", "from": "autoexec", "to": "notify", "label": "每次", "variant": "dashed", "role": "async", "fromSide": "bottom", "toSide": "left" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "批次與驗收", "items": ["批次待對齊：Brief MVP 只寫「同步傳訊」", "建議：上線批次（通知依賴 Discord）", "驗收：AC-07.1～07.8"] },
+    { "dot": "rose", "title": "缺口（見 README）", "items": ["GAP-09 auto mode 狀態存在哪裡", "GAP-10 到期的時鐘與 session 重啟後的狀態", "GAP-11 遠端請求不得改 auto mode 本身"] }
+  ]
+}

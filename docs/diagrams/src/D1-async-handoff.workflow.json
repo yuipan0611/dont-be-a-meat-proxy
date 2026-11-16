@@ -1,0 +1,265 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "D1 非同步交接（MVP）",
+    "locale": "zh-TW",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/D1-async-handoff.html"
+  },
+  "lanes": [
+    {
+      "id": "mac",
+      "label": "Mac agent A（Orca Claude）"
+    },
+    {
+      "id": "hub",
+      "label": "VPS Hub：Caddy＋Agent Mail"
+    },
+    {
+      "id": "win",
+      "label": "Windows agent B（Claude Code）"
+    },
+    {
+      "id": "fail",
+      "label": "失敗回饋",
+      "variant": "exception"
+    },
+    {
+      "id": "discord",
+      "label": "Discord〔上線批次〕"
+    }
+  ],
+  "phases": [
+    {
+      "id": "leave",
+      "label": "A 留交接",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "pickup",
+      "label": "B 開工讀取",
+      "fromCol": 3,
+      "toCol": 5,
+      "variant": "emphasis"
+    }
+  ],
+  "mainPath": [
+    "work",
+    "write",
+    "gate",
+    "store",
+    "bstart",
+    "bfetch",
+    "bshow",
+    "markread"
+  ],
+  "nodes": [
+    {
+      "id": "work",
+      "lane": "mac",
+      "col": 0,
+      "type": "external",
+      "label": "A 完成一段工作",
+      "sublabel": "session 結束或每段完成"
+    },
+    {
+      "id": "write",
+      "lane": "mac",
+      "col": 1,
+      "type": "frontend",
+      "label": "寫交接給 B",
+      "sublabel": "send_message"
+    },
+    {
+      "id": "ack",
+      "lane": "mac",
+      "col": 2,
+      "type": "frontend",
+      "label": "A 看到「已保存」",
+      "sublabel": "附交接 ID"
+    },
+    {
+      "id": "gate",
+      "lane": "hub",
+      "col": 1,
+      "type": "security",
+      "label": "Caddy 驗 token",
+      "sublabel": "每人一個 Bearer"
+    },
+    {
+      "id": "store",
+      "lane": "hub",
+      "col": 2,
+      "type": "database",
+      "label": "保存交接原文",
+      "sublabel": "狀態＝未讀"
+    },
+    {
+      "id": "markread",
+      "lane": "hub",
+      "col": 5,
+      "type": "database",
+      "label": "標為已讀",
+      "sublabel": "原文仍可查"
+    },
+    {
+      "id": "bstart",
+      "lane": "win",
+      "col": 3,
+      "type": "external",
+      "label": "B 開新 session",
+      "sublabel": "≥10 分鐘後只輸入「開始」"
+    },
+    {
+      "id": "bfetch",
+      "lane": "win",
+      "col": 4,
+      "type": "backend",
+      "label": "開工前讀收件匣",
+      "sublabel": "fetch_inbox"
+    },
+    {
+      "id": "bshow",
+      "lane": "win",
+      "col": 5,
+      "type": "frontend",
+      "label": "第一則回覆",
+      "sublabel": "交接 ID＋摘要＋現況"
+    },
+    {
+      "id": "notsent",
+      "lane": "fail",
+      "col": 1,
+      "type": "security",
+      "label": "未送達",
+      "sublabel": "不得顯示已保存"
+    },
+    {
+      "id": "nofetch",
+      "lane": "fail",
+      "col": 4,
+      "type": "security",
+      "label": "無法取得交接",
+      "sublabel": "不得說沒有未讀"
+    },
+    {
+      "id": "notify",
+      "lane": "discord",
+      "col": 2,
+      "type": "messagebus",
+      "label": "通知 維護者",
+      "sublabel": "交接給我"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "work",
+      "to": "write"
+    },
+    {
+      "id": "e2",
+      "from": "write",
+      "to": "gate",
+      "label": "MCP＋Bearer",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e3",
+      "from": "gate",
+      "to": "store",
+      "label": "通過",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e4",
+      "from": "gate",
+      "to": "notsent",
+      "label": "401／連不上",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e5",
+      "from": "store",
+      "to": "ack",
+      "label": "回執",
+      "role": "return",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "e6",
+      "from": "store",
+      "to": "notify",
+      "label": "〔上線〕",
+      "variant": "dashed",
+      "role": "async",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e7",
+      "from": "store",
+      "to": "bstart",
+      "label": "A 已離線",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "top"
+    },
+    {
+      "id": "e8",
+      "from": "bstart",
+      "to": "bfetch",
+      "label": "自動觸發"
+    },
+    {
+      "id": "e9",
+      "from": "bfetch",
+      "to": "bshow",
+      "label": "取回原文",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e10",
+      "from": "bfetch",
+      "to": "nofetch",
+      "label": "Hub 失敗",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e11",
+      "from": "bshow",
+      "to": "markread",
+      "label": "顯示後",
+      "fromSide": "top",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "批次與驗收",
+      "items": [
+        "MVP（11-23）：Caddy＋Agent Mail 路徑全部",
+        "上線（11-30）：Discord 通知、Hindsight 現況",
+        "驗收：G-02、AC-02.1、AC-03.1～03.4"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "缺口（見 README）",
+      "items": [
+        "GAP-01 MVP 的「專案現況」來源未定",
+        "GAP-02 開新 session 自動讀取的觸發方式",
+        "GAP-03 fetch 預設即標已讀",
+        "GAP-04 Agent Mail 無在線判定"
+      ]
+    }
+  ]
+}

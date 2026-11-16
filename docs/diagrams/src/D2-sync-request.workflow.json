@@ -1,0 +1,230 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "D2 同步問答／動手確認＋逾時（MVP）",
+    "locale": "zh-TW",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/D2-sync-request.html"
+  },
+  "lanes": [
+    {
+      "id": "a",
+      "label": "發送 agent A"
+    },
+    {
+      "id": "hub",
+      "label": "VPS Hub（Agent Mail）"
+    },
+    {
+      "id": "b",
+      "label": "收件 agent B（session 開著）"
+    },
+    {
+      "id": "human",
+      "label": "B 的畫面操作者（S1＝維護者）"
+    },
+    {
+      "id": "fail",
+      "label": "拒絕／例外",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "send",
+    "store",
+    "recv",
+    "classify",
+    "confirm",
+    "exec",
+    "areply"
+  ],
+  "nodes": [
+    {
+      "id": "send",
+      "lane": "a",
+      "col": 0,
+      "type": "frontend",
+      "label": "A 送出請求",
+      "sublabel": "標 question／action"
+    },
+    {
+      "id": "areply",
+      "lane": "a",
+      "col": 5,
+      "type": "frontend",
+      "label": "A 收到結果",
+      "sublabel": "答覆／執行／拒絕"
+    },
+    {
+      "id": "store",
+      "lane": "hub",
+      "col": 1,
+      "type": "database",
+      "label": "保存並投遞",
+      "sublabel": "問與答都入庫"
+    },
+    {
+      "id": "recv",
+      "lane": "b",
+      "col": 2,
+      "type": "backend",
+      "label": "B 收到請求",
+      "sublabel": "≤60 秒（輪詢）"
+    },
+    {
+      "id": "classify",
+      "lane": "b",
+      "col": 3,
+      "type": "security",
+      "label": "收件端判斷類型",
+      "sublabel": "以收件端為準"
+    },
+    {
+      "id": "answer",
+      "lane": "b",
+      "col": 4,
+      "type": "backend",
+      "label": "自動回答",
+      "sublabel": "只引用記憶與 repo"
+    },
+    {
+      "id": "exec",
+      "lane": "b",
+      "col": 5,
+      "type": "backend",
+      "label": "執行並記錄",
+      "sublabel": "成功或失敗如實回報"
+    },
+    {
+      "id": "confirm",
+      "lane": "human",
+      "col": 4,
+      "type": "security",
+      "label": "徵求 B 同意",
+      "sublabel": "請求者＋內容＋會做的事"
+    },
+    {
+      "id": "offline",
+      "lane": "fail",
+      "col": 1,
+      "type": "messagebus",
+      "label": "B 不在線",
+      "sublabel": "只保存，轉 D1"
+    },
+    {
+      "id": "reject",
+      "lane": "fail",
+      "col": 5,
+      "type": "security",
+      "label": "已拒絕／已逾時",
+      "sublabel": "30 分鐘無回應＝拒絕；通知 A"
+    }
+  ],
+  "edges": [
+    {
+      "id": "s1",
+      "from": "send",
+      "to": "store",
+      "label": "MCP＋Bearer",
+      "variant": "emphasis"
+    },
+    {
+      "id": "s2",
+      "from": "store",
+      "to": "recv",
+      "label": "投遞",
+      "variant": "emphasis"
+    },
+    {
+      "id": "s3",
+      "from": "store",
+      "to": "offline",
+      "label": "B 離線",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "s4",
+      "from": "recv",
+      "to": "classify"
+    },
+    {
+      "id": "s5",
+      "from": "classify",
+      "to": "answer",
+      "label": "question"
+    },
+    {
+      "id": "s6",
+      "from": "classify",
+      "to": "confirm",
+      "label": "action／混合／不明",
+      "variant": "security"
+    },
+    {
+      "id": "s7",
+      "from": "confirm",
+      "to": "exec",
+      "label": "同意",
+      "variant": "emphasis"
+    },
+    {
+      "id": "s8",
+      "from": "confirm",
+      "to": "reject",
+      "label": "拒絕／逾時",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "s9",
+      "from": "exec",
+      "to": "areply",
+      "label": "結果",
+      "role": "return",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "s10",
+      "from": "answer",
+      "to": "areply",
+      "label": "答覆",
+      "role": "return",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "id": "s11",
+      "from": "reject",
+      "to": "areply",
+      "role": "return",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "right",
+      "route": "outside-right"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "批次與驗收",
+      "items": [
+        "MVP（11-23）：全部路徑",
+        "驗收：G-03、AC-05.1～05.3、AC-06.1～06.6",
+        "action 的定義：寫檔、執行指令、接任務、合併"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "缺口（見 README）",
+      "items": [
+        "GAP-05 閒置 session 如何在 60 秒內被喚醒",
+        "GAP-06 30 分鐘逾時由誰計時",
+        "GAP-07 question 無回應的時限未定",
+        "GAP-08 確認畫面用哪一種 UI"
+      ]
+    }
+  ]
+}

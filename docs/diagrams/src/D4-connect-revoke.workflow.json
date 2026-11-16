@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "D4 /connect 與撤銷（上線；MVP 由 維護者 手動發 token）",
+    "locale": "zh-TW",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/D4-connect-revoke.html"
+  },
+  "lanes": [
+    { "id": "member", "label": "成員（Discord 帳號）" },
+    { "id": "bot", "label": "Discord bot（膠水）" },
+    { "id": "caddy", "label": "VPS Caddy" },
+    { "id": "tool", "label": "成員的 AI 工具" },
+    { "id": "fail", "label": "拒絕／失敗", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "connect", "label": "發設定", "fromCol": 0, "toCol": 3 },
+    { "id": "revokeph", "label": "撤銷", "fromCol": 4, "toCol": 5, "variant": "security" }
+  ],
+  "mainPath": ["cmd", "check", "issue", "reload", "reply", "paste", "connected"],
+  "nodes": [
+    { "id": "cmd", "lane": "member", "col": 0, "type": "external", "label": "打 /connect", "sublabel": "slash 指令" },
+    { "id": "revoke", "lane": "member", "col": 4, "type": "external", "label": "撤銷某份設定", "sublabel": "指令名稱待定" },
+    { "id": "check", "lane": "bot", "col": 1, "type": "security", "label": "是成員？", "sublabel": "S1 名單＝維護者" },
+    { "id": "issue", "lane": "bot", "col": 2, "type": "backend", "label": "產生個人 token", "sublabel": "每人或每裝置待對齊" },
+    { "id": "reply", "lane": "bot", "col": 3, "type": "frontend", "label": "只給本人的回覆", "sublabel": "一行設定＋保存告知" },
+    { "id": "reload", "lane": "caddy", "col": 2, "type": "security", "label": "加入 allowlist", "sublabel": "caddy reload" },
+    { "id": "remove", "lane": "caddy", "col": 4, "type": "security", "label": "移除 token", "sublabel": "caddy reload" },
+    { "id": "paste", "lane": "tool", "col": 3, "type": "frontend", "label": "貼上並重啟", "sublabel": "claude mcp add …" },
+    { "id": "connected", "lane": "tool", "col": 4, "type": "backend", "label": "連上 Hub", "sublabel": "用 D1／D2 驗證" },
+    { "id": "r401", "lane": "tool", "col": 5, "type": "security", "label": "下一個請求 401", "sublabel": "其他 token 不受影響" },
+    { "id": "deny", "lane": "fail", "col": 1, "type": "security", "label": "拒絕", "sublabel": "不發設定" },
+    { "id": "rfail", "lane": "fail", "col": 2, "type": "security", "label": "reload 失敗", "sublabel": "不顯示 token" }
+  ],
+  "edges": [
+    { "id": "c1", "from": "cmd", "to": "check" },
+    { "id": "c2", "from": "check", "to": "issue", "label": "是", "variant": "emphasis" },
+    { "id": "c3", "from": "check", "to": "deny", "label": "否", "variant": "security", "role": "error" },
+    { "id": "c4", "from": "issue", "to": "reload", "label": "寫入" },
+    { "id": "c5", "from": "reload", "to": "rfail", "label": "失敗", "variant": "security", "role": "error" },
+    { "id": "c6", "from": "reload", "to": "reply", "label": "成功", "variant": "emphasis" },
+    { "id": "c7", "from": "reply", "to": "paste", "label": "複製" },
+    { "id": "c8", "from": "paste", "to": "connected", "label": "Bearer", "variant": "emphasis" },
+    { "id": "c9", "from": "revoke", "to": "remove", "label": "選一份", "variant": "security" },
+    { "id": "c10", "from": "remove", "to": "r401", "label": "生效", "variant": "security" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "批次與驗收", "items": ["MVP：維護者 手動編輯 Caddyfile＋reload（同一套 Caddy 邏輯）", "上線：Discord /connect、撤銷、重發", "驗收：AC-12.1～12.5；撤銷＝F-01b E5 的 401"] },
+    { "dot": "rose", "title": "缺口（見 README）", "items": ["GAP-12 token 是每人一份還是每裝置一份", "GAP-13 Caddy 只換成組共用 token，Agent Mail 不知道是誰", "GAP-14 token 明文在 Caddyfile、撤銷指令名稱未定", "GAP-15 Codex／VS Code 不是一行指令"] }
+  ]
+}
