@@ -6,11 +6,12 @@
 set -euo pipefail
 
 # Default configuration (overridable via environment variables or CLI flags)
-HUB_DATA_DIR="${HUB_DATA_DIR:-/var/lib/docker/volumes/deploy_mail_a_data/_data}"
+HUB_DATA_DIR="${HUB_DATA_DIR:-/var/lib/docker/volumes/neighbor-hub_mail_a_data/_data}"
 HUB_STATE_DIR="${HUB_STATE_DIR:-/var/lib/neighbor-hub/private}"
 CADDY_SNIPPET="${CADDY_SNIPPET:-/etc/caddy/hub.caddy}"
+CADDY_PRIVATE_DIR="${CADDY_PRIVATE_DIR:-/etc/caddy/hub-private}"
 HUB_CLOCK_DIR="${HUB_CLOCK_DIR:-/var/lib/neighbor-hub/lifecycle}"
-BACKUP_DIR="${BACKUP_DIR:-/var/backups/neighbor-hub}"
+BACKUP_DIR="${BACKUP_DIR:-/var/lib/neighbor-hub/backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-7}"
 QUIET=0
 
@@ -20,16 +21,17 @@ Usage: $0 [options]
 
 Options:
   --data-dir <path>       Path to mail-a data directory (contains mail.sqlite3, archive/)
-  --state-dir <path>      Path to private credentials/token directory (tokens.json, etc.)
-  --caddy-snippet <path>  Path to Caddy snippet file for hub
+  --state-dir <path>      Path to private credentials/token directory (tokens.json, hubclock.sender.json, etc.)
+  --caddy-snippet <path>  Path to Caddy snippet file for hub (/etc/caddy/hub.caddy)
+  --caddy-private <path>  Path to Caddy private auth snippet (/etc/caddy/hub-private)
   --clock-dir <path>      Path to HubClock / lifecycle state directory
-  --backup-dir <path>     Directory where backup archives will be stored
+  --backup-dir <path>     Directory where backup archives will be stored (/var/lib/neighbor-hub/backups)
   --retention-days <num>  Number of days to keep backups (default: 7)
   --quiet                 Suppress non-error output
   -h, --help              Show this help message
 
 Environment variables:
-  HUB_DATA_DIR, HUB_STATE_DIR, CADDY_SNIPPET, HUB_CLOCK_DIR, BACKUP_DIR, RETENTION_DAYS
+  HUB_DATA_DIR, HUB_STATE_DIR, CADDY_SNIPPET, CADDY_PRIVATE_DIR, HUB_CLOCK_DIR, BACKUP_DIR, RETENTION_DAYS
 EOF
   exit 1
 }
@@ -40,6 +42,7 @@ while [[ $# -gt 0 ]]; do
     --data-dir) HUB_DATA_DIR="$2"; shift 2 ;;
     --state-dir) HUB_STATE_DIR="$2"; shift 2 ;;
     --caddy-snippet) CADDY_SNIPPET="$2"; shift 2 ;;
+    --caddy-private) CADDY_PRIVATE_DIR="$2"; shift 2 ;;
     --clock-dir) HUB_CLOCK_DIR="$2"; shift 2 ;;
     --backup-dir) BACKUP_DIR="$2"; shift 2 ;;
     --retention-days) RETENTION_DAYS="$2"; shift 2 ;;
@@ -130,18 +133,29 @@ for extra_dir in home xdg-data xdg-config; do
   fi
 done
 
-# 3. Caddy snippet
+# 3. Caddy snippets (main snippet + private auth snippet)
 if [[ -f "$CADDY_SNIPPET" ]]; then
   log "Copying Caddy snippet from $CADDY_SNIPPET..."
   cp -a "$CADDY_SNIPPET" "$STAGING_DIR/caddy/"
 fi
+if [[ -d "$CADDY_PRIVATE_DIR" ]]; then
+  log "Copying Caddy private auth snippet from $CADDY_PRIVATE_DIR..."
+  cp -a "$CADDY_PRIVATE_DIR" "$STAGING_DIR/caddy/"
+  chmod 700 "$STAGING_DIR/caddy/$(basename "$CADDY_PRIVATE_DIR")" 2>/dev/null || true
+  find "$STAGING_DIR/caddy" -type f -exec chmod 600 {} + 2>/dev/null || true
+fi
 
-# 4. Token registry & private credentials
+# 4. Token registry, env files & sender credentials (including hubclock.sender.json)
+HAS_HUBCLOCK_SENDER="false"
 if [[ -d "$HUB_STATE_DIR" ]]; then
-  log "Copying private tokens from $HUB_STATE_DIR (permissions preserved 600)..."
+  log "Copying private tokens & sender files from $HUB_STATE_DIR (permissions preserved 600)..."
   cp -a "$HUB_STATE_DIR"/* "$STAGING_DIR/tokens/" 2>/dev/null || true
   chmod 700 "$STAGING_DIR/tokens"
   find "$STAGING_DIR/tokens" -type f -exec chmod 600 {} +
+  if [[ -f "$STAGING_DIR/tokens/hubclock.sender.json" ]]; then
+    HAS_HUBCLOCK_SENDER="true"
+    log "hubclock.sender.json included in backup (mode 600)."
+  fi
 fi
 
 # 5. HubClock state
@@ -173,7 +187,11 @@ cat <<EOF > "$MANIFEST"
     "data_dir": "$HUB_DATA_DIR",
     "state_dir": "$HUB_STATE_DIR",
     "caddy_snippet": "$CADDY_SNIPPET",
+    "caddy_private_dir": "$CADDY_PRIVATE_DIR",
     "clock_dir": "$HUB_CLOCK_DIR"
+  },
+  "credentials": {
+    "has_hubclock_sender": $HAS_HUBCLOCK_SENDER
   },
   "retention_policy_days": $RETENTION_DAYS
 }

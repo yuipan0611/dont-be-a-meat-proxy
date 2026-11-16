@@ -12,7 +12,7 @@
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readdir, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, readdir, readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,19 +40,30 @@ test('H-06: Full backup, restore, and sha256 consistency drill', async (t) => {
   const backupDir = join(baseTmp, 'backups');
   const clockDir = join(baseTmp, 'lifecycle');
   const caddySnippet = join(baseTmp, 'hub.caddy');
+  const caddyPrivateDir = join(baseTmp, 'hub-private');
   const receiptDir = join(baseTmp, 'receipts');
 
   await mkdir(dataDir, { recursive: true });
   await mkdir(stateDir, { recursive: true });
   await mkdir(backupDir, { recursive: true });
   await mkdir(clockDir, { recursive: true });
+  await mkdir(caddyPrivateDir, { recursive: true });
   await mkdir(receiptDir, { recursive: true });
 
-  // Prepare dummy tokens and Caddy snippet to verify auxiliary backup
+  // Prepare H-02 actual files to verify auxiliary backup
   await writeFile(join(stateDir, 'tokens.json'), JSON.stringify({ version: 1, revision: 1, group_id: 'group-a' }, null, 2));
-  await writeFile(join(stateDir, 'mail-a.env'), 'HTTP_BEARER_TOKEN=mock_secret_token_12345678\x3901234567890\n');
-  await writeFile(caddySnippet, 'hub.example.invalid { respond "OK" 200 }\n');
-  await writeFile(join(clockDir, 'hubclock.sqlite3'), ''); // empty mock DB
+  await writeFile(join(stateDir, 'mail-a.env'), 'HTTP_BEARER_TOKEN=mock_upstream_token_1234567890\n');
+  await writeFile(join(stateDir, 'mac.env'), 'HUB_MAIL_URL=https://hub.example.invalid/mcp/\nHUB_TOKEN=mock_mac_token\n');
+  await writeFile(join(stateDir, 'windows.env'), 'HUB_MAIL_URL=https://hub.example.invalid/mcp/\nHUB_TOKEN=mock_windows_token\n');
+  await writeFile(join(stateDir, 'mac.sender.json'), JSON.stringify({ agentName: 'BlueLake', senderToken: 'token_mac_reg' }, null, 2));
+  await writeFile(join(stateDir, 'windows.sender.json'), JSON.stringify({ agentName: 'RedStone', senderToken: 'token_win_reg' }, null, 2));
+  const hubclockContent = JSON.stringify({ agentName: 'OrangeFox', senderToken: 'token_hubclock_reg' }, null, 2);
+  await writeFile(join(stateDir, 'hubclock.sender.json'), hubclockContent);
+
+  await writeFile(caddySnippet, 'hub.example.invalid { import /etc/caddy/hub-private/auth.caddy }\n');
+  const authCaddyContent = '@allowed {\n  header Authorization "Bearer mock_mac_token"\n}\n';
+  await writeFile(join(caddyPrivateDir, 'auth.caddy'), authCaddyContent);
+  await writeFile(join(clockDir, 'hubclock.sqlite3'), ''); // mock DB
 
   // Step 1: Start local mail-a
   console.log('[Step 1] Starting local mail-a server...');
@@ -153,6 +164,7 @@ test('H-06: Full backup, restore, and sha256 consistency drill', async (t) => {
     '--data-dir', dataDir,
     '--state-dir', stateDir,
     '--caddy-snippet', caddySnippet,
+    '--caddy-private', caddyPrivateDir,
     '--clock-dir', clockDir,
     '--backup-dir', backupDir,
     '--retention-days', '7',
@@ -163,9 +175,11 @@ test('H-06: Full backup, restore, and sha256 consistency drill', async (t) => {
   assert.equal(backupFiles.length, 1, 'exactly one backup archive should be created');
   const backupArchive = join(backupDir, backupFiles[0]);
 
-  // Step 7: Destroy data completely
-  console.log('[Step 7] Destroying original data directory completely...');
+  // Step 7: Destroy data, state, and caddy private completely
+  console.log('[Step 7] Destroying original data and state directories completely...');
   await rm(dataDir, { recursive: true, force: true });
+  await rm(stateDir, { recursive: true, force: true });
+  await rm(caddyPrivateDir, { recursive: true, force: true });
   await mkdir(dataDir, { recursive: true });
   const emptyFiles = await readdir(dataDir);
   assert.equal(emptyFiles.length, 0, 'dataDir must be completely empty');
@@ -177,6 +191,7 @@ test('H-06: Full backup, restore, and sha256 consistency drill', async (t) => {
     '--target-data-dir', dataDir,
     '--target-state-dir', stateDir,
     '--target-caddy-snippet', caddySnippet,
+    '--target-caddy-private', caddyPrivateDir,
     '--target-clock-dir', clockDir,
   ], { encoding: 'utf8' });
   console.log(restoreOut);
@@ -212,6 +227,18 @@ test('H-06: Full backup, restore, and sha256 consistency drill', async (t) => {
       assert.equal(restoredHash, rec.sha256, `message #${rec.id} sha256 must match`);
       console.log(`[Step 10] Verified message #${rec.id} SHA256: ${restoredHash} == ${rec.sha256} ✅`);
     }
+
+    // Verify H-02 actual files restored with correct content & mode 0600
+    const restoredHubclock = await readFile(join(stateDir, 'hubclock.sender.json'), 'utf8');
+    assert.equal(restoredHubclock, hubclockContent, 'hubclock.sender.json must be restored byte-for-byte');
+    const hubclockStat = await stat(join(stateDir, 'hubclock.sender.json'));
+    assert.equal(hubclockStat.mode & 0o777, 0o600, 'hubclock.sender.json must have mode 0600');
+
+    const restoredAuthCaddy = await readFile(join(caddyPrivateDir, 'auth.caddy'), 'utf8');
+    assert.equal(restoredAuthCaddy, authCaddyContent, 'auth.caddy must be restored byte-for-byte');
+    const authCaddyStat = await stat(join(caddyPrivateDir, 'auth.caddy'));
+    assert.equal(authCaddyStat.mode & 0o777, 0o600, 'auth.caddy must have mode 0600');
+    console.log('[Step 10] Verified hubclock.sender.json and auth.caddy restored with mode 0600 ✅');
   } finally {
     await restoredHub.stop({ keepData: true });
   }

@@ -9,7 +9,7 @@ set -euo pipefail
 VPS_HOST="${VPS_HOST:vps.example.invalid}"
 VPS_USER="${VPS_USER:-root}"
 VPS_PORT="${VPS_PORT:-22}"
-REMOTE_BACKUP_DIR="${REMOTE_BACKUP_DIR:-/var/backups/neighbor-hub}"
+REMOTE_BACKUP_DIR="${REMOTE_BACKUP_DIR:-/var/lib/neighbor-hub/backups}"
 LOCAL_BACKUP_DIR="${LOCAL_BACKUP_DIR:-$HOME/Backups/neighbor-hub}"
 ENCRYPTION_TOOL="${ENCRYPTION_TOOL:-auto}" # auto | age | gpg
 AGE_RECIPIENT="${AGE_RECIPIENT:-}"
