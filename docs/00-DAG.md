@@ -127,7 +127,7 @@ flowchart TD
 |---|---|---|---|---|---|
 | H-01 runbook＋Hostinger MCP 代做 DNS／防火牆 | <ORCA_ID> | <ORCA_ID> | codex-senior-swe | 11-19 | runbook ✅（719b04a）；PM 已用 Hostinger MCP 加 hub A 記錄並驗證 ✅；發現 VPS 已有 Caddy（office.example.invalid）占 80/443、無 Hostinger 防火牆；待 維護者 SSH 盤點 |
 | H-03 mail-client | <ORCA_ID> | <ORCA_ID> | swe-Tom | 11-20 | ✅ succeeded，PM 重跑 48/48 通過，已 ff 進 master（7f4a6e8）。偏差（PM 接受，上線批次前回寫 SRS/SDS）：真實送出回執格式與 SDS 文字不同；新增工程錯誤碼 E-CONFLICT、E-CURSOR；密鑰長度閾值版本 2026-11-17.1；整合測試用本機 binary 而非容器 |
-| H-04a asyncRewake spike | <ORCA_ID> | <ORCA_ID> | swe-Ben | 11-19 | 進行中 |
+| H-04a asyncRewake spike | <ORCA_ID> | <ORCA_ID> | swe-Ben | 11-19 | ✅ succeeded（f30ad4b，已併入 master），PM 重跑 9/9；結論部分可行：閒置 1.3–1.4 秒，忙碌時排到目前這一步結束 |
 | H-07 接入手冊＋轉貼紀錄表 | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-2 | 11-21 | ✅ 初稿 succeeded（605ea75），PM 修正後收入 docs/onboarding-S1.md、docs/metrics/G-01-paste-log.md；H-02／H-04 定稿後補實際值 |
 | H-02、H-05、H-06 | — | — | codex／agy-1 | 11-20～22 | 等 H-01 |
 | T14 F-10 InsForge 評估（維護者 建議參考） | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-1 | 11-19 | ✅ succeeded，PM 抽查屬實，已收入 docs/research/F-10；結論 (b)：不進主系統，推薦給組員做團隊專題後端 |
