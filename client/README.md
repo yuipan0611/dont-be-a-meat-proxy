@@ -38,6 +38,8 @@ import {
 |---|---|---|
 | `sendItem(item)` | `{ status:'saved', messageId, createdTs, threadId, idempotencyKey, replay }` | 送一則（只試一次）。只有拿到 Hub 的 `message_id` 才回 `saved` |
 | `sendWithRetry(item, { maxAttempts=3, baseDelayMs=1000, maxDelayMs=30000 })` | 同上加 `attempts` | 可重試錯誤以指數退避（429 依 `Retry-After`）重送，**永遠用同一個 key**；401／欄位錯誤立即停 |
+| `sendControl({ to, cc?, subject, threadId?, control, idempotencyKey })` | 同 `sendItem` | H-05：送 `topic:'control'` 的控制紀錄（`control` 須為 `{ v:1, event_type, … }`）。**key 必填且要固定**（用 `ops/lifecycle/protocol.mjs` 的 `clientControlKey`），重送才會是 replay |
+| `sendControlWithRetry(msg, opts)` | 同上加 `attempts` | 同 `sendWithRetry` 的退避與同 key 規則 |
 | `fetchEvents({ after?, limit=100 })` | `{ events, nextCursor, hasMore, oldestAvailableCursor, tailCursor }` | 原生 `fetch_inbox_events`；不用 `position_now` |
 | `readMessage(messageId)` | `{ raw, message }` | `resources/read resource://message/<id>`；`raw` 是 Hub 回的原文字串，未改寫；**不會標已讀** |
 | `markRead(messageId)` | 原生回傳 | `mark_message_read`。只在 agent 真的取得原文後才呼叫 |
@@ -48,7 +50,7 @@ import {
 ```js
 {
   to: ['RedStone'],            // 必填，canonical 名稱
-  cc: ['HubClock'],            // 選填
+  cc: ['<HubClock 實際名稱>'],  // 選填；question／action 要 cc HubClock（名稱見 hubclock.sender.json，不是字面 'HubClock'）
   subject: '交接登入頁',        // 必填
   kind: 'handoff',             // handoff | help | decision | task；同時寫入原生 topic
   intent: 'question',          // question | action；沒給 → 'action'（SRS）
