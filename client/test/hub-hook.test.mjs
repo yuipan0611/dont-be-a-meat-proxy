@@ -1,6 +1,7 @@
 // Unit tests for hub-hook.mjs (H-04). Seam: runHook(mode, { input, env, deps }) → { stdout, stderr, exitCode }.
 // The Hub is an in-memory fake with the mail-client interface; time is a FakeClock.
-import { test } from 'node:test';
+import { test, after } from 'node:test';
+import { rmSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,11 +16,16 @@ const CONFIG = {
   recent_handoffs: 5, poll_seconds: 15,
 };
 
+const tempDirs = [];
+after(() => { for (const d of tempDirs) rmSync(d, { recursive: true, force: true }); });
+
 /** One machine: its project dir (with hub-client.json), its local data dir, and deps wired to the fake hub. */
 function machine(hub, { agent = 'RedStone', clock = new FakeClock(Date.parse('2026-11-18T01:00:00Z')), alive = () => true, revision = () => 'rev-0' } = {}) {
   const projectDir = mkdtempSync(join(tmpdir(), 'hubhook-proj-'));
+  tempDirs.push(projectDir);
   writeFileSync(join(projectDir, 'hub-client.json'), JSON.stringify(CONFIG));
   const dataDir = mkdtempSync(join(tmpdir(), 'hubhook-data-'));
+  tempDirs.push(dataDir);
   const env = { HUB_TOKEN: 'test-device-token', HUB_SENDER_TOKEN: 'test-sender', HUB_AGENT: agent, HUB_DATA_DIR: dataDir, CLAUDE_PROJECT_DIR: projectDir };
   const proc = { pid: 4242, ppid: 777 };
   const deps = {
@@ -535,4 +541,50 @@ test('the shipped hub-client.json template loads: per-OS agents, N = 5, 15 s pol
   const win = loadConfig({ env, platform: 'win32' });
   assert.deepEqual([mac.agent, win.agent, mac.recentN, mac.pollMs, mac.clockAgent, mac.handoffTo], ['BlueLake', 'RedStone', 5, 15_000, null, ['RedStone']]);
   assert.equal(loadConfig({ env: { ...env, HUB_CLOCK_AGENT: 'JadeBluff' }, platform: 'darwin' }).clockAgent, 'JadeBluff');
+});
+
+test('the CLI still runs when hub-hook.mjs is reached through a symlinked client/ folder', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { symlinkSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const m = machine(createFakeHub());
+  symlinkSync(join(fileURLToPath(new URL('..', import.meta.url))), join(m.projectDir, 'client'));
+  const env = { ...process.env, ...m.env, HUB_TOKEN: '' }; // config error path: prints a context without touching the network
+  const r = spawnSync(process.execPath, [join(m.projectDir, 'client', 'hub-hook.mjs'), 'start'], { input: '{}', env, encoding: 'utf8' });
+  assert.equal(r.status, 0);
+  assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /HUB_TOKEN/);
+});
+
+test('a handoff is presented as a handoff (information), never as an action request needing presented/choice', async () => {
+  const hub = createFakeHub();
+  await hub.send('BlueLake', handoff({ intent: 'action' }));
+  const c = ctx(await machine(hub).run('start'));
+  assert.match(c, /｜交接｜/);
+  assert.doesNotMatch(c, /handoff\/action/);
+  assert.match(c, /不是動作請求/);
+  assert.doesNotMatch(c, /presented 1/);
+});
+
+test('send/checkpoint accept the JSON as `--json <json>`, so the command starts with node client/hub-hook.mjs (matches the allow rule; no pipe)', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const m = machine(createFakeHub(), { agent: 'BlueLake' });
+  const env = { ...process.env, ...m.env, HUB_TOKEN: '' }; // config error stops before any network; we only check parsing
+  const hook = fileURLToPath(new URL('../hub-hook.mjs', import.meta.url));
+  const ok = spawnSync(process.execPath, [hook, 'send', '--json', '{"to":["RedStone"],"summary":"s","text":"t"}'], { env, encoding: 'utf8', input: '' });
+  assert.match(ok.stderr, /HUB_TOKEN/, 'parsed --json and reached config');
+  const bad = spawnSync(process.execPath, [hook, 'send', '--json', '{not json'], { env, encoding: 'utf8', input: '' });
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /--json 不是 JSON/);
+});
+
+test('a reply to a question is sent before its `answer` control, even when both are queued in the same millisecond', async () => {
+  for (let i = 0; i < 20; i++) {
+    const hub = createFakeHub();
+    const q = await hub.send('BlueLake', handoff({ kind: 'help', intent: 'question' }));
+    const win = machine(hub);
+    await win.run('start');
+    await win.run('send', { replyTo: q.messageId, summary: 'a', text: 'a' });
+    assert.deepEqual(hub.messages.slice(1).map((m) => m.topic), ['help', 'control']);
+  }
 });
