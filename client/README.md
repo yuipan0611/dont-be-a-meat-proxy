@@ -128,3 +128,48 @@ shasum -a 256 .hub-local/bin/mcp-agent-mail   # 應為 4c3804feff45cd068e48fa57e
 - 字數與密鑰檢查只在 client（PM 已定 MVP 取捨）；原生 MCP 直呼可以繞過。
 - Hub 實際回傳的送信收據是 `{ message_id, created_ts, thread_id, target_outcomes, idempotent_replay? }`，不是 SDS 文字寫的 `deliveries[].payload.id`；本模組依實測格式解析。
 - idempotency 去重窗是原生預設 24 h；超過 24 h 的待送要先查原文，不能換 key 盲送。
+
+---
+
+## `hub-hook.mjs`（H-04）— Claude Code hook 膠水
+
+依據：SDS CLI-02／CLI-03、API-06（控制紀錄照 `ops/lifecycle/protocol.mjs`）、F-09（asyncRewake spike）。收發一律經上面的 `mail-client.mjs`。
+
+### 裝到一個專案（Mac／Windows 相同）
+
+1. 專案根目錄要有 `client/`（本資料夾）與 `ops/lifecycle/protocol.mjs`（hub-hook 會 import 它）。
+2. 複製 `templates/hub-client.json` → `<專案>/hub-client.json`，把 `clock_agent` 改成 H-02 bootstrap 產生的 HubClock 名稱（`hubclock.sender.json` 的 `agentName`；Mail 不接受字面 `HubClock`）。這個檔沒有秘密，可以進 Git。
+3. 複製 `templates/claude-settings.json` → `<專案>/.claude/settings.json`。第一次開 Claude 會問「This folder pre-approves 1 tool permission… trust?」，**預設選項是 No, exit**，要選 **Yes, I trust this folder**。
+4. 秘密只放環境變數（不進 Git）：`HUB_TOKEN`（裝置入口 token）、`HUB_SENDER_TOKEN`（register 回傳的 registration token；也可放 `<資料目錄>/sender-token` 檔）。選填：`HUB_MAIL_URL`（蓋過 json 的網址）、`HUB_AGENT`（蓋過依 OS 選的 agent 名）、`HUB_CLOCK_AGENT`、`HUB_DATA_DIR`。
+5. 本機資料目錄（staging、journal、outbox、log；不進 Git）：Mac `~/Library/Application Support/hub-client/<group>/<agent>/`、Windows `%LOCALAPPDATA%\hub-client\<group>\<agent>\`。診斷看裡面的 `hook.log`。
+
+### 模式
+
+| 模式 | 由誰觸發 | 做什麼 |
+|---|---|---|
+| `start` | SessionStart | 補報上次沒正常結束的 session（`session.closed`，只講「上次已保存 #ID」，不編造）、補送待送、同步收件、列**未讀（舊→新，原文逐字）**與**最近 5 則交接**；Hub 連不上時明說「無法取得」，絕不說「沒有新項目」。完整顯示過的項目標已讀 |
+| `watch` | SessionStart＋Stop（`asyncRewake`） | 每 15 秒同步；有新訊息 → stderr 一行「Hub 新訊息 #ID（不是錯誤）：來源｜類型｜主旨｜摘要。原文：read ID」並 exit 2 喚醒。每 session 一個 watcher；Claude 程序消失就不讀任何事件直接退出；55 分鐘自行到期（早於 hook timeout 3600 秒）由 Stop 重掛；授權失敗只喚醒一次；連不上約 1 分鐘喚醒一次後持續重試 |
+| `stop` | Stop | 補送待送；這段工作（git HEAD＋status）有變更但還沒 checkpoint → 只 block 一次請 agent 存交接；只收信的回合不會 block |
+| `end` | SessionEnd | 送 `session.closed`、停 watcher、補送待送（5 秒內）；送不出留本機，下次 `start` 補送並顯示 |
+
+agent 自己執行（設定已允許 `Bash(node client/hub-hook.mjs:*)`）。JSON 用 `--json '<JSON>'` 傳；**不要用 `printf … | node …` 管線**——指令開頭不是 `node client/hub-hook.mjs` 就對不到允許規則，實測在 auto mode 會被當成「未核准的對外訊息」擋下（stdin 仍可用，hook 模式就是走 stdin）：
+
+| 指令 | 用途 |
+|---|---|
+| `read <ID>` | 印原文（逐字）、標已讀 |
+| `inbox` | 列還沒看過的新項目 |
+| `send` | `{"to":[…],"subject","kind","intent","summary","text","links","unfinished"}`；回覆用 `{"replyTo":<ID>,"summary","text"}`（自動帶收件者與同一串；回答提問會另送 `answer` 控制紀錄給 HubClock） |
+| `checkpoint` | `{"summary","text","unfinished","links"}` → 交接給 peers，主旨標「agent 自動交接」 |
+| `presented <ID>` | 動作請求的確認卡**真的顯示給使用者後**才送 |
+| `choice <ID> approve\|reject [理由]` | 使用者明確同意／拒絕後才送；動手前仍要等 HubClock 的 approved 結果 |
+
+只有印出「已保存 #ID」才算送出。「未送達」＝確定沒存；「保存結果未確認」＝可能已存，已用同一 key 留在本機待送，之後自動重送不會變兩筆。question／action 的根訊息會 CC HubClock；回答不 CC（H-05 會把 CC 給它、intent 為 question／action 的 item 當成新請求），改送 `answer` 控制紀錄。
+
+### 測試
+
+```sh
+node --test client/test/hub-hook.test.mjs                # 單元：FakeClock＋記憶體假 Hub
+node --test client/test/hub-hook.integration.test.mjs    # 真 Mail 0.3.40＋真 hub-hook 子程序（含 TC-13 模擬，約 5 分鐘）
+```
+
+真 Claude 雙 session 模擬（同一台 Mac）：`spikes/h04/`（`hub-up.mjs` 起本機 Mail；`e2e.py setup|tc02|tc06 N|perm`）。
