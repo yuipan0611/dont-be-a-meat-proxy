@@ -1,6 +1,6 @@
 # client/ — Hub 的 Mac／Windows Node 膠水
 
-`mail-client.mjs`（H-03）負責 Hub 訊息的**送出**與**耐久收件**；`hub-hook.mjs`（H-04，Ben）直接 import 它。依據：`docs/05-sds.md` v0.3 的 API-02、API-03、MOD-02。
+`mail-client.mjs`（H-03）負責 Hub 訊息的**送出**與**耐久收件**；`hub-hook.mjs`（H-04）把它接到 Claude Code 的生命週期。依據：`docs/05-sds.md` v0.3 的 API-02、API-03、MOD-02。
 
 ## 執行環境與相依
 
@@ -122,6 +122,72 @@ mkdir -p .hub-local/bin
 cp "<codex-senior-swe worktree>/spikes/f01b/target/release/mcp-agent-mail" .hub-local/bin/
 shasum -a 256 .hub-local/bin/mcp-agent-mail   # 應為 4c3804feff45cd068e48fa57e1141f236849687e4e0e2e8394fc4b811735bead
 ```
+
+## H-04：Claude Code Hook 接入
+
+從**專案根目錄**啟動；此處必須同時有 `client/hub-hook.mjs`、`hub-client.json`、`.claude/settings.json`。Node ≥22，已測 Claude Code 2.1.325。沒有 runtime 套件要安裝。
+
+1. 用 [hub-client.json 範本](templates/hub-client.json) 建立根目錄的同名設定，保留正確的 `group_id`、伺服器 `project_key`、Mac／Windows agent 與 peers。把 `clock_agent` 換成 PM 提供的 **canonical 名稱**（來自 H-02 `hubclock.sender.json.agentName`）；不要填字面 `HubClock`，也不要把服務端 sender token 複製到客戶端。placeholder 未換時會警告並跳過控制事件。
+2. 把 [claude-settings.json 範本](templates/claude-settings.json) 的 hooks 與專案所需的那條 `permissions.allow` **合併**進 `.claude/settings.json`，保留既有 hooks／權限。只有原檔不存在時才整份複製。不要改全域權限模式。範本的 exec form `command: node`＋`args` 在兩邊共用，Windows 需要真的 `node.exe` 在 PATH 上；不經 PowerShell 展開。
+3. 在要啟動 Claude 的同一個終端機載入該裝置的私密檔。完整步驟見 [H-07 §4](../docs/onboarding-S1.md#4-第三步自動化-hook-設定claudesettingsjson)。入口 bearer `HUB_TOKEN` 和送信 registration `HUB_SENDER_TOKEN` 是兩把不同的 token。不要貼進設定檔、訊息、Git 或除錯輸出。
+4. 執行 `claude`。如果出現資料夾信任提示，先核對路徑與設定，**明確選中「Yes, I trust this folder」再 Enter**。既有測試曾停在預選「No, exit」；不能只按 Enter 或假定選項順序。未信任時 interactive Claude 會暫停所有 settings hooks，連全域 hooks 也會暫停。[官方說明](https://code.claude.com/docs/en/hooks#workspace-trust)
+5. 用 `/hooks` 確認 SessionStart／Stop／SessionEnd 及本專案路徑；另確認本次 `hook.log` 有新的 `ev: start`。`/mcp` Connected、Claude PID 存在、手動送信成功都不代表 Hook 已載入。`claude -p` 的信任處理不同，不能拿它代替 interactive 驗證。不要用 `--bare`、`--restricted`、忽略 project 的 `--setting-sources` 啟動這項驗證；它們會跳過或限制設定。若 `CLAUDE_CONFIG_DIR` 已設，記錄「有／無」即可，不要改另一套 profile 的信任資料。[設定範圍](https://code.claude.com/docs/en/settings)
+
+| 環境變數 | 用途 |
+|---|---|
+| `HUB_TOKEN` | 必填；裝置入口 bearer |
+| `HUB_SENDER_TOKEN` | 送信身分；也可從下述 dataDir 的 `sender-token` 私密檔讀取 |
+| `HUB_AGENT` | 覆蓋設定中的 per-OS canonical agent；必須與 sender token 配對 |
+| `HUB_MAIL_URL` | 覆蓋設定的 MCP URL，結尾 `/mcp/` |
+| `HUB_CLOCK_AGENT` | 覆蓋設定的 HubClock canonical 名稱；公開名稱，非 token |
+| `HUB_DATA_DIR` | 可選；此裝置的私密耐久狀態目錄，不要共用或進 Git |
+| `CLAUDE_PROJECT_DIR` | Claude 傳入的專案根目錄；手動 CLI 未設時用 cwd |
+
+預設 dataDir：Mac `~/Library/Application Support/hub-client/<group_id>/<agent>`；Windows `%LOCALAPPDATA%\hub-client\<group_id>\<agent>`。內含收件原文、cursor、待送與 session 狀態及 `hook.log`。報錯只交回時間、`ev`、錯誤類型與 Mail ID，勿整份公開。
+
+### Hook 的行為與 agent 指令
+
+| 模式 | 行為 |
+|---|---|
+| `start` | 取最近 5 則交接與耐久未讀，逐字提供內容；空收件匣與無法取得分開顯示 |
+| `watch` | 每 15 秒輪詢；每 session 原子鎖；有新訊息 exit 2 觸發 asyncRewake，並非故障；55 分鐘自我到期，早於 hook 的 3600 秒 timeout；父程序消失就退出 |
+| `stop` | 重送待送，工作有變更而沒 checkpoint 時提醒一次；並由 Stop hook 重掛 watcher |
+| `end` | 在預算內送 `session.closed` 給實際 HubClock；失敗保留待送 |
+| `read <ID>`／`inbox` | agent 取得指定原文／列待處理項目 |
+| `send`／`checkpoint` | JSON stdin；保存訊息／本段交接，只有 Hub 回 message ID 才說已保存 |
+| `presented <ID>`／`choice <ID> approve\|reject [理由]` | 卡片真的顯示後／使用者明確選擇後才送相應控制事件；動作仍須等 HubClock 的 approved 結果才執行 |
+
+一般送信 stdin 欄位沿用上面的 item；可用 `replyTo` 指向已知 root，讓回覆沿用 thread 並回報 answer。checkpoint 的 stdin 是 `{ "summary":"…", "text":"…", "unfinished":[], "links":[] }`。不要用合成的 approve 取代使用者決定。
+
+### H-04 測試與證據範圍
+
+在 repo 根目錄：
+
+```sh
+node --test client/test/hub-hook.test.mjs
+MAIL_BIN="$PWD/spikes/f01b/target/release/mcp-agent-mail" node --test client/test/hub-hook.integration.test.mjs
+```
+
+本次分別 **36 pass／0 fail**、**5 pass／0 fail／0 skip**。整合測試使用真 Mail、Hook 子程序與合成訊息，涵蓋 TC-02、TC-04、TC-13、session.closed 與 question／answer 控制。TC-13 兩端都在一台 Mac，用同一單調時鐘量測 15 秒輪詢、讀原文、回執；**不代表真 Claude 已載入 hooks，也不代表實體 Windows 驗收**。完整輸出與信任診斷見 [H04-validation](../docs/ops/H04-validation.md)。
+
+### 維護者 的 Windows 驗證（尚未實測）
+
+先完成上面的設定與信任確認。以下沿用 [F-09 §4](../docs/research/F-09-asyncrewake-spike.md#4-windows)，先隔離驗 asyncRewake，再驗實際 Hub。這些步驟會使用 Claude 額度，請由 維護者 在自己的 Windows 操作。
+
+1. PowerShell 記 `claude --version`、`node --version`、`Get-Command node`。進 `spikes/h04a` 執行 `node --test test/watch.test.mjs`，預期 9 pass／0 fail。
+2. 視窗 A 進 `spikes/h04a/sandbox` 啟動 `claude`；external CLAUDE.md imports 選 No；核對資料夾後，信任提示明確選 Yes。請它 `Reply with exactly: ready`，等 ready 後不要按鍵。
+3. 視窗 B 在 `spikes/h04a` 分別執行 `node trigger.mjs win-idle-1`、`win-idle-2`、`win-idle-3`，各隔約 10 秒。A 應自動出現相應 ACK；不要用鍵盤注入當作喚醒。
+4. A 回答 500 字故事途中，B 執行 `node trigger.mjs win-answering-1`；A 應在本次回答結束後 ACK。另請 A 在前景執行 `node ../long-task.mjs 45`（有正常權限提示就由人回答），開始後 B 執行 `node trigger.mjs win-tool-1`，工具結束後應 ACK。超長工具／等待權限期間的 ≤60 秒未成立，依 F-09 降級為目前步驟結束或下一次對話收到。
+5. A `/exit`，若問背景工作選 **Exit and stop tasks**；B 檢查下方程序清單，應無 watcher。再重開這個測試 Claude，只對其明確 PID 用工作管理員或 `Stop-Process -Id <測試ClaudePID> -Force` 結束，等 3 秒重查，仍應無 watcher。不要結束其他 node／Claude 程序。
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object CommandLine -like '*watch.mjs*' | Select-Object ProcessId, CommandLine
+node analyze.mjs
+Get-Content sandbox/state/events.log | Select-String '"ev":"(orphan|signal|skip)"'
+```
+
+6. 回到實際專案根目錄，用本機裝置憑證啟動 Claude；確認 `/hooks` 與新的 `start`、`watch-arm`。Mac 留交接後關 session，Windows 新 session 第一輪應逐字列出、再次列新項目不重複（TC-02）；空收件匣明說無新項目，無法連線明說無法取得（TC-04）；正常 `/exit` 應送出 session.closed。再雙向各 5 次做真 Hub 問答（TC-13），記 message ID、送出／收到／回覆時間、是否閒置及是否有人按鍵；任何缺項就回報未驗。退出後用上面程序查詢將 pattern 換為 `*hub-hook.mjs*`，限核對本次專案程序。
+7. 把版本、分析表、ID 與失敗步驟交 PM；勿貼 token、整份私密狀態或含憑證的除錯 log。Windows／真 Claude 通過前保留「待 維護者 驗」狀態。
 
 ## 已知限制
 
