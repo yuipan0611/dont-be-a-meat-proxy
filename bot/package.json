@@ -1,0 +1,19 @@
+{
+  "name": "hub-discord-bot",
+  "private": true,
+  "description": "L-03 Discord bot: /connect, /revoke, /status (read-only Haiku 5.5 assistant, daily cap), Hub notifications.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:integration": "node --test test/integration/*.test.mjs",
+    "register-commands": "node src/main.mjs register-commands"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.4.0",
+    "discord.js": "14.28.1",
+    "pg": "8.23.1"
+  }
+}

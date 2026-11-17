@@ -45,11 +45,11 @@ test('L-01 isolated pgvector deployment, atomic migrations, access control and d
   await t.test('migrations are applied once, pgvector works, production remains unseeded', () => {
     const receipt = pg('migrate');
     assert.ok(!receipt.includes(appPassword) && !receipt.includes(adminPassword));
-    assert.equal(sql('select count(*) from _hub_ops.migrations'), '4');
+    assert.equal(sql('select count(*) from _hub_ops.migrations'), '5');
     assert.equal(sql('select count(*) from public.devices'), '0');
     assert.equal(sql("select '[1,2,3]'::extensions.vector OPERATOR(extensions.<->) '[1,2,3]'::extensions.vector"), '0');
     pg('migrate');
-    assert.equal(sql('select count(*) from _hub_ops.migrations'), '4');
+    assert.equal(sql('select count(*) from _hub_ops.migrations'), '5');
     console.log(`MEMORY=${compose('stats', '--no-stream', '--format', '{{.MemUsage}}').trim()}`);
     console.log(`PG=${sql('show server_version')} vector=${sql("select extversion from pg_extension where extname='vector'")}`);
   });
@@ -57,7 +57,7 @@ test('L-01 isolated pgvector deployment, atomic migrations, access control and d
     const secret = join(privateDir, 'hub-app.password');
     writeFileSync(secret, 'invalid-local-test-value');
     assert.throws(() => pg('migrate'), /64 lowercase hex/);
-    assert.equal(sql('select count(*) from _hub_ops.migrations'), '4');
+    assert.equal(sql('select count(*) from _hub_ops.migrations'), '5');
     writeFileSync(secret, appPassword);
   });
   await t.test('SQL failure rolls back the batch; edited applied migrations fail closed', () => {
@@ -65,7 +65,7 @@ test('L-01 isolated pgvector deployment, atomic migrations, access control and d
     writeFileSync(bad, 'create table public.must_rollback(id int); select 1/0;');
     assert.throws(() => pg('migrate'));
     assert.equal(sql("select to_regclass('public.must_rollback') is null"), 't');
-    assert.equal(sql('select count(*) from _hub_ops.migrations'), '4');
+    assert.equal(sql('select count(*) from _hub_ops.migrations'), '5');
     rmSync(bad);
     const first = join(dir, 'supabase/migrations/20261117000000_compat_supabase_roles.sql');
     writeFileSync(first, readFileSync(first, 'utf8') + '\n-- drift\n');
@@ -100,7 +100,7 @@ test('L-01 isolated pgvector deployment, atomic migrations, access control and d
     compose('restart', 'db');
     compose('up', '-d', '--wait', '--wait-timeout', '60', 'db');
     assert.equal(sql('select display_name from groups'), '繁中備份 🚀');
-    assert.equal(sql('select count(*) from _hub_ops.migrations'), '4');
+    assert.equal(sql('select count(*) from _hub_ops.migrations'), '5');
   });
   await t.test('daily archive includes a valid pg_dump; restore preserves data, ACL and ledger', () => {
     const data = join(dir, 'mail'); mkdirSync(data);
@@ -119,8 +119,8 @@ test('L-01 isolated pgvector deployment, atomic migrations, access control and d
     sql('create database hub_restore');
     run('docker', ['compose', '-p', project, '-f', composeFile, 'exec', '-T', 'db', 'pg_restore', '-U', 'postgres', '-d', 'hub_restore', '--no-owner', '--exit-on-error'], { input: dump });
     assert.equal(pg('psql', ['-d', 'hub_restore', '-Atqc', 'select display_name from groups']).trim(), '繁中備份 🚀');
-    assert.equal(pg('psql', ['-d', 'hub_restore', '-Atqc', 'select count(*) from _hub_ops.migrations']).trim(), '4');
-    assert.equal(pg('psql', ['-d', 'hub_restore', '-Atqc', "select has_table_privilege('anon','devices','SELECT'), has_table_privilege('service_role','audit_log','UPDATE'), count(*) filter(where relrowsecurity) from pg_class where relnamespace='public'::regnamespace and relkind='r'"]).trim(), 'f|f|9');
+    assert.equal(pg('psql', ['-d', 'hub_restore', '-Atqc', 'select count(*) from _hub_ops.migrations']).trim(), '5');
+    assert.equal(pg('psql', ['-d', 'hub_restore', '-Atqc', "select has_table_privilege('anon','devices','SELECT'), has_table_privilege('service_role','audit_log','UPDATE'), count(*) filter(where relrowsecurity) from pg_class where relnamespace='public'::regnamespace and relkind='r'"]).trim(), 'f|f|13');
     // The original SQLite restore verification remains compatible with the extended manifest.
     run('bash', [join(root, 'ops/restore'), '--backup', archive, '--verify-only']);
   });

@@ -1,0 +1,61 @@
+# L-03 Discord bot — Compose override on top of H-02's deploy/compose.yaml (project neighbor-hub).
+# Full procedure, secrets and rollback: docs/ops/runbook-L03-discord.md.
+#
+#   docker compose -f deploy/compose.yaml -f deploy/hubclock/compose.hubclock.yaml \
+#                  -f deploy/bot/compose.bot.yaml up -d --build bot
+#
+# One replica only. No published ports (Gateway only, SAD: bot needs no inbound port).
+services:
+  mail-a:
+    environment:
+      HTTP_ALLOWED_HOSTS: mail-a          # same as the HubClock override; bot reaches mail-a:8765 on mail_a_net
+
+  bot:
+    build:
+      context: ..                         # repo root (relative to deploy/, the first compose file's dir)
+      dockerfile: bot/Dockerfile
+    image: neighbor-hub-bot:l03
+    command: [run]
+    environment:
+      DISCORD_GUILD_ID: ${HUB_DISCORD_GUILD_ID:?set HUB_DISCORD_GUILD_ID}
+      DISCORD_APPLICATION_ID: ${HUB_DISCORD_APPLICATION_ID:?set HUB_DISCORD_APPLICATION_ID}
+      DISCORD_TOKEN_FILE: /run/bot/discord.token
+      ANTHROPIC_API_KEY_FILE: /run/bot/anthropic.key
+      HUB_PG_HOST: db                     # neighbor-hub-db project, via hub-db-net
+      HUB_PG_PASSWORD_FILE: /run/bot/hub-app.password
+      MAIL_URL: http://mail-a:8765/mcp/   # inside mail_a_net; never via Caddy
+      MAIL_TOKEN_FILE: /run/bot/mail-a.env
+      MAIL_PROJECT_KEY: /data/projects/group-a
+      MAIL_AGENT_NAME: HubBot             # session label only; the bot never sends Mail
+      HUB_PUBLIC_URL: ${HUB_PUBLIC_URL:-https://hub.example.invalid}
+      TOKEN_SPOOL_DIR: /spool
+      BOT_DAILY_CAP_USD: "0.50"           # GAP-18 / SR-AST-04
+      BOT_PRESENCE_DIGEST: ${HUB_BOT_PRESENCE_DIGEST:-0}   # 1 needs privileged Presence + Server Members intents
+      BOT_TICK_MS: "15000"
+    # Owner of the bot-only secret copies (runbook §2); the container cannot read root-only files.
+    user: "${HUB_BOT_UID:?set HUB_BOT_UID}:${HUB_BOT_GID:?set HUB_BOT_GID}"
+    volumes:
+      - ${HUB_BOT_SECRET_DIR:-/var/lib/neighbor-hub/private/bot}:/run/bot:ro
+      - ${HUB_TOKEN_SPOOL_DIR:-/var/lib/neighbor-hub/token-spool}:/spool   # TokenApplier seam (0700)
+    networks: [mail_a_net, hub_db_net, bot_egress]
+    depends_on:
+      mail-a:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=16m
+    mem_limit: 256m
+    restart: unless-stopped
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+
+networks:
+  hub_db_net:
+    external: true
+    name: neighbor-hub-db_hub-db-net      # L-01 internal network; db has no host port
+  bot_egress:
+    driver: bridge                        # Discord Gateway/REST + Anthropic API outbound only
