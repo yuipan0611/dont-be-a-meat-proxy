@@ -31,7 +31,7 @@ client 45、hub-hook 36、hub-hook 整合 5（TC-02／04／13、session.closed�
 | TC-07 | action 先同意才執行 | 人工 | ⬜ | |
 | TC-08 | action 拒絕；混合請求當 action | 人工 | ⬜ | |
 | TC-09 | 確認逾時 30 分鐘＝拒絕 | 人工（要等 30 分鐘） | ⬜ | |
-| TC-10 | 撤銷 Windows，Mac 不受影響 | runbook-H02 §6 | ⬜ | |
+| TC-10 | 撤銷 Windows，Mac 不受影響 | runbook-H02 §6 | ✅ | 同 session 下一請求 401、Mac 正常；Mail／Caddy 未重啟 |
 | TC-11 | 收件者不存在不保存 | 自動 | ✅ | E-RCPT，delivery tail 不變 |
 | TC-12 | 收件者離線時 action 只保存不執行 | 人工 | ⬜ | |
 | TC-13 | 延遲（每方向 n≥5，≤60 秒） | 自動＋人工 | ⬜ | |
