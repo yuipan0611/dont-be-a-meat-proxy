@@ -9,6 +9,20 @@ import { randomBytes, createHash } from 'node:crypto';
 const root = resolve(import.meta.dirname, '../..');
 const composeFile = join(root, 'deploy/postgres/compose.yaml');
 const op = join(root, 'ops/postgres');
+const migrationNames = [
+  '20261117000000_compat_supabase_roles.sql',
+  '20261117000100_hub_core_tables.sql',
+  '20261117000200_hub_rls_and_grants.sql',
+  '20261118000000_hub_clock_align_h05.sql',
+  '20261119000000_l03_discord_bot.sql',
+  '20261120000000_l05_decisions.sql',
+  '20261121000000_l08_group_boundaries.sql',
+  '20261122000000_l08_l05_decision_groups.sql',
+  '20261123000000_decision_mail_delivery.sql',
+];
+assert.deepEqual(readdirSync(join(root, 'supabase/migrations')).filter(f => f.endsWith('.sql')).sort(), migrationNames);
+const migrationManifest = migrationNames.map(filename => ({ filename,
+  sha256: createHash('sha256').update(readFileSync(join(root, 'supabase/migrations', filename))).digest('hex') }));
 
 test('L-01 isolated pgvector deployment, atomic migrations, access control and daily backup restore', { timeout: 180000 }, async t => {
   const dir = mkdtempSync(join(tmpdir(), 'l01-'));
@@ -25,6 +39,8 @@ test('L-01 isolated pgvector deployment, atomic migrations, access control and d
   const compose = (...args) => run('docker', ['compose', '-p', project, '-f', composeFile, ...args]);
   const pg = (command, args = [], options = {}) => run('bash', [op, command, ...args], options);
   const sql = query => pg('psql', ['-Atqc', query]).trim();
+  const assertLedger = (database = 'hub') => assert.deepEqual(JSON.parse(pg('psql', ['-d', database, '-Atqc',
+    "select json_agg(json_build_object('filename',filename,'sha256',sha256) order by filename) from _hub_ops.migrations"]).trim()), migrationManifest);
   t.after(() => { try { compose('down', '-v', '--remove-orphans'); } finally { rmSync(dir, { recursive: true, force: true }); } });
 
   await t.test('database service has a memory ceiling and no published ports', () => {
@@ -45,32 +61,44 @@ test('L-01 isolated pgvector deployment, atomic migrations, access control and d
   await t.test('migrations are applied once, pgvector works, production remains unseeded', () => {
     const receipt = pg('migrate');
     assert.ok(!receipt.includes(appPassword) && !receipt.includes(adminPassword));
-    assert.equal(sql('select count(*) from _hub_ops.migrations'), '6');
+    assert.deepEqual([...receipt.matchAll(/^APPLY (.+)$/gm)].map(m => m[1]), migrationNames);
+    assertLedger();
     assert.equal(sql('select count(*) from public.devices'), '0');
     assert.equal(sql("select '[1,2,3]'::extensions.vector OPERATOR(extensions.<->) '[1,2,3]'::extensions.vector"), '0');
-    pg('migrate');
-    assert.equal(sql('select count(*) from _hub_ops.migrations'), '6');
+    const repeated = pg('migrate');
+    assert.deepEqual([...repeated.matchAll(/^SKIP (.+)$/gm)].map(m => m[1]), migrationNames);
+    assertLedger();
     console.log(`MEMORY=${compose('stats', '--no-stream', '--format', '{{.MemUsage}}').trim()}`);
     console.log(`PG=${sql('show server_version')} vector=${sql("select extversion from pg_extension where extname='vector'")}`);
   });
   await t.test('malformed app secret is rejected before migration or credential changes', () => {
     const secret = join(privateDir, 'hub-app.password');
     writeFileSync(secret, 'invalid-local-test-value');
-    assert.throws(() => pg('migrate'), /64 lowercase hex/);
-    assert.equal(sql('select count(*) from _hub_ops.migrations'), '6');
-    writeFileSync(secret, appPassword);
+    try {
+      assert.throws(() => pg('migrate'), /64 lowercase hex/);
+      assertLedger();
+    } finally {
+      writeFileSync(secret, appPassword);
+    }
   });
   await t.test('SQL failure rolls back the batch; edited applied migrations fail closed', () => {
     const bad = join(dir, 'supabase/migrations/20261119000000_failure.sql');
     writeFileSync(bad, 'create table public.must_rollback(id int); select 1/0;');
-    assert.throws(() => pg('migrate'));
-    assert.equal(sql("select to_regclass('public.must_rollback') is null"), 't');
-    assert.equal(sql('select count(*) from _hub_ops.migrations'), '6');
-    rmSync(bad);
+    try {
+      assert.throws(() => pg('migrate'), /division by zero/);
+      assert.equal(sql("select to_regclass('public.must_rollback') is null"), 't');
+      assertLedger();
+    } finally {
+      rmSync(bad);
+    }
     const first = join(dir, 'supabase/migrations/20261117000000_compat_supabase_roles.sql');
     writeFileSync(first, readFileSync(first, 'utf8') + '\n-- drift\n');
-    assert.throws(() => pg('migrate'), /checksum|changed/i);
-    cpSync(join(root, 'supabase/migrations/20261117000000_compat_supabase_roles.sql'), first);
+    try {
+      assert.throws(() => pg('migrate'), /checksum|changed/i);
+      assertLedger();
+    } finally {
+      cpSync(join(root, 'supabase/migrations/20261117000000_compat_supabase_roles.sql'), first);
+    }
   });
   await t.test('existing Supabase SQL suite passes in a disposable database', () => {
     pg('psql', ['-c', 'create database hub_rls_test template hub']);
@@ -78,7 +106,8 @@ test('L-01 isolated pgvector deployment, atomic migrations, access control and d
     const result = spawnSync('bash', [op, 'psql', '-d', 'hub_rls_test', '-f', '/supabase/tests/rls_test.sql'], { env, encoding: 'utf8' });
     const output = result.stdout + result.stderr;
     assert.equal(result.status, 0, output);
-    assert.equal((output.match(/T\d[a-z]? PASS:/g) ?? []).length, 15, output);
+    assert.deepEqual([...output.matchAll(/\b(T\d+[a-z]?) PASS:/g)].map(m => m[1]),
+      ['T1', 'T2', 'T3', 'T4', 'T5a', 'T5b', 'T6a', 'T6b', 'T7a', 'T7b', 'T7c', 'T7d', 'T8', 'T9', 'T10']);
     assert.match(output, /ALL RLS TESTS PASSED/);
     console.log(output.trim());
     pg('psql', ['-c', 'drop database hub_rls_test']);
@@ -100,7 +129,7 @@ test('L-01 isolated pgvector deployment, atomic migrations, access control and d
     compose('restart', 'db');
     compose('up', '-d', '--wait', '--wait-timeout', '60', 'db');
     assert.equal(sql('select display_name from groups'), '繁中備份 🚀');
-    assert.equal(sql('select count(*) from _hub_ops.migrations'), '6');
+    assertLedger();
   });
   await t.test('daily archive includes a valid pg_dump; restore preserves data, ACL and ledger', () => {
     const data = join(dir, 'mail'); mkdirSync(data);
@@ -119,7 +148,7 @@ test('L-01 isolated pgvector deployment, atomic migrations, access control and d
     sql('create database hub_restore');
     run('docker', ['compose', '-p', project, '-f', composeFile, 'exec', '-T', 'db', 'pg_restore', '-U', 'postgres', '-d', 'hub_restore', '--no-owner', '--exit-on-error'], { input: dump });
     assert.equal(pg('psql', ['-d', 'hub_restore', '-Atqc', 'select display_name from groups']).trim(), '繁中備份 🚀');
-    assert.equal(pg('psql', ['-d', 'hub_restore', '-Atqc', 'select count(*) from _hub_ops.migrations']).trim(), '6');
+    assertLedger('hub_restore');
     assert.equal(pg('psql', ['-d', 'hub_restore', '-Atqc', "select has_table_privilege('anon','devices','SELECT'), has_table_privilege('service_role','audit_log','UPDATE'), count(*) filter(where relrowsecurity) from pg_class where relnamespace='public'::regnamespace and relkind='r'"]).trim(), 'f|f|14');
     // The original SQLite restore verification remains compatible with the extended manifest.
     run('bash', [join(root, 'ops/restore'), '--backup', archive, '--verify-only']);

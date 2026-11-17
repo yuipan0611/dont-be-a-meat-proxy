@@ -1,6 +1,6 @@
 # L-09｜S1 上線單一路徑（PM 在 VPS root 執行）
 
-部署程序起始基線：master `0cc8934`，2026-11-17；P-1 重驗基線：master `e93e18e`，2026-11-18。此票整合部署程序；本機 Docker 假 VPS 演練不代表 `<VPS_IP>`、真 Discord、Groq、OAuth 或 Windows 已驗收。正式結果逐項寫入 [delivery-S1](../delivery-S1.md)。Codex 未登入 VPS、未 push、未修改 master。
+部署程序起始基線：master `0cc8934`，2026-11-17；P-1 重驗基線：master `e93e18e`；P-1b 合併後重驗基線：master `0256ff5`（含 P-2/P-3），2026-11-18。此票整合部署程序；本機 Docker 假 VPS 演練不代表 `<VPS_IP>`、真 Discord、Groq、OAuth 或 Windows 已驗收。正式結果逐項寫入 [delivery-S1](../delivery-S1.md)。Codex 未登入 VPS、未 push、未修改 master。
 
 **F-11b 接線更新（2026-11-18）**：維護者 已選 Groq API，預設 `groq-api`／`openai/gpt-oss-120b`；bot／Hindsight／EVAL 只連共用 gateway，不再要求 Anthropic 或 Google 登入。Groq key 只掛 gateway，內部 consumers 使用各自的 gateway key。查證與資料保留限制見 [Groq](../research/F-11-gemini-subscription-backend.md#groq)。F-11b 單元／Compose／image 檢查見 [收據](../research/F-11b-validation.txt)；目前 master 的完整 L09 重驗結果、失敗與每步 exit code 見 [P-1 演練證據](evidence/L09-rehearsal-2.md)。**真 key 與正式 LLM 驗收仍待 PM**，gateway liveness 不代表模型 readiness。
 

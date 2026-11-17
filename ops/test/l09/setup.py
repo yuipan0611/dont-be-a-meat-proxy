@@ -67,7 +67,9 @@ shutil.rmtree(root/'supabase'); os.symlink(sql,root/'supabase')
 hc=['docker','compose','-p','neighbor-hub','-f',str(root/'deploy/compose.yaml'),'-f',str(root/'deploy/hubclock/compose.hubclock.yaml')]
 subprocess.run(hc+['up','-d','--wait','mail-a'],env=env,check=True,stdout=subprocess.DEVNULL)
 subprocess.run([str(root/'ops/bootstrap'),'--state-dir',str(P),'--url','http://127.0.0.1:8765/mcp/'],env=env,check=True,stdout=subprocess.DEVNULL)
-for p in P.glob('*.sender.json'): os.chown(p,10001,10001)
+for p in P.glob('*.sender.json'):
+    # P-3 keeps the HubBot source root-owned; launch creates its dedicated bot-UID copy.
+    if p.name != 'hubbot.sender.json': os.chown(p,10001,10001)
 subprocess.run(hc+['up','-d','--no-deps','--wait','hubclock'],env=env,check=True,stdout=subprocess.DEVNULL)
 # HTTP fixture origins are local only; use no public DNS/TLS certificates or network requests.
 c=Path('/etc/caddy'); (c/'hub-private').mkdir(parents=True,exist_ok=True,mode=0o750)
