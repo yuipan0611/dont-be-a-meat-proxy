@@ -11,11 +11,19 @@ case "${1:-}" in
     shift
     "${PG_COMPOSE[@]}" exec -T db psql -X -U postgres -d hub -v ON_ERROR_STOP=1 "$@"
     ;;
+  hindsight-init)
+    # L-02: create database hindsight + login hindsight_app. Password file is read here by the root
+    # operator and passed by NAME (-e VAR), so it never appears in argv or docker inspect.
+    PRIVATE_DIR="${HUB_PRIVATE_DIR:-/var/lib/neighbor-hub/private}"
+    HINDSIGHT_DB_PASSWORD="$(cat "$PRIVATE_DIR/hindsight-db.password")"
+    export HINDSIGHT_DB_PASSWORD
+    "${PG_COMPOSE[@]}" exec -T -e HINDSIGHT_DB_PASSWORD db psql -X -U postgres -d postgres -v ON_ERROR_STOP=1 -f /opt/hub-postgres/hindsight.sql
+    ;;
   dump)
-    "${PG_COMPOSE[@]}" exec -T db pg_dump -U postgres -d hub --format=custom --no-owner
+    "${PG_COMPOSE[@]}" exec -T db pg_dump -U postgres -d "${2:-hub}" --format=custom --no-owner
     ;;
   verify-dump)
     "${PG_COMPOSE[@]}" exec -T db pg_restore --list
     ;;
-  *) echo 'Usage: ops/postgres migrate | psql [psql options] | dump | verify-dump' >&2; exit 2 ;;
+  *) echo 'Usage: ops/postgres migrate | hindsight-init | psql [psql options] | dump [hub|hindsight] | verify-dump' >&2; exit 2 ;;
 esac

@@ -16,6 +16,9 @@ RETENTION_DAYS="${RETENTION_DAYS:-7}"
 QUIET=0
 # Opt in only after L-01 is deployed; old MVP backup remains unchanged by default.
 HUB_PG_BACKUP="${HUB_PG_BACKUP:-0}"
+# L-02: opt in after the memory stack is deployed. Dumps database hindsight + the LLM budget ledger.
+HUB_HINDSIGHT_BACKUP="${HUB_HINDSIGHT_BACKUP:-0}"
+HUB_BANKPROXY_STATE_DIR="${HUB_BANKPROXY_STATE_DIR:-/var/lib/neighbor-hub/bank-proxy}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
@@ -37,6 +40,7 @@ Environment variables:
   HUB_DATA_DIR, HUB_STATE_DIR, CADDY_SNIPPET, CADDY_PRIVATE_DIR, HUB_CLOCK_DIR, BACKUP_DIR, RETENTION_DAYS
   HUB_PG_BACKUP=1 includes a consistent pg_dump of hub (fails closed if unavailable).
   HUB_PG_PROJECT, HUB_PRIVATE_DIR configure ops/postgres.
+  HUB_HINDSIGHT_BACKUP=1 adds a pg_dump of database hindsight and the bank-proxy LLM ledger (L-02).
 EOF
   exit 1
 }
@@ -231,6 +235,28 @@ elif [[ "$HUB_PG_BACKUP" != "0" ]]; then
   exit 1
 fi
 
+# 6b. L-02 memory: Hindsight database (search index; Mail stays the record) and the daily LLM ledger.
+HAS_HINDSIGHT="false"
+HINDSIGHT_HASH=""
+LEDGER_HASH=""
+if [[ "$HUB_HINDSIGHT_BACKUP" == "1" ]]; then
+  mkdir -p "$STAGING_DIR/postgres" "$STAGING_DIR/bank-proxy"
+  log "Creating consistent pg_dump of hindsight..."
+  "$SCRIPT_DIR/postgres" dump hindsight > "$STAGING_DIR/postgres/hindsight.dump"
+  "$SCRIPT_DIR/postgres" verify-dump < "$STAGING_DIR/postgres/hindsight.dump" > /dev/null
+  chmod 600 "$STAGING_DIR/postgres/hindsight.dump"
+  HINDSIGHT_HASH="$(sha256_file "$STAGING_DIR/postgres/hindsight.dump")"
+  if [[ -f "$HUB_BANKPROXY_STATE_DIR/llm-ledger.json" ]]; then
+    cp "$HUB_BANKPROXY_STATE_DIR/llm-ledger.json" "$STAGING_DIR/bank-proxy/llm-ledger.json"
+    chmod 600 "$STAGING_DIR/bank-proxy/llm-ledger.json"
+    LEDGER_HASH="$(sha256_file "$STAGING_DIR/bank-proxy/llm-ledger.json")"
+  fi
+  HAS_HINDSIGHT="true"
+elif [[ "$HUB_HINDSIGHT_BACKUP" != "0" ]]; then
+  echo 'ERROR: HUB_HINDSIGHT_BACKUP must be 0 or 1.' >&2
+  exit 1
+fi
+
 # 7. Generate manifest.json
 MANIFEST="$STAGING_DIR/manifest.json"
 cat <<EOF > "$MANIFEST"
@@ -266,6 +292,14 @@ cat <<EOF > "$MANIFEST"
     "database": "hub",
     "file": "postgres/hub.dump",
     "sha256": "$POSTGRES_HASH"
+  },
+  "hindsight": {
+    "present": $HAS_HINDSIGHT,
+    "database": "hindsight",
+    "file": "postgres/hindsight.dump",
+    "sha256": "$HINDSIGHT_HASH",
+    "ledger_file": "bank-proxy/llm-ledger.json",
+    "ledger_sha256": "$LEDGER_HASH"
   },
   "retention_policy_days": $RETENTION_DAYS
 }
