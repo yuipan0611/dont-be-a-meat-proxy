@@ -139,14 +139,25 @@ export function parseEnvelope(message) {
   return null;
 }
 
-function kindLabel(env) {
+// HubClock result statuses (ops/lifecycle) in the SRS 2.3 / SR-MSG-09 wording.
+const CLOCK_STATUS = { unanswered: '未回答', approved: '已同意', rejected: '已拒絕', expired: '已逾時', invalidated: '已失效' };
+
+// Display only: what HubClock and replies carry in kind/intent is protocol data (H-05 relies on it), not a label.
+const isClockResult = (m, env) => m.topic === 'control' && env?.event_type === 'result';
+const isReply = (m, env) => env.client_event_id !== m.thread_id; // a new root's thread_id is its client_event_id (SDS API-02)
+const firstLine = (s) => String(s ?? '').split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+const summaryOf = (m, env) => (isClockResult(m, env) ? firstLine(env.text) : env.summary);
+
+function kindLabel(m, env) {
   if (!env) return '格式不明';
+  if (isClockResult(m, env)) return `HubClock 通知：${CLOCK_STATUS[env.status] ?? env.status ?? env.event_type}`;
+  if (isReply(m, env)) return '回覆'; // replies inherit the envelope's default intent; it is not a new request
   if (env.kind === 'handoff') return '交接'; // information; the envelope's default intent is not a request here
   return `${env.kind}/${env.intent}`;
 }
 
 function header(m, env) {
-  const kind = env ? kindLabel(env) : `${m.topic ?? '?'}/格式不明`;
+  const kind = env ? kindLabel(m, env) : `${m.topic ?? '?'}/格式不明`;
   return `#${m.id}｜${m.created_ts}｜來自 ${m.from}｜${kind}｜主旨：${m.subject}`;
 }
 
@@ -157,11 +168,11 @@ function formatFull(m, { textLimit = Infinity } = {}) {
     lines.push('  ⚠ 不是 v1 envelope：只顯示原文，不自動執行，需人工看。', '  原文：', indent(clip(m.body_md, textLimit)));
     return { text: lines.join('\n'), complete: cp(m.body_md).length <= textLimit };
   }
-  lines.push(`  摘要：${env.summary}`);
+  lines.push(`  摘要：${summaryOf(m, env)}`);
   if (env.links?.length) lines.push(`  連結：${env.links.join(' ')}`);
   if (env.unfinished?.length) lines.push(`  未完成：${env.unfinished.join('；')}`);
-  const isReply = env.client_event_id !== m.thread_id; // a new root's thread_id is its client_event_id (SDS API-02)
-  if (isReply) lines.push('  這是同一串裡的回覆，不是新的請求。');
+  if (isClockResult(m, env)) lines.push(`  這是 HubClock 對 #${env.root_mail_id} 的狀態通知，不是新的請求。`);
+  else if (isReply(m, env)) lines.push('  這是同一串裡的回覆，不是新的請求。');
   else if (env.kind === 'handoff') lines.push('  這是交接紀錄（資訊），不是動作請求：不需要 presented／choice；要不要接著做由使用者決定。');
   else if (env.intent === 'question') lines.push(
     `  這是提問：純提問才只引用 repo／專案紀錄的內容回答，用 \`node client/hub-hook.mjs send --json '{"replyTo":${m.id},"summary":"…","text":"…"}'\`。`,
@@ -178,8 +189,8 @@ const indent = (s) => String(s).split('\n').map((l) => `    ${l}`).join('\n');
 
 function wakeLine(m) {
   const env = parseEnvelope(m);
-  const what = kindLabel(env);
-  const summary = env ? clip(oneLine(env.summary), 80) : '（需人工看）';
+  const what = kindLabel(m, env);
+  const summary = env ? clip(oneLine(summaryOf(m, env)), 80) : '（需人工看）';
   // A question can still be a do-it request (FR-15 / AC-05.2): the recipient decides, so say so before it answers.
   const hint = env?.intent === 'question' && env.kind !== 'handoff' && env.client_event_id === m.thread_id
     ? '（提問；要你改檔／跑會改狀態的指令／碰遠端就當動作請求：先確認卡→presented）' : '';
