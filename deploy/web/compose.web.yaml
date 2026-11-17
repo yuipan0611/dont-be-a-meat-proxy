@@ -6,7 +6,8 @@ services:
       dockerfile: web/Dockerfile
     environment:
       WEB_ORIGIN: ${HUB_WEB_ORIGIN:-https://hub.example.invalid}
-      WEB_GROUP_ID: group-a
+      WEB_MAP_FILE: /app/web/architecture.json
+      WEB_GROUP_ID: ${HUB_GROUP_ID:?set HUB_GROUP_ID}
       HUB_PG_HOST: db
       HUB_PG_USER: hub_app
       HUB_PG_PASSWORD_FILE: /run/web/hub-app.password
@@ -16,17 +17,17 @@ services:
       DISCORD_GUILD_ID: ${HUB_DISCORD_GUILD_ID:?set HUB_DISCORD_GUILD_ID}
       DISCORD_APPLICATION_ID: ${HUB_DISCORD_APPLICATION_ID:?set HUB_DISCORD_APPLICATION_ID}
       DISCORD_CLIENT_SECRET_FILE: /run/web/discord-client.secret
-      GITHUB_TOKEN_FILE: /run/web/github.token
+      GITHUB_TOKEN_FILE: ${HUB_WEB_GITHUB_TOKEN_FILE:-}
     volumes:
       - ${HUB_WEB_SECRET_DIR:-/var/lib/neighbor-hub/private/web}:/run/web:ro
       - ${HUB_WEB_MAP_FILE:?set absolute HUB_WEB_MAP_FILE}:/app/web/architecture.json:ro
-    ports: ["127.0.0.1:8780:8080"]
+    ports: ["127.0.0.1:${HUB_WEB_PORT:-8781}:8080"]
     networks: [mail_a_net, hub_db_net, web_egress]
     user: "${HUB_WEB_UID:?set HUB_WEB_UID}:${HUB_WEB_GID:?set HUB_WEB_GID}"
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:rw,nosuid,noexec,size=8m]
+    tmpfs: ["/tmp:rw,nosuid,noexec,size=8m"]
     mem_limit: 128m
     restart: unless-stopped
     logging:

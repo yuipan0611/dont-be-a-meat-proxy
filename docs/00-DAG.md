@@ -146,6 +146,10 @@ flowchart TD
 | L-05 決策草稿→正式 | <ORCA_ID> | <ORCA_ID> → <ORCA_ID> | agy-junior-swe-1 | 11-28 | ✅ 8832b89 併入 master（agy-1 解 bot 衝突，PM 解 client 測試衝突）；PM 重跑 bot 64/64、client 118（105 pass／13 skip）0 fail；未部署 |
 | L-08 跨組隔離 | <ORCA_ID> | <ORCA_ID> → 解衝突 <ORCA_ID>（原 <ORCA_ID> 因 worktree 有他人未提交 UI 工作改派） | codex（worktree codex-L08） | 11-29 | ✅ 1bb4aa6 併入 master：TC-14 本機 grp-test／grp-test2 全過（96 次跨組 401、附件 marker 無外洩、Hindsight／DB／決策隔離、TokenApplier）；PM 重跑 bot 64、client 105（13 skip）、bank-proxy＋bridge 42、python ops 0 fail；未部署 |
 | UI 架構工作台（維護者 直接交給 Codex，非 PM 派工） | — | — | codex（worktree codex-senior-swe） | 11-30 | ✅ 本機完成：PM 於該 worktree 只提交 UI 相關檔到分支 example-org/ui-workbench（0dd3620，未含 spikes/、.playwright-cli/），併入 master d8c6996；PM 重跑 web 12/12、client 105（13 skip）、bot 64 0 fail。**未上線**：需部署 deploy/web＋Caddy /explorer.js 路由、正式 Discord OAuth、3 人新手測試 |
+| L-09 上線部署總 runbook＋腳本 | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-L09） | 11-29 | ✅ 8abf7f3 併入 master：`docs/ops/runbook-L09-launch-deploy.md`、`ops/deploy-l09.sh` 7 段；假 VPS 演練 STEP 1～7 PASS、Caddy reload 1 次；Mail／HubClock 在 STEP 4 維護窗各重建一次。**VPS 執行待 F-11 LLM 後端決策** |
+| Discord application | <ORCA_ID> | <ORCA_ID> | codex（computer use）＋維護者（建立、CAPTCHA、身分驗證） | — | ✅ App ID <APPLICATION_ID>；token 存 Mac ~/.config/hub-discord/bot.token（600，72 bytes，PM 驗格式未讀內容）；待 維護者 邀請進伺服器 |
+| F-11 Gemini 訂閱當 LLM 後端 | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-F11） | — | 🔄 發現 Gemini CLI 個人訂閱登入 2026-06-18 已停用；查 Antigravity CLI／AI Studio 免費層／付費 API 三選項 |
+| UI 第三版（維護者：第二版太簡陋不合格） | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-senior-swe） | 11-30 | 🔄 |
 | EVAL-01 question／action 分類評測 | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-2 | 11-29 | ✅ 30 則 fixtures＋runner 併入 master，PM 重跑單元 10/10；真模型 claude CLI 第 1 次 30/30 正確（action→question 0、question→action 0%），收據 docs/ops/evidence/EVAL01-claude-cli-run1.md |
 | EVAL-01 收件端判斷 question／action | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-2 | 11-28 | ✅ 資料集 fixtures/eval-classify-v1.jsonl（30 則，10 Q/10 A/10 mixed）、評測 runner ops/eval/eval-classify.mjs、單元測試 10/10 PASS |
 

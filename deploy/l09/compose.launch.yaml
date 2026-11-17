@@ -1,0 +1,5 @@
+# L09 final override: new internal readers use the same validated Mail entry as HubClock.
+services:
+  memory-bridge:
+    environment:
+      BRIDGE_MAIL_URL: http://validator:8766/mcp/
