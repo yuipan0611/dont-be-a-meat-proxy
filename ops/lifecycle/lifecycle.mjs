@@ -14,12 +14,19 @@
 
 import { MailError } from '../../client/mail-client.mjs';
 import {
-  parseControl, parseItem, tsToMicros, microsToIso, resultKey, resultText,
+  parseControl, parseItem, tsToMicros, microsToIso, resultKey, resultText, autoNoticeKey,
   QUESTION_TIMEOUT_MS, ACTION_TIMEOUT_MS, RESULT_EVENT, CONTROL_VERSION, CHOICES,
+  AUTO_DEFAULT_MINUTES, AUTO_MAX_MINUTES, AUTO_OUTCOMES,
 } from './protocol.mjs';
 
 const OPEN = new Set(['pending', 'presented']);
 const reqKey = (rootMailId, recipientAgent) => `${rootMailId}:${recipientAgent}`;
+const MIN_US = 60_000_000;
+const AUTO_REJECT_TEXT = {
+  owner: '只有收件人能開啟 auto mode（不能替別的 agent 開）。未生效。',
+  target: '必須指定對象：一個具體的 agent（不能是所有人或自己）。未生效。',
+  minutes: '時長必須是 1～240 分鐘的整數（最長 4 小時）。未生效。',
+};
 
 /**
  * @param {object} o
@@ -87,6 +94,9 @@ export function createLifecycle({
         case 'choice': return onChoice(tx, m, c);
         case 'answer': return onAnswer(tx, m, c.root_mail_id);
         case 'session.closed': return onSessionClosed(tx, m, c);
+        case 'auto.on': return onAutoOn(tx, m, c);
+        case 'auto.off': return onAutoOff(tx, m, c);
+        case 'auto.executed': return onAutoExecuted(tx, m, c);
         default: return log({ ev: 'ignored_control', message_id: m.id, why: `event_type ${c.event_type}` });
       }
     }
@@ -116,7 +126,13 @@ export function createLifecycle({
         tx.putRequest({ ...base, kind: 'question', status: 'pending', deadlineAt: created + questionTimeoutMs * 1000 });
       } else {
         // Action: no timer until the recipient actually shows the prompt (SR-CFM-02, TC-12).
-        tx.putRequest({ ...base, kind: 'action', status: 'pending' });
+        const req = { ...base, kind: 'action', status: 'pending' };
+        tx.putRequest(req);
+        const grant = grantCovering(tx, recipient, m.from, created);
+        if (grant) {
+          req.grantKey = grant.key;
+          resolve(tx, req, 'auto_approved', { at: created, by: self, mailId: grant.openMailId });
+        }
       }
       log({ ev: 'registered', key, kind: item.intent });
     }
@@ -180,6 +196,114 @@ export function createLifecycle({
     log({ ev: 'session_closed', agent: m.from, session: c.recipient_session, invalidated: open.length });
   }
 
+  // ---------------------------------------------------------------- L-06 auto mode
+  // A grant covers an action that ARRIVED (root created_ts, server time) in [startAt, endedAt ?? endAt)
+  // (SR-AUTO-03). Purely time-based, so late ingest or a HubClock restart never changes the answer.
+  function grantCovering(tx, recipient, sender, t) {
+    return tx.listGrants((g) => g.recipientAgent === recipient && g.target === sender
+      && g.startAt <= t && t < (g.endedAt ?? g.endAt))[0] ?? null;
+  }
+
+  const NOT_A_TARGET = new Set(['*', 'all', 'everyone', 'anyone', '所有人']);
+
+  function validateAutoOn(m, c) {
+    if (c.recipient_agent !== undefined && c.recipient_agent !== m.from) return { code: 'E-NOT-OWNER', what: 'owner' };
+    const t = c.target;
+    if (typeof t !== 'string' || !t.trim() || NOT_A_TARGET.has(t.trim().toLowerCase()) || t === m.from || t === self) {
+      return { code: 'E-AUTO', what: 'target' };
+    }
+    const minutes = c.minutes ?? AUTO_DEFAULT_MINUTES;
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > AUTO_MAX_MINUTES) return { code: 'E-AUTO', what: 'minutes' };
+    return { minutes };
+  }
+
+  function onAutoOn(tx, m, c) {
+    const v = validateAutoOn(m, c);
+    if (v.code) {
+      // SR-AUTO-01/02: rejected → no grant at all, only a notice to the one who tried.
+      queueAutoNotice(tx, { ref: `mail-${m.id}`, status: 'auto_rejected', to: [m.from], threadId: m.thread_id, fields: {
+        recipient_agent: c.recipient_agent ?? m.from, target: c.target ?? null, minutes: c.minutes ?? null,
+        opened_by: m.from, open_mail_id: m.id, error_code: v.code, text: AUTO_REJECT_TEXT[v.what],
+      } });
+      return log({ ev: 'auto_rejected', message_id: m.id, code: v.code, what: v.what });
+    }
+    const start = tsToMicros(m.created_ts);
+    let replaced = false;
+    for (const old of tx.listGrants((g) => g.status === 'active' && g.recipientAgent === m.from && g.target === c.target && start < g.endAt)) {
+      tx.putGrant({ ...old, status: 'replaced', endedAt: start, replacedBy: `grant:${m.id}` }); // SR-AUTO-05: no stacking
+      replaced = true;
+    }
+    const grant = {
+      key: `grant:${m.id}`, groupId, recipientAgent: m.from, openedBy: m.from, target: c.target, minutes: v.minutes,
+      startAt: start, endAt: start + v.minutes * MIN_US, endedAt: null, status: 'active',
+      openMailId: m.id, threadId: m.thread_id, session: c.recipient_session ?? null, closedMailId: null,
+    };
+    tx.putGrant(grant);
+    queueGrantNotice(tx, grant, 'auto_on', replaced);
+    log({ ev: 'auto_on', key: grant.key, target: grant.target, end: microsToIso(grant.endAt) });
+  }
+
+  function onAutoOff(tx, m, c) {
+    const t = tsToMicros(m.created_ts);
+    const open = tx.listGrants((g) => g.status === 'active' && g.recipientAgent === m.from
+      && (c.target === undefined || c.target === null || g.target === c.target) && t < g.endAt);
+    for (const g of open) endGrant(tx, { ...g, status: 'closed', endedAt: t, closedMailId: m.id });
+    log({ ev: 'auto_off', agent: m.from, target: c.target ?? null, closed: open.length });
+  }
+
+  function endGrant(tx, g) {
+    tx.putGrant(g);
+    queueGrantNotice(tx, g, 'auto_ended');
+  }
+
+  function onAutoExecuted(tx, m, c) {
+    const req = tx.getRequest(reqKey(c.root_mail_id, m.from));
+    if (!req) return log({ ev: 'ignored_control', message_id: m.id, why: 'auto.executed for unknown request' });
+    if (req.status !== 'auto_approved') return noteLate(tx, req, m, `auto.executed but status ${req.status}`);
+    if (req.execution) return noteLate(tx, req, m, 'auto.executed reported twice; first kept');
+    if (!AUTO_OUTCOMES.includes(c.outcome)) return noteLate(tx, req, m, 'auto.executed: invalid outcome');
+    req.execution = { outcome: c.outcome, reason: c.reason ?? null, at: tsToMicros(m.created_ts), mailId: m.id };
+    req.version += 1;
+    tx.putRequest(req);
+    const eventKey = resultKey({ groupId, rootMailId: req.rootMailId, recipientAgent: req.recipientAgent, status: 'auto_executed' });
+    if (!tx.getOutbox(eventKey)) {
+      const entry = buildResult(req, eventKey);
+      Object.assign(entry.payload.control, {
+        status: 'auto_executed', outcome: c.outcome, reason: c.reason ?? null,
+        executed_at: microsToIso(req.execution.at), execution_mail_id: m.id,
+        text: `auto mode 執行${c.outcome === 'succeeded' ? '成功' : '失敗'}：#${req.rootMailId}（寄件 ${req.requester}）。${c.reason ? `原因：${c.reason}` : ''}`,
+      });
+      entry.payload.subject = `[HubClock] auto_executed ${c.outcome}｜#${req.rootMailId}`;
+      tx.putOutbox(entry);
+    }
+    log({ ev: 'auto_executed', key: req.key, outcome: c.outcome });
+  }
+
+  function queueGrantNotice(tx, g, status, replaced = false) {
+    const endedBy = g.status === 'expired' ? 'expired' : g.status === 'closed' ? 'closed' : null;
+    const text = status === 'auto_on'
+      ? `auto mode 已開啟：${g.recipientAgent} 對 ${g.target}，${g.minutes} 分鐘，到 ${microsToIso(g.endAt)}。期間 ${g.target} 送來的動作請求不需確認、直接執行，每次都記錄。${replaced ? '（取代先前的設定，時間重新計算）' : ''}`
+      : `auto mode 已結束（${endedBy === 'expired' ? '到期' : '收件人提前關閉'}）：${g.recipientAgent} 對 ${g.target}。之後的動作請求需要確認。`;
+    queueAutoNotice(tx, { ref: g.key, status, to: [...new Set([g.recipientAgent, g.target])], threadId: g.threadId, fields: {
+      grant_key: g.key, recipient_agent: g.recipientAgent, target: g.target, minutes: g.minutes,
+      opened_by: g.openedBy, open_mail_id: g.openMailId, start_at: microsToIso(g.startAt), end_at: microsToIso(g.endAt),
+      ended_at: g.endedAt === null ? null : microsToIso(g.endedAt), ended_by: endedBy, replaced, text,
+    } });
+  }
+
+  function queueAutoNotice(tx, { ref, status, to, threadId, fields }) {
+    const eventKey = autoNoticeKey({ groupId, ref, status });
+    if (tx.getOutbox(eventKey)) return;
+    tx.putOutbox({
+      eventKey, requestKey: null, target: 'mail', state: 'pending', attempts: 0,
+      nextTryAt: clock.nowMs(), resultMailId: null, lastError: null,
+      payload: {
+        to, subject: `[HubClock] ${status}｜${fields.recipient_agent} → ${fields.target ?? '?'}`, threadId,
+        control: { v: CONTROL_VERSION, event_type: RESULT_EVENT, kind: 'auto', status, root_mail_id: null, ...fields },
+      },
+    });
+  }
+
   function noteLate(tx, req, m, why) {
     if (!req.late.some((l) => l.mailId === m.id)) {
       req.late.push({ mailId: m.id, at: tsToMicros(m.created_ts), why });
@@ -214,6 +338,7 @@ export function createLifecycle({
           deadline_at: req.deadlineAt === null ? null : microsToIso(req.deadlineAt),
           decided_at: microsToIso(req.resolvedAt), decided_by: req.decidedBy,
           decision_mail_id: req.decisionMailId, reason: req.reason,
+          ...(req.grantKey ? { grant_key: req.grantKey } : {}),
           text: resultText(req.status, req.reason),
         },
       },
@@ -235,6 +360,11 @@ export function createLifecycle({
           resolve(tx, req, 'expired', { at: req.deadlineAt, by: self, mailId: null });
           n++;
         }
+      }
+      for (const g of tx.listGrants((x) => x.status === 'active')) {
+        if (now < g.endAt + settle) continue;
+        endGrant(tx, { ...g, status: 'expired', endedAt: g.endAt }); // notice dated at the end time, as for H-05 deadlines
+        n++;
       }
       return n;
     });

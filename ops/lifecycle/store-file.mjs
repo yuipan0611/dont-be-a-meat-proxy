@@ -10,6 +10,7 @@
 //   tx.isProcessed(messageId) / tx.markProcessed(messageId)
 //   tx.getRequest(key) / tx.putRequest(req) / tx.listRequests(pred)
 //   tx.getOutbox(eventKey) / tx.putOutbox(entry) / tx.listOutbox(pred)
+//   tx.getGrant(key) / tx.putGrant(grant) / tx.listGrants(pred)      (L-06 auto mode)
 //
 // transact() checks the lock is still ours before writing (fencing), so a stalled old writer that
 // lost its lease cannot overwrite the new writer's state.
@@ -31,7 +32,7 @@ const STATE_SCHEMA = 1;
 const PROCESSED_KEEP = 20_000; // message IDs remembered for duplicate-event suppression
 
 function emptyState() {
-  return { schema: STATE_SCHEMA, cursor: null, requests: {}, outbox: {}, processed: [] };
+  return { schema: STATE_SCHEMA, cursor: null, requests: {}, outbox: {}, grants: {}, processed: [] };
 }
 
 async function atomicWrite(path, data) {
@@ -133,6 +134,7 @@ export function createFileStore({ dir, clock, leaseMs = 60_000, owner = `${hostn
     const s = await readJson(statePath);
     if (!s) return emptyState();
     if (s.schema !== STATE_SCHEMA) throw new Error(`unsupported HubClock state schema ${s.schema}`);
+    s.grants ??= {}; // state files written before L-06
     return s;
   }
 
@@ -152,6 +154,9 @@ export function createFileStore({ dir, clock, leaseMs = 60_000, owner = `${hostn
       getOutbox: (k) => (state.outbox[k] ? structuredClone(state.outbox[k]) : null),
       putOutbox: (e) => void (state.outbox[e.eventKey] = structuredClone(e)),
       listOutbox: (pred = () => true) => Object.values(state.outbox).filter(pred).map((e) => structuredClone(e)),
+      getGrant: (key) => (state.grants[key] ? structuredClone(state.grants[key]) : null),
+      putGrant: (g) => void (state.grants[g.key] = structuredClone(g)),
+      listGrants: (pred = () => true) => Object.values(state.grants).filter(pred).map((g) => structuredClone(g)),
     };
     const result = await fn(tx);
     state.processed = [...processed].slice(-PROCESSED_KEEP);

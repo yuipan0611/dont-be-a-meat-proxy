@@ -718,3 +718,134 @@ test('L-00: a HubClock result shows as 「HubClock 通知：<事件>」 with the
   const inbox = (await mac2.run('inbox')).stdout;
   assert.doesNotMatch(inbox, /undefined|action\/|question\//);
 });
+
+// ---- L-06 auto mode (TC-15) ----
+import { buildClientControl as bcc } from '../../ops/lifecycle/protocol.mjs';
+
+/** What HubClock (JadeBluff) publishes; the real producer is ops/lifecycle (auto-mode.test.mjs). */
+function clockResult(hub, to, threadId, control) {
+  return hub.client('JadeBluff').sendControl({ to, subject: `[HubClock] ${control.status}`, threadId, control: { v: 1, event_type: 'result', ...control }, idempotencyKey: `k-${hub.messages.length + 1}` });
+}
+
+test('auto on / off: send the L-06 control to HubClock unvalidated (HubClock judges); every command is a new record', async () => {
+  const hub = createFakeHub();
+  const win = machine(hub);
+  await win.run('start', { session_id: 's-9' });
+  const on = await win.run('auto', {}, { args: ['on', '--for', 'BlueLake', '--minutes', '90'] });
+  assert.equal(on.exitCode, 0);
+  assert.match(on.stdout, /^已保存 #\d+（auto on：對 BlueLake，90 分鐘）/);
+  assert.match(on.stdout, /HubClock/);
+  await win.run('auto', {}, { args: ['on', '--for', 'BlueLake', '--minutes', '300'] }); // HubClock will reject; client does not pre-judge
+  await win.run('auto', {}, { args: ['on'] }); // no target: also HubClock's call (E-AUTO)
+  await win.run('auto', {}, { args: ['off'] });
+  const controls = hub.messages.filter((m) => m.topic === 'control').map((m) => ({ to: m.to, body: JSON.parse(m.body_md) }));
+  assert.deepEqual(controls.map((c) => c.body), [
+    bcc({ eventType: 'auto.on', recipientSession: 's-9', agent: 'RedStone', recipientAgent: 'RedStone', target: 'BlueLake', minutes: 90 }),
+    bcc({ eventType: 'auto.on', recipientSession: 's-9', agent: 'RedStone', recipientAgent: 'RedStone', target: 'BlueLake', minutes: 300 }),
+    bcc({ eventType: 'auto.on', recipientSession: 's-9', agent: 'RedStone', recipientAgent: 'RedStone' }),
+    bcc({ eventType: 'auto.off', recipientSession: 's-9', agent: 'RedStone' }),
+  ]);
+  assert.ok(controls.every((c) => c.to.length === 1 && c.to[0] === 'JadeBluff'));
+});
+
+test('auto: usage errors and a missing clock_agent never send anything', async () => {
+  const hub = createFakeHub();
+  const win = machine(hub);
+  await win.run('start');
+  assert.match((await win.run('auto', {}, { args: [] })).stderr, /用法/);
+  assert.match((await win.run('auto', {}, { args: ['done', '1', 'maybe'] })).stderr, /用法/);
+  assert.equal(hub.messages.filter((m) => m.topic === 'control').length, 0);
+});
+
+test('auto check: auto_approved from HubClock for this request → exit 0 "可直接執行"', async () => {
+  const hub = createFakeHub();
+  const win = machine(hub);
+  await win.run('start');
+  const req = await hub.send('BlueLake', handoff({ kind: 'task', intent: 'action', subject: '跑測試' }));
+  await clockResult(hub, ['BlueLake', 'RedStone'], req.threadId, { kind: 'action', status: 'auto_approved', root_mail_id: req.messageId, recipient_agent: 'RedStone', requester: 'BlueLake' });
+  await win.run('read', {}, { args: [String(req.messageId)] });
+  const r = await win.run('auto', {}, { args: ['check', String(req.messageId)] });
+  assert.equal(r.exitCode, 0);
+  assert.match(r.stdout, /可直接執行/);
+  assert.match(r.stdout, new RegExp(`auto done ${req.messageId} succeeded\\|failed`));
+});
+
+test('auto check: no grant for this sender → exit 3 at once (card); an approval for someone else does not count', async () => {
+  const hub = createFakeHub();
+  const win = machine(hub);
+  await win.run('start');
+  const req = await hub.send('BlueLake', handoff({ kind: 'task', intent: 'action', subject: '跑測試', to: ['RedStone', 'GreenHill'] }));
+  await clockResult(hub, ['BlueLake', 'RedStone'], req.threadId, { kind: 'action', status: 'auto_approved', root_mail_id: req.messageId, recipient_agent: 'GreenHill', requester: 'BlueLake' });
+  await win.run('read', {}, { args: [String(req.messageId)] });
+  const r = await win.run('auto', {}, { args: ['check', String(req.messageId)] });
+  assert.equal(r.exitCode, 3);
+  assert.match(r.stdout, /確認卡/);
+});
+
+test('auto check: a grant covers the sender but HubClock has not decided yet → waits, then falls back to the card (fail-closed)', async () => {
+  const clock = new FakeClock(Date.parse('2026-11-18T01:00:00Z'));
+  const hub = createFakeHub({ clock });
+  const win = machine(hub, { clock });
+  await win.run('start');
+  await clockResult(hub, ['RedStone', 'BlueLake'], 'grant-thread', { kind: 'auto', status: 'auto_on', grant_key: 'grant:1', recipient_agent: 'RedStone', target: 'BlueLake', minutes: 60, start_at: '2026-11-18T01:00:00.000000Z', end_at: '2026-11-18T02:00:00.000000Z' });
+  await clock.advance(1000);
+  const req = await hub.send('BlueLake', handoff({ kind: 'task', intent: 'action', subject: '跑測試' }));
+  await win.run('read', {}, { args: [String(req.messageId)] });
+  const p = win.run('auto', {}, { args: ['check', String(req.messageId)] });
+  let settled = false; p.then(() => { settled = true; });
+  const step = async (ms) => { for (let t = 0; t < ms; t += 250) { await clock.advance(250); await new Promise((r) => setImmediate(r)); } };
+  await step(10_000);
+  assert.equal(settled, false, 'waits for HubClock while a grant covers the sender');
+  await clockResult(hub, ['BlueLake', 'RedStone'], req.threadId, { kind: 'action', status: 'auto_approved', root_mail_id: req.messageId, recipient_agent: 'RedStone', requester: 'BlueLake' });
+  await step(20_000);
+  const r = await p;
+  assert.equal(r.exitCode, 0);
+
+  const req2 = await hub.send('BlueLake', handoff({ kind: 'task', intent: 'action', subject: '再跑一次' }));
+  await win.run('read', {}, { args: [String(req2.messageId)] });
+  const p2 = win.run('auto', {}, { args: ['check', String(req2.messageId)] });
+  await step(40_000);
+  const r2 = await p2;
+  assert.equal(r2.exitCode, 3);
+  assert.match(r2.stdout, /HubClock 尚未核准/);
+});
+
+test('auto check: an ended grant does not make the client wait; Hub unreachable → card', async () => {
+  const hub = createFakeHub();
+  const win = machine(hub);
+  await win.run('start');
+  await clockResult(hub, ['RedStone', 'BlueLake'], 'g', { kind: 'auto', status: 'auto_on', grant_key: 'grant:1', recipient_agent: 'RedStone', target: 'BlueLake', start_at: '2026-01-01T00:00:00.000000Z', end_at: '2099-01-01T00:00:00.000000Z' });
+  await clockResult(hub, ['RedStone', 'BlueLake'], 'g', { kind: 'auto', status: 'auto_ended', grant_key: 'grant:1', recipient_agent: 'RedStone', target: 'BlueLake', ended_by: 'closed', ended_at: '2026-01-01T00:00:01.000000Z' });
+  const req = await hub.send('BlueLake', handoff({ kind: 'task', intent: 'action', subject: '跑測試' }));
+  await win.run('read', {}, { args: [String(req.messageId)] });
+  const r = await win.run('auto', {}, { args: ['check', String(req.messageId)] });
+  assert.equal(r.exitCode, 3);
+  hub.down();
+  const r2 = await win.run('auto', {}, { args: ['check', String(req.messageId)] });
+  assert.equal(r2.exitCode, 3);
+  assert.match(r2.stdout, /確認卡/);
+});
+
+test('auto done: reports auto.executed with outcome and reason on the request thread (AC-07.8)', async () => {
+  const hub = createFakeHub();
+  const win = machine(hub);
+  await win.run('start', { session_id: 's-9' });
+  const req = await hub.send('BlueLake', handoff({ kind: 'task', intent: 'action', subject: '讀檔' }));
+  await win.run('read', {}, { args: [String(req.messageId)] });
+  const r = await win.run('auto', {}, { args: ['done', String(req.messageId), 'failed', 'ENOENT:', 'no-such-file.txt'] });
+  assert.equal(r.exitCode, 0);
+  assert.match(r.stdout, /auto done failed/);
+  const c = hub.messages.filter((m) => m.topic === 'control').at(-1);
+  assert.deepEqual(JSON.parse(c.body_md), bcc({ eventType: 'auto.executed', rootMailId: req.messageId, recipientSession: 's-9', agent: 'RedStone', outcome: 'failed', reason: 'ENOENT: no-such-file.txt' }));
+  assert.equal(c.thread_id, req.threadId);
+});
+
+test('an action card tells the agent to try `auto check` first and never to run `auto on` for the user', async () => {
+  const hub = createFakeHub();
+  const req = await hub.send('BlueLake', handoff({ kind: 'task', intent: 'action', subject: '跑測試' }));
+  const win = machine(hub);
+  const r = await win.run('read', {}, { args: [String(req.messageId)] });
+  assert.match(r.stdout, new RegExp(`auto check ${req.messageId}`));
+  const s = ctx(await win.run('start'));
+  assert.match(s, /auto on.*使用者本人/);
+});

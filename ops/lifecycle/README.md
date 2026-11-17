@@ -9,6 +9,8 @@ VPS 上的計時程式。依據：`docs/05-sds.md` API-06、`docs/03-srs.md` §2
 | `session.closed` | 該 session 已 `presented` 的請求改「已失效」(`invalidated`)，同串通知；之後不能復活 |
 | 同意／拒絕 | `approved`／`rejected`（附理由）同串寄給雙方；**收件端只有拿到綁自己 session 的 `approved` 結果才可動手** |
 
+| auto mode（L-06） | 收件人對指定寄件 agent 開 1～240 分鐘（預設 60）授權；該寄件者在時段內**到達 Hub** 的 action 判 `auto_approved`（不跳卡），開／結束／拒絕／每次執行都在 Hub 留通知。設計見 `docs/ops/L06-auto-mode.md` |
+
 HubClock 只記狀態、發通知；不回答 question、不執行 action、沒有 LLM。收發一律經 `client/mail-client.mjs`。
 
 ## 檔案
@@ -33,6 +35,8 @@ Mail 訊息 `topic: "control"`，`body_md` 是 JSON。誰送、何時送以 Mail
 | 收件 hook → HubClock | `choice` | `root_mail_id`、`recipient_session`、`choice: approve\|reject`、`reason?` | 使用者按下時 |
 | 收件 hook → HubClock | `answer` | `root_mail_id`、`recipient_session` | 回答 question 時（或直接在原串回覆並 cc HubClock，也算回答） |
 | 收件 hook → HubClock | `session.closed` | `recipient_session`（`root_mail_id: null`） | SessionEnd；現有 `hub-hook.mjs` 草稿格式相容 |
+| 收件端使用者 → HubClock | `auto.on`／`auto.off` | `recipient_agent`、`target`、`minutes?`（L-06） | `hub-hook auto on|off` |
+| 收件 hook → HubClock | `auto.executed` | `root_mail_id`、`outcome: succeeded\|failed`、`reason?` | auto 執行完（`hub-hook auto done`） |
 | HubClock → 雙方 | `result` | `status`、`root_mail_id`、`recipient_agent`、`recipient_session`、`decided_at`、`decided_by`、`reason`、`text` | 結果確定後，寫進根訊息的 thread |
 
 ```js
@@ -63,6 +67,7 @@ await client.sendControlWithRetry({ to: [clockName], subject: `choice #${rootMai
 |---|---|---|
 | `getRequest/putRequest/listRequests` | `requests[key]`，key＝`root:recipient` | `hub_clock_requests`（唯一鍵 `group_id, root_mail_id, recipient_agent`；`version` 做 CAS） |
 | `getOutbox/putOutbox/listOutbox` | `outbox[eventKey]` | `hub_clock_outbox`（PK `event_key`） |
+| `getGrant/putGrant/listGrants`（L-06） | `grants[key]`，key＝`grant:<開啟訊息 ID>` | **尚無表**：L-01 若要上 Postgres 需加 grant 表 |
 | `getCursor/setCursor` | `cursor` | `hub_clock_cursors` |
 | `isProcessed/markProcessed` | `processed`（保留最近 20,000 筆） | `hub_clock_processed` |
 | `transact` | 讀檔→改→fencing 檢查→tmp＋fsync＋rename | 一個 SQL transaction；lock 改 `pg_advisory_lock` |
@@ -86,6 +91,7 @@ H-02 決定 VPS 不裝 Node，所以**用容器**（`deploy/hubclock/compose.hub
 
 ```sh
 node --test ops/lifecycle/test/lifecycle.test.mjs               # 21 個單元測試（FakeClock）
+node --test ops/lifecycle/test/auto-mode.test.mjs               # 14 個 L-06 auto mode 單元測試（TC-15 步驟 1～6）
 node --test ops/lifecycle/test/lifecycle.integration.test.mjs   # 10 個，對本機 mcp_agent_mail_rust 0.3.40
 node --test client/test/mail-client.test.mjs                    # 含 cc／sendControl 新測試
 ```
