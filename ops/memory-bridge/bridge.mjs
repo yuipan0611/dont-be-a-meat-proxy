@@ -39,7 +39,6 @@ const DUE = new Set(['pending', 'unknown']);
  */
 export function createBridge({ mail, hindsight, store, clock, bank, retryBaseMs = 30_000, retryMaxMs = 15 * 60_000, pageLimit = 100, log = () => {} }) {
   const self = mail.agentName;
-  let recovered = false;
   const backoff = (attempts) => Math.min(retryBaseMs * 2 ** Math.max(0, attempts - 1), retryMaxMs);
 
   function recordFor(m, item) {
@@ -131,13 +130,11 @@ export function createBridge({ mail, hindsight, store, clock, bank, retryBaseMs 
   }
 
   async function processDue() {
-    if (!recovered) {
-      // A record still in_flight was being retained when the previous process died: outcome unknown.
-      await store.transact((tx) => {
-        for (const r of tx.listRequests((x) => x.status === 'in_flight')) tx.putRequest({ ...r, status: 'unknown', nextTryAt: clock.nowMs() });
-      });
-      recovered = true;
-    }
+    // Single writer, sequential: nothing is legitimately in flight when a pass starts. A record still
+    // in_flight was being retained when this or a previous process failed: its outcome is unknown.
+    await store.transact((tx) => {
+      for (const r of tx.listRequests((x) => x.status === 'in_flight')) tx.putRequest({ ...r, status: 'unknown', nextTryAt: clock.nowMs() });
+    });
     const due = await store.transact((tx) => tx.listRequests((r) => DUE.has(r.status) && r.nextTryAt <= clock.nowMs()));
     due.sort((a, b) => a.mailId - b.mailId);
     let done = 0;

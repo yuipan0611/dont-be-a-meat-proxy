@@ -183,6 +183,19 @@ test('crash mid-retain (in_flight on disk) is treated as unknown by the next pro
   assert.equal((await rec(store2, m.id)).status, 'indexed');
 });
 
+test('an unexpected error inside a running process does not strand the record: the next pass looks it up first', async (t) => {
+  const s = await setup();
+  t.after(s.tmp.cleanup);
+  const m = send(s.hub, MAC, 'handoff', '原文 J');
+  const real = s.hs.retain.bind(s.hs);
+  s.hs.retain = async () => { throw new Error('bug'); };
+  await assert.rejects(s.bridge.tick(), /bug/);
+  s.hs.retain = real;
+  await s.bridge.tick();
+  assert.deepEqual(s.hs.calls.map((c) => c.op), ['get', 'retain']);
+  assert.equal((await rec(s.store, m.id)).status, 'indexed');
+});
+
 test('a 4xx rejection is an error (not retried automatically) and keeps the text hash; reindex retries it', async (t) => {
   const s = await setup();
   t.after(s.tmp.cleanup);
