@@ -11,6 +11,7 @@ HUB_STATE_DIR="${HUB_STATE_DIR:-/var/lib/neighbor-hub/private}"
 CADDY_SNIPPET="${CADDY_SNIPPET:-/etc/caddy/hub.caddy}"
 CADDY_PRIVATE_DIR="${CADDY_PRIVATE_DIR:-/etc/caddy/hub-private}"
 HUB_CLOCK_DIR="${HUB_CLOCK_DIR:-${HUBCLOCK_STATE_DIR:-/var/lib/neighbor-hub/hubclock}}"
+HUB_BRIDGE_DIR="${HUB_BRIDGE_STATE_DIR:-/var/lib/neighbor-hub/memory-bridge}"
 BACKUP_DIR="${BACKUP_DIR:-/var/lib/neighbor-hub/backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-7}"
 QUIET=0
@@ -217,6 +218,17 @@ if [[ -d "$HUB_CLOCK_DIR" ]]; then
     fi
     log "HubClock state preserved (hash: $HUBCLOCK_HASH, cursor: $HUBCLOCK_CURSOR, outbox: $HUBCLOCK_OUTBOX_COUNT, processed: $HUBCLOCK_PROCESSED_COUNT)"
   fi
+fi
+
+# L-09: bridge uses atomically replaced JSON state like HubClock. Retain the ingest/cursor
+# journal, never its live lease/lock. This is not a cross-service transaction snapshot.
+if [[ -d "$HUB_BRIDGE_DIR" ]]; then
+  mkdir -m 700 "$STAGING_DIR/memory-bridge"
+  for item in "$HUB_BRIDGE_DIR"/*.json; do
+    [[ -f "$item" && ! -L "$item" ]] || continue
+    cp "$item" "$STAGING_DIR/memory-bridge/"
+  done
+  find "$STAGING_DIR/memory-bridge" -type f -exec chmod 600 {} +
 fi
 
 # 6. Consistent logical snapshot of hub; never copy live PGDATA.

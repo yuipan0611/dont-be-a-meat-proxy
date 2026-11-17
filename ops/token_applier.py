@@ -345,7 +345,7 @@ def process(cfg, db):
     return done
 
 
-def import_mvp(cfg, db):
+def import_mvp(cfg, db, *, prepare_only=False):
     """Move the MVP Mac/Windows tokens under DB authority (hash in devices, value in the token dir)."""
     registry = mvp_registry(cfg)
     imported = []
@@ -363,7 +363,20 @@ def import_mvp(cfg, db):
                 (cfg.token_dir / tid).unlink(missing_ok=True)
                 raise ApplyError(f'import of {key} did not land in the registry (owner member missing?)')
             imported.append(tid)
-        apply(cfg, db, expect_ok=[d['token'] for d in registry['devices'].values() if d['status'] == 'active'])
+        if prepare_only:
+            # L09 stages an inactive snippet; the launch driver owns the single full-site reload.
+            registry, allowed = desired_tokens(cfg, db)
+            data = {'revision': db.next_revision(), 'upstream': registry['upstream'],
+                    'devices': {k: {'token': v, 'status': 'active'} for k, v in allowed.items()}}
+            account = pwd.getpwuid(os.getuid()) if cfg.owner == 'self' else pwd.getpwnam(cfg.owner)
+            if cfg.output.is_symlink() or cfg.output.parent.is_symlink():
+                raise ApplyError('Caddy output must not be a symlink')
+            atomic_write(cfg.output, render(data, cfg.upstream, getattr(cfg, 'memory_upstream', None)),
+                         owner=(account.pw_uid, account.pw_gid))
+            # Block legacy writers as soon as DB import begins owning these credentials.
+            (cfg.state / AUTHORITY_MARKER).touch(mode=0o600, exist_ok=True)
+        else:
+            apply(cfg, db, expect_ok=[d['token'] for d in registry['devices'].values() if d['status'] == 'active'])
     return imported
 
 
@@ -387,6 +400,7 @@ def build_config(args):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument('command', choices=['process', 'render', 'import-mvp'])
+    p.add_argument('--prepare-only', action='store_true', help='import-mvp only: stage inactive output; no validate/reload/probe')
     p.add_argument('--group-id', default='group-a')
     p.add_argument('--state', type=Path, default=Path('/var/lib/neighbor-hub/private'))
     p.add_argument('--token-dir', type=Path, default=Path('/var/lib/neighbor-hub/private/tokens-db'))
@@ -401,6 +415,8 @@ def main(argv=None):
     p.add_argument('--probe-url', default='https://hub.example.invalid/health/liveness')
     p.add_argument('--psql', default=shlex.quote(str(Path(__file__).resolve().parent / 'postgres')) + ' psql')
     args = p.parse_args(argv)
+    if args.prepare_only and args.command != 'import-mvp':
+        p.error('--prepare-only requires import-mvp')
     try:
         cfg = build_config(args)
         db = PsqlDb(shlex.split(args.psql), args.group_id)
@@ -412,7 +428,8 @@ def main(argv=None):
                 apply(cfg, db)
             print('Allowlist rendered from the registry, validated, reloaded; no-token probe 401')
         elif args.command == 'import-mvp':
-            print('Imported under DB authority: ' + ', '.join(import_mvp(cfg, db)))
+            imported = import_mvp(cfg, db, prepare_only=args.prepare_only)
+            print(('Prepared (NOT activated): ' if args.prepare_only else 'Imported under DB authority: ') + ', '.join(imported))
     except ApplyError as e:
         print('FAILED: ' + str(e), file=sys.stderr)
         return 1

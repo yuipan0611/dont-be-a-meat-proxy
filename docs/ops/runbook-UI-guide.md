@@ -8,7 +8,8 @@
 - 現有 Postgres hub 成員表與 discord_links 已有有效成員。網頁以 hub_app/service_role 讀取，只使用參數化、固定 group 查詢；此角色可繞過 RLS，隔離由 server 每個 API 的資格檢查與固定 group 強制。瀏覽器不持有 DB 或 Mail 憑證。
 - 沿用既有 Discord application，於 Developer Portal 加精確 redirect `https://hub.example.invalid/auth/callback`。只需 identify scope，沿用現有成員名單，不開放自行加入。不要改 bot 的 Gateway／Interactions Endpoint 設定。
 - 另建 web-only secret 目錄（0700），只放 hub-app.password、mail-a.env、discord-client.secret、github.token，檔案 0600 並讓容器 UID 可讀。GitHub token 僅給指定 repo 的 Issues read 權限。不可掛整個 bot 私密目錄。金鑰不得出現在指令、Git、畫面或日誌。
-- 設定 HUB_WEB_UID／HUB_WEB_GID、HUB_WEB_SECRET_DIR、HUB_WEB_MAP_FILE（核對後架構檔的**絕對路徑**）、HUB_DISCORD_GUILD_ID／HUB_DISCORD_APPLICATION_ID、HUB_WEB_ORIGIN。
+- 未提供 GitHub token 時不掛假檔；保持 HUB_WEB_GITHUB_TOKEN_FILE 空值，Issues 來源顯示未設定。取得正式唯讀 token 後設 HUB_WEB_GITHUB_TOKEN_FILE=/run/web/github.token。
+- 設定 HUB_GROUP_ID=group-a、HUB_WEB_UID／HUB_WEB_GID、HUB_WEB_SECRET_DIR、HUB_WEB_MAP_FILE（核對後架構檔的**絕對路徑**）、HUB_DISCORD_GUILD_ID／HUB_DISCORD_APPLICATION_ID、HUB_WEB_ORIGIN。
 - 架構設定中的 deployment 由操作者核對。未核對者維持待確認，不先宣稱已部署。
 
 ## Compose 與入口
@@ -20,7 +21,7 @@ docker compose -f deploy/compose.yaml -f deploy/web/compose.web.yaml config --qu
 docker compose -f deploy/compose.yaml -f deploy/web/compose.web.yaml up -d --build web
 ```
 
-需要 L-01 的 `neighbor-hub-db_hub-db-net` 已存在，Mail 所在網路仍為既有 mail_a_net；web 只發布 127.0.0.1:8780。先確認埠未被占用。128 MiB 為容器硬上限；既有 RAM 預算需加此項，並用完整上線 stack 壓測，總量須小於 8 GB。
+需要 L-01 的 `neighbor-hub-db_hub-db-net` 已存在，Mail 所在網路仍為既有 mail_a_net；web 只發布 127.0.0.1:8781。先確認埠未被占用。memory 的 bank-proxy 使用 8780；web 預設 8781，可用 HUB_WEB_PORT 更改並同步 caddy.routes。128 MiB 為容器硬上限；既有 RAM 預算需加此項，並用完整上線 stack 壓測，總量須小於 8 GB。
 
 **不要直接覆蓋 Caddy 設定。** 在既有 hub site 保留 TLS 設定，將原本單一 auth import 改成下列明確順序；先把 `deploy/web/caddy.routes` 放到 `/etc/caddy/hub-private/web.routes`：
 

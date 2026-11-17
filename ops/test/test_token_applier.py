@@ -326,6 +326,17 @@ class TokenApplierTests(unittest.TestCase):
         ta.process(self.cfg, self.db)
         self.assertNotIn(token, self.allowed(), 'Caddy does not keep a token the DB no longer allows')
 
+    def test_prepare_import_stages_without_reload_or_probe_and_blocks_legacy_writer(self):
+        self.cfg.probe = lambda *a: self.fail('prepare must not probe live Caddy')
+        self.assertEqual(ta.import_mvp(self.cfg, self.db, prepare_only=True),
+                         ['tok_mvpmac01', 'tok_mvpwindows01'])
+        self.assertEqual(self.allowed(), {self.mac, self.win})
+        self.assertFalse(self.log.exists(), 'prepare must not run Caddy or reload')
+        self.assertTrue((self.cfg.state / 'db-authority').exists())
+        self.db.devices['tok_mvpmac01']['status'] = 'revocation_pending'
+        ta.import_mvp(self.cfg, self.db, prepare_only=True)
+        self.assertNotIn(self.mac, self.allowed(), 'prepare cannot revive a pending token')
+
     def test_import_mvp_moves_mac_windows_under_db_and_blocks_legacy_render(self):
         (self.d / 'state' / '.lock').touch()
         self.assertEqual(ta.import_mvp(self.cfg, self.db), ['tok_mvpmac01', 'tok_mvpwindows01'])
