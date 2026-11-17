@@ -9,8 +9,9 @@ import { createBridge, createMailReader } from '../src/bridge.mjs';
 import { createDelivery } from '../src/deliver.mjs';
 import { createDecisionsManager, SEVEN_DAYS_MS } from '../src/decisions.mjs';
 import { createRouter } from '../src/router.mjs';
-import { createAssistant, createReadOnlyTools, MODEL } from '../src/assistant.mjs';
+import { createAssistant, createReadOnlyTools } from '../src/assistant.mjs';
 import { createBudget } from '../src/budget.mjs';
+const MODEL = 'claude-haiku-5-5'; // legacy budget fixture, no provider calls
 
 function setup({ now = '2026-11-20T02:00:00.000Z' } = {}) {
   const clock = new FakeClock(now);

@@ -1,0 +1,10 @@
+{
+  "security": { "auth": { "selectedType": "oauth-personal", "enforcedType": "oauth-personal" } },
+  "tools": { "core": [] },
+  "admin": { "mcp": { "enabled": false }, "extensions": { "enabled": false }, "skills": { "enabled": false } },
+  "hooksConfig": { "enabled": false },
+  "general": { "enableAutoUpdate": false },
+  "model": { "maxSessionTurns": 1 },
+  "billing": { "overageStrategy": "never" },
+  "telemetry": { "enabled": false }
+}

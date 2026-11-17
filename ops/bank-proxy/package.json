@@ -1,7 +1,7 @@
 {
   "name": "hub-bank-proxy",
   "private": true,
-  "description": "L-02 bank-proxy (device token → one Hindsight bank) + LLM gateway (global daily cap). Only runtime dependency: pg.",
+  "description": "L-02 bank-proxy (device token → one Hindsight bank); F-11 LLM gateway is separate. Only runtime dependency: pg.",
   "type": "module",
   "engines": { "node": ">=22" },
   "scripts": { "test": "node --test test/*.test.mjs" },

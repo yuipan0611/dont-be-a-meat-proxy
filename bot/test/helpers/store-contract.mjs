@@ -78,6 +78,15 @@ export function storeContract(t, make) {
       assert.equal(await s.markCapNotified(k.groupId, k.day), true);
       assert.equal(await s.markCapNotified(k.groupId, k.day), false);
     }),
+    t('gateway quota notification: a fresh day with no local USD reservation is notified only once', async () => {
+      const s = await make();
+      const results = await Promise.all(Array.from({ length: 20 }, () => s.markCapNotified('group-a', '2026-11-21')));
+      assert.equal(results.filter(Boolean).length, 1);
+      const row = await s.budgetRow('group-a', '2026-11-21');
+      assert.equal(row.spent, 0);
+      assert.equal(row.reserved, 0);
+      assert.equal(await s.markCapNotified('group-a', '2026-11-22'), true);
+    }),
     t('decision lifecycle: record draft → update status (once) → reminders & list', async () => {
       const s = await make();
       const draft = await s.recordDecisionDraft({

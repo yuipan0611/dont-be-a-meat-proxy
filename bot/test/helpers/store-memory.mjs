@@ -203,8 +203,10 @@ export function createMemoryStore({ groups = [], members = [], links = [], devic
       b.spent += actualUsd;
     },
     async markCapNotified(groupId, day) {
-      const b = db.budget.get(`${groupId}|${day}`);
-      if (!b || b.cap_notified) return false;
+      const k = `${groupId}|${day}`;
+      if (!db.budget.has(k)) db.budget.set(k, { spent: 0, reserved: 0, calls: 0, rejected: 0, cap_notified: false });
+      const b = db.budget.get(k);
+      if (b.cap_notified) return false;
       b.cap_notified = true;
       return true;
     },

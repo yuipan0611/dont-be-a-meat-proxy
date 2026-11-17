@@ -1,5 +1,7 @@
 # L-02：Hindsight＋bank-proxy（記憶層）
 
+> 2026-11-17 F-11 更新：正式 LLM 呼叫已改經共用 request-count gateway；本文 Anthropic／USD 設定為歷史紀錄。個人 Gemini CLI OAuth 已有官方停用公告，請依 [F-11 調研與部署設計](../research/F-11-gemini-subscription-backend.md) 的 backend／條款／隱私限制操作；目前預設 disabled。
+
 2026-11-17，swe-Ben。**本機驗證完成，VPS 未部署**（PM 審本文件後部署）。依據：`docs/research/F-05-hindsight-spike.md`、SDS API-04／D-4／MOD-01、`docs/06-test-plan.md` TC-21、`docs/ops/runbook-L01-postgres.md`。
 
 ## 0. 一句話

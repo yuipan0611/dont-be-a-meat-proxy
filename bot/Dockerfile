@@ -6,6 +6,7 @@ WORKDIR /app
 COPY bot/package.json bot/package-lock.json /app/bot/
 RUN cd /app/bot && npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY client/mail-client.mjs /app/client/mail-client.mjs
+COPY ops/llm-gateway/client.mjs /app/ops/llm-gateway/client.mjs
 COPY bot/src /app/bot/src
 USER node
 ENV NODE_ENV=production TZ=UTC

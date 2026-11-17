@@ -1,0 +1,8 @@
+{
+  "toolPermission": "strict",
+  "useG1Credits": false,
+  "disableSlashCommands": true,
+  "permissions": {
+    "deny": ["read_file(*)", "write_file(*)", "read_url(*)", "execute_url(*)", "download_url(*)", "command(*)", "mcp(*)"]
+  }
+}

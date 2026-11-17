@@ -1,13 +1,15 @@
 // TC-17 (AC-08.1～08.7, SR-AST-01～05) with an LLM double. No real Anthropic call.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAssistant, createReadOnlyTools, createToolRegistry, NO_INFO, QUOTA_TEXT, MODEL } from '../src/assistant.mjs';
+import { createAssistant, createReadOnlyTools, createToolRegistry, NO_INFO, QUOTA_TEXT } from '../src/assistant.mjs';
 import { createBudget, costUsd, taipeiDay, PRICES } from '../src/budget.mjs';
 import { createRouter, EPHEMERAL, NOT_MEMBER } from '../src/router.mjs';
 import { createMemoryStore } from './helpers/store-memory.mjs';
 import { createFakeLlm, createFakeMail, FakeClock, seed, itemBody, llmText, llmTool, fakeInteraction, STRANGER, 維護者 } from './helpers/fakes.mjs';
 
 const CAP = 0.5;
+// Historical USD-budget regression tests; production now uses createGatewayBudget.
+const MODEL = 'claude-haiku-5-5';
 
 function rig({ script = [], cap = CAP } = {}) {
   const clock = new FakeClock('2026-11-20T02:00:00.000Z');
@@ -37,7 +39,7 @@ test('TC-17: answer cites the latest handoff ID and time; reply is ephemeral', a
   assert.match(edit.content, /草稿/);
   assert.ok(!ix.log.some((x) => x.type === 'followUp'), 'not public unless chosen');
   // Request shape: Haiku 5.5, only read-only tools, low effort.
-  assert.equal(r.llm.calls[0].model, 'claude-haiku-5-5');
+  assert.equal(r.llm.calls[0].model, 'hub-llm');
   assert.deepEqual(r.llm.calls[0].tools.map((t) => t.name).sort(), ['get_item', 'recent_items']);
   assert.equal(r.llm.calls[0].output_config.effort, 'low');
 });

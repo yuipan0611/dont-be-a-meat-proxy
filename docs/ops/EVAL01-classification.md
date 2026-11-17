@@ -1,5 +1,7 @@
 # EVAL-01 評測實作與驗證報告：收件端判斷 question／action
 
+> 2026-11-17 F-11 更新：正式 LLM 呼叫已改經共用 request-count gateway；本文 Anthropic／USD 設定為歷史紀錄。個人 Gemini CLI OAuth 已有官方停用公告，請依 [F-11 調研與部署設計](../research/F-11-gemini-subscription-backend.md) 的 backend／條款／隱私限制操作；目前預設 disabled。
+
 2026-11-17｜agy-junior-swe-2（Antigravity）｜狀態：**資料集建立完成、Runner 就緒、單元測試 10/10 通過**。
 
 依據：`docs/06-test-plan.md` EVAL-01（行 284）、`docs/delivery-MVP.md` TC-08（9a1f78f 修正後實機確認卡規則）、`client/hub-hook.mjs` agent 指引（行 189、405）。

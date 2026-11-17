@@ -1,5 +1,7 @@
 # L-03：Discord bot（`/connect`、`/revoke`、`/status`、通知）
 
+> 2026-11-17 F-11 更新：正式 LLM 呼叫已改經共用 request-count gateway；本文 Anthropic／USD 設定為歷史紀錄。個人 Gemini CLI OAuth 已有官方停用公告，請依 [F-11 調研與部署設計](../research/F-11-gemini-subscription-backend.md) 的 backend／條款／隱私限制操作；目前預設 disabled。
+
 2026-11-17｜swe-Tom｜狀態：**本機測試通過，未部署、未接真 Discord／真 Anthropic**。部署由 PM 審本文後執行。
 
 依據：`docs/research/F-06-discord-bridge.md`、PRD US-08／09／12、SRS SR-ID-05、SR-AST-01～05、SR-NTF-01～04、§4.5 #3／#9、SDS API-05、`docs/08-data-layer-supabase.md`、`docs/ops/runbook-L01-postgres.md`。

@@ -12,10 +12,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { createGatewayClient } from '../llm-gateway/client.mjs';
 
-const execFileAsync = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_FIXTURES_PATH = join(__dirname, '../../fixtures/eval-classify-v1.jsonl');
 
@@ -136,6 +134,7 @@ export function formatReport({ metrics, results, providerName, fixturesPath }) {
     `- **評測日期**：${new Date().toISOString()}`,
     `- **資料集**：${fixturesPath ?? 'fixtures/eval-classify-v1.jsonl'}（共 ${m.total} 則）`,
     `- **Provider**：${providerName}`,
+    `- **Provider 錯誤數**：${m.providerErrors ?? 0}（非零一律未通過）`,
     `- **總體結果**：${m.passed ? '✅ 通過（PASSED）' : '❌ 未通過（FAILED）'}`,
     '',
     '## 混淆矩陣（Confusion Matrix）',
@@ -199,40 +198,28 @@ export function createFakeProvider({ mode = 'ground_truth', overrides = {}, mock
   };
 }
 
-export function createClaudeCliProvider({ command = 'claude' } = {}) {
+export function createGatewayProvider({ baseUrl = process.env.LLM_GATEWAY_URL, keyFile = process.env.LLM_GATEWAY_KEY_FILE, model = process.env.LLM_MODEL ?? 'hub-llm', client } = {}) {
+  if (!client && (!baseUrl || !keyFile)) throw new Error('LLM_GATEWAY_URL and LLM_GATEWAY_KEY_FILE required');
+  let gateway = client;
   return {
-    name: 'claude-cli',
+    name: 'gemini-gateway',
     async classify(sample, { prompt }) {
-      const { stdout } = await execFileAsync(command, ['-p', prompt], { timeout: 30000 });
-      return parseClassificationResponse(stdout);
-    },
-  };
-}
-
-export function createAnthropicApiProvider({ apiKey = process.env.ANTHROPIC_API_KEY, model = 'claude-haiku-5-5' } = {}) {
-  if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY is required for anthropic-api provider');
-  }
-  return {
-    name: 'anthropic-api',
-    async classify(sample, { prompt }) {
-      const { default: Anthropic } = await import('@anthropic-ai/sdk');
-      const client = new Anthropic({ apiKey });
-      const resp = await client.messages.create({
+      gateway ??= createGatewayClient({ baseUrl, key: (await readFile(keyFile, 'utf8')).trim() });
+      const resp = await gateway.create({
         model,
         max_tokens: 256,
         messages: [{ role: 'user', content: prompt }],
       });
-      const text = resp.content?.[0]?.text ?? '';
+      const text = resp.content?.filter((b) => b.type === 'text').map((b) => b.text).join('\n') ?? '';
       return parseClassificationResponse(text);
     },
   };
 }
 
 export function createProvider({ type = process.env.EVAL_PROVIDER || 'fake', ...opts } = {}) {
-  if (type === 'claude-cli') return createClaudeCliProvider(opts);
-  if (type === 'anthropic-api') return createAnthropicApiProvider(opts);
-  return createFakeProvider(opts);
+  if (type === 'gemini-gateway') return createGatewayProvider(opts);
+  if (type === 'fake') return createFakeProvider(opts);
+  throw new Error(`unsupported EVAL_PROVIDER: ${type}; use gemini-gateway or fake`);
 }
 
 export async function loadFixtures(fixturesPath = DEFAULT_FIXTURES_PATH) {
@@ -257,6 +244,7 @@ export async function runEval({
 } = {}) {
   const fixtures = await loadFixtures(fixturesPath);
   const results = [];
+  let providerErrors = 0;
 
   for (const sample of fixtures) {
     const prompt = buildClassificationPrompt(sample.text);
@@ -264,6 +252,7 @@ export async function runEval({
     try {
       predObj = await provider.classify(sample, { prompt });
     } catch (e) {
+      providerErrors++;
       predObj = { classification: 'action', reason: `provider error: ${e.message}` };
     }
     results.push({
@@ -278,6 +267,8 @@ export async function runEval({
   }
 
   const metrics = calculateMetrics(results);
+  metrics.providerErrors = providerErrors;
+  if (providerErrors) metrics.passed = false;
   const report = formatReport({
     metrics,
     results,

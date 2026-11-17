@@ -21,7 +21,9 @@ services:
       DISCORD_GUILD_ID: ${HUB_DISCORD_GUILD_ID:?set HUB_DISCORD_GUILD_ID}
       DISCORD_APPLICATION_ID: ${HUB_DISCORD_APPLICATION_ID:?set HUB_DISCORD_APPLICATION_ID}
       DISCORD_TOKEN_FILE: /run/bot/discord.token
-      ANTHROPIC_API_KEY_FILE: /run/bot/anthropic.key
+      LLM_GATEWAY_KEY_FILE: /run/bot/llm-gateway.key
+      LLM_GATEWAY_URL: http://llm-gateway:8790
+      LLM_MODEL: ${HUB_LLM_MODEL:-hub-llm}
       HUB_PG_HOST: db                     # neighbor-hub-db project, via hub-db-net
       HUB_PG_PASSWORD_FILE: /run/bot/hub-app.password
       MAIL_URL: http://mail-a:8765/mcp/   # inside mail_a_net; never via Caddy
@@ -30,7 +32,6 @@ services:
       MAIL_AGENT_NAME: HubBot             # session label only; the bot never sends Mail
       HUB_PUBLIC_URL: ${HUB_PUBLIC_URL:-https://hub.example.invalid}
       TOKEN_SPOOL_DIR: /spool
-      BOT_DAILY_CAP_USD: "0.50"           # GAP-18 / SR-AST-04
       BOT_PRESENCE_DIGEST: ${HUB_BOT_PRESENCE_DIGEST:-0}   # 1 needs privileged Presence + Server Members intents
       BOT_TICK_MS: "15000"
       GITHUB_TOKEN_FILE: ${HUB_GITHUB_TOKEN_FILE:-/run/bot/github.token}
@@ -40,7 +41,7 @@ services:
     volumes:
       - ${HUB_BOT_SECRET_DIR:-/var/lib/neighbor-hub/private/bot}:/run/bot:ro
       - ${HUB_TOKEN_SPOOL_DIR:-/var/lib/neighbor-hub/token-spool}:/spool   # TokenApplier seam (0700)
-    networks: [mail_a_net, hub_db_net, bot_egress]
+    networks: [mail_a_net, hub_db_net, bot_egress, llm_net]
     depends_on:
       mail-a:
         condition: service_healthy
@@ -61,4 +62,7 @@ networks:
     external: true
     name: ${HUB_PG_PROJECT:-neighbor-hub-db}_hub-db-net      # L-01 internal network; db has no host port
   bot_egress:
-    driver: bridge                        # Discord Gateway/REST + Anthropic API outbound only
+    driver: bridge                        # Discord Gateway/REST + GitHub
+  llm_net:
+    external: true
+    name: ${HUB_LLM_NETWORK:-neighbor-hub-memory_llm-net}

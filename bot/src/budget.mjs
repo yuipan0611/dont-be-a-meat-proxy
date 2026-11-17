@@ -44,6 +44,33 @@ export class QuotaExceeded extends Error {
   }
 }
 
+// F-11: the gateway owns the shared durable request ledger. Do not keep a second USD cap here.
+export function createGatewayBudget({ store, clock, onCapReached = async () => {}, onAuthRequired = async () => {} }) {
+  let authNotified = false;
+  const observeBackend = async ({ groupId, backend }) => {
+    if (backend === 'ready') authNotified = false;
+    if (backend === 'auth_required' && !authNotified) {
+      authNotified = true;
+      await onAuthRequired({ groupId }).catch(() => {});
+    }
+  };
+  return {
+    observeBackend,
+    async guarded(groupId, params, call) {
+      try { const result = await call(); authNotified = false; return result; }
+      catch (e) {
+        if (e.code === 'DAILY_LIMIT') {
+          const day = taipeiDay(clock.nowMs());
+          if (await store.markCapNotified(groupId, day)) await onCapReached({ groupId, day });
+          throw new QuotaExceeded();
+        }
+        if (e.code === 'AUTH_REQUIRED') await observeBackend({ groupId, backend: 'auth_required' });
+        throw e;
+      }
+    },
+  };
+}
+
 export function createBudget({ store, clock, capUsd, model, onCapReached = async () => {} }) {
   if (!(capUsd >= 0)) throw new Error('capUsd must be a number ≥ 0');
   priceOf(model);

@@ -77,7 +77,7 @@ test('L-02 Hindsight + bank-proxy on the L-01 cluster', { skip, timeout: 20 * 60
 
   await t.test('memory stack: networks and ports as designed; Hindsight and bank-proxy healthy', () => {
     const cfg = JSON.parse(s.memc('config', '--format', 'json'));
-    assert.deepEqual(Object.keys(cfg.services.hindsight.networks).sort(), ['hindsight-db-net', 'memory-net']);
+    assert.deepEqual(Object.keys(cfg.services.hindsight.networks).sort(), ['hindsight-db-net', 'llm-net', 'memory-net']);
     assert.deepEqual(Object.keys(cfg.services['bank-proxy'].networks).sort(), ['hub-db-net', 'memory-net']);
     assert.equal(cfg.services.hindsight.ports, undefined);
     assert.deepEqual(cfg.services['bank-proxy'].ports.map((p) => [p.host_ip, Number(p.target)]), [['127.0.0.1', 8780]]);

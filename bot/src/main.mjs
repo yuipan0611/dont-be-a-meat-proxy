@@ -2,12 +2,12 @@
 // Secrets are read from FILES (Compose secrets); none is accepted from argv or printed.
 
 import { readFile } from 'node:fs/promises';
-import Anthropic from '@anthropic-ai/sdk';
+import { createGatewayClient } from '../../ops/llm-gateway/client.mjs';
 import { createMailClient } from '../../client/mail-client.mjs';
 import { createPool, createPgStore } from './store-pg.mjs';
 import { createBridge, createMailReader } from './bridge.mjs';
 import { createDelivery } from './deliver.mjs';
-import { createBudget } from './budget.mjs';
+import { createGatewayBudget } from './budget.mjs';
 import { createAssistant, createReadOnlyTools, MODEL } from './assistant.mjs';
 import { createConnect } from './connect.mjs';
 import { createDecisionsManager } from './decisions.mjs';
@@ -26,19 +26,18 @@ const env = (k, d) => {
 const secret = async (k) => (await readFile(env(k), 'utf8')).trim();
 
 export async function loadConfig() {
-  const capUsd = Number(env('BOT_DAILY_CAP_USD', '0.50'));
-  if (!(capUsd >= 0)) throw new Error('BOT_DAILY_CAP_USD must be ≥ 0');
   return {
     groupId: env('HUB_GROUP_ID'),
     guildId: env('DISCORD_GUILD_ID'),
     applicationId: env('DISCORD_APPLICATION_ID'),
     discordTokenFile: env('DISCORD_TOKEN_FILE'),
-    anthropicKeyFile: env('ANTHROPIC_API_KEY_FILE'),
+    gatewayKeyFile: env('LLM_GATEWAY_KEY_FILE'),
+    gatewayUrl: env('LLM_GATEWAY_URL', 'http://llm-gateway:8790'),
+    model: env('LLM_MODEL', MODEL),
     pg: { host: env('HUB_PG_HOST', 'db'), port: Number(env('HUB_PG_PORT', '5432')), database: env('HUB_PG_DATABASE', 'hub'), user: env('HUB_PG_USER', 'hub_app'), passwordFile: env('HUB_PG_PASSWORD_FILE') },
     mail: { url: env('MAIL_URL', 'http://mail-a:8765/mcp/'), tokenFile: env('MAIL_TOKEN_FILE'), projectKey: env('MAIL_PROJECT_KEY', '/data/projects/group-a'), agentName: env('MAIL_AGENT_NAME', 'HubBot') },
     hubUrl: env('HUB_PUBLIC_URL'),
     spoolDir: env('TOKEN_SPOOL_DIR', '/spool'),
-    capUsd,
     presence: env('BOT_PRESENCE_DIGEST', '0') === '1',
     tickMs: Number(env('BOT_TICK_MS', '15000')),
     github: {
@@ -71,16 +70,21 @@ async function run(cfg, { once = false } = {}) {
   const discordToken = await secret('DISCORD_TOKEN_FILE');
   const client = createDiscordClient({ presence: cfg.presence });
   const dm = createDmSender(client);
-  const llm = new Anthropic({ apiKey: await secret('ANTHROPIC_API_KEY_FILE'), maxRetries: 0, timeout: 30_000 });
-  const budget = createBudget({
-    store, clock, capUsd: cfg.capUsd, model: MODEL,
-    onCapReached: async ({ groupId, day, capUsd }) => {
+  const llm = createGatewayClient({ baseUrl: cfg.gatewayUrl, key: (await readFile(cfg.gatewayKeyFile, 'utf8')).trim() });
+  const budget = createGatewayBudget({
+    store, clock,
+    onCapReached: async ({ groupId, day }) => {
       for (const id of await store.ownerDiscordIds(groupId)) {
-        await dm.sendDm(id, `/status 今日額度 ${capUsd} USD 已用完（${day}，台北日界），之後的查詢會直接拒絕，明日 00:00 恢復。`).catch(() => {});
+        await dm.sendDm(id, `共用 LLM 今日請求數額度已用完（${day}，台北日界），明日 00:00 恢復。`).catch(() => {});
+      }
+    },
+    onAuthRequired: async ({ groupId }) => {
+      for (const id of await store.ownerDiscordIds(groupId)) {
+        await dm.sendDm(id, 'VPS LLM 後端認證失效；請 維護者 依 F-11 操作手冊重新登入或檢查 API key，完成後再查詢。').catch(() => {});
       }
     },
   });
-  const assistant = createAssistant({ llm: { create: (p) => llm.messages.create(p) }, tools: createReadOnlyTools({ store, mail }), budget, log });
+  const assistant = createAssistant({ llm, tools: createReadOnlyTools({ store, mail }), budget, model: cfg.model, log });
   const connect = createConnect({ store, applier: createSpoolApplier({ dir: cfg.spoolDir, groupId: cfg.groupId }), hubUrl: cfg.hubUrl, log });
   const decisions = createDecisionsManager({ store, discord: dm, mailClient, clock, defaultGuildId: cfg.guildId, log });
   const github = createGitHubClient({
@@ -101,13 +105,15 @@ async function run(cfg, { once = false } = {}) {
   wireEvents({ client, guildId: cfg.guildId, router, store, presence: cfg.presence, log });
   await client.login(discordToken);
   await new Promise((r) => client.once('ready', r));
-  log({ ev: 'ready', guild: cfg.guildId, presence: cfg.presence, cap_usd: cfg.capUsd });
+  log({ ev: 'ready', guild: cfg.guildId, presence: cfg.presence, llm: 'gateway', model: cfg.model });
 
   let stopping = false;
   const tick = async () => {
     const b = await bridge.tick();
     const d = await delivery.tick();
     const dec = await decisions.tick();
+    try { await budget.observeBackend({ groupId: cfg.groupId, backend: (await llm.status()).backend }); }
+    catch { log({ ev: 'llm.status_unavailable' }); }
     log({ ev: 'tick', ...b, ...d, ...dec });
   };
   if (once) {
@@ -127,7 +133,7 @@ const cmd = process.argv[2] ?? 'run';
 if (import.meta.url === `file://${process.argv[1]}`) {
   try {
     const cfg = await loadConfig();
-    if (cmd === 'check-config') log({ ev: 'config.ok', guild: cfg.guildId, presence: cfg.presence, cap_usd: cfg.capUsd });
+    if (cmd === 'check-config') log({ ev: 'config.ok', guild: cfg.guildId, presence: cfg.presence, llm: 'gateway' });
     else if (cmd === 'register-commands') log({ ev: 'commands.registered', names: await registerCommands({ token: await secret('DISCORD_TOKEN_FILE'), applicationId: cfg.applicationId, guildId: cfg.guildId }) });
     else if (cmd === 'once') await run(cfg, { once: true });
     else if (cmd === 'run') await run(cfg);

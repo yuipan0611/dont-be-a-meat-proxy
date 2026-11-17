@@ -8,7 +8,7 @@
 import { QuotaExceeded } from './budget.mjs';
 import { taipeiTime } from './notify-format.mjs';
 
-export const MODEL = 'claude-haiku-5-5';
+export const MODEL = 'hub-llm';
 export const NO_INFO = '記憶中沒有這項資訊。';
 export const QUOTA_TEXT = '今日查詢額度已用完，明日（台北時間 00:00）恢復。';
 

@@ -1,0 +1,9 @@
+# Overlay ONLY for the explicitly chosen API backend. Free/paid is determined by the Google project.
+# docker compose -p neighbor-hub-memory -f deploy/memory/compose.yaml -f deploy/memory/compose.gemini-api.yaml ...
+services:
+  llm-gateway:
+    secrets:
+      - {source: gw_provider_key, target: gemini_api_key}
+secrets:
+  gw_provider_key:
+    file: ${HUB_LLM_PRIVATE_DIR:-/var/lib/neighbor-hub/private/llm-gateway}/gemini-api.key

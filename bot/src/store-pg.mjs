@@ -323,7 +323,9 @@ export function createPgStore({ pool, groupId: boundGroup = 'group-a' }) {
     async markCapNotified(groupId, day) {
       requireGroup(groupId);
       const r = await q(
-        `update public.assistant_budget set cap_notified = true where group_id = $1 and day = $2 and not cap_notified`, [groupId, day]);
+        `insert into public.assistant_budget (group_id, day, cap_notified) values ($1, $2, true)
+          on conflict (group_id, day) do update set cap_notified = true
+          where not assistant_budget.cap_notified`, [groupId, day]);
       return r.rowCount > 0;
     },
 

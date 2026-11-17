@@ -1,5 +1,7 @@
 # L-02b：Mail → Hindsight 索引 bridge（GAP-16）
 
+> 2026-11-17 F-11 更新：正式 LLM 呼叫已改經共用 request-count gateway；本文 Anthropic／USD 設定為歷史紀錄。個人 Gemini CLI OAuth 已有官方停用公告，請依 [F-11 調研與部署設計](../research/F-11-gemini-subscription-backend.md) 的 backend／條款／隱私限制操作；目前預設 disabled。
+
 2026-11-17，swe-Ben。**本機驗證完成，VPS 未部署**。依據：SDS API-04（唯一 bridge）、GAP-16、`docs/ops/runbook-L02-memory.md`。
 
 ## 1. 一句話

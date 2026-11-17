@@ -131,9 +131,10 @@ test('L-02b bridge: Mail → Hindsight, Hindsight down, re-run, same document_id
     assert.equal(sha(doc(first.messageId).json.original_text), sha(FIXTURE));
   });
 
-  await t.test('daily cap reached (real gateway, cap 1 µUSD, Hindsight on Anthropic provider): pending, nothing lost, indexed after', async () => {
-    Object.assign(s.env, { HUB_LLM_DAILY_CAP_MICROS: '1', HINDSIGHT_LLM_PROVIDER: 'anthropic', HINDSIGHT_LLM_MODEL: 'claude-haiku-5-5', HINDSIGHT_LLM_BASE_URL: 'http://bank-proxy:8790' });
-    s.memc('up', '-d', '--wait', '--wait-timeout', '300', '--force-recreate', 'hindsight', 'bank-proxy');
+  await t.test('daily request cap reached (F-11 gateway cap 0, no provider): pending, nothing lost, indexed after', async () => {
+    Object.assign(s.env, { HUB_LLM_DAILY_REQUEST_LIMIT: '0', HINDSIGHT_LLM_PROVIDER: 'openai', HINDSIGHT_LLM_MODEL: 'hub-llm', HINDSIGHT_LLM_BASE_URL: 'http://llm-gateway:8790/v1' });
+    s.memc('build', 'llm-gateway');
+    s.memc('up', '-d', '--wait', '--wait-timeout', '300', '--force-recreate', 'llm-gateway', 'hindsight', 'bank-proxy');
     const m = await sendHandoff('決策：記憶索引超過每日額度時要留在 pending，不能丟。', 'decision');
     assert.equal(bridge('once').code, 0);
     const rec = recOf(status(), m.messageId);
@@ -141,12 +142,13 @@ test('L-02b bridge: Mail → Hindsight, Hindsight down, re-run, same document_id
     console.log(`OVER_CAP: status=${rec.status} error=${JSON.stringify(rec.lastError).slice(0, 300)}`);
     const d = doc(m.messageId);
     console.log(`OVER_CAP document stored by Hindsight anyway: ${d.status === 200} (${d.status})`);
-    const budget = JSON.parse(s.memc('exec', '-T', 'bank-proxy', 'node', '/app/main.mjs', 'budget-status'));
-    assert.equal(budget.spentMicros, 0, 'nothing was sent to Anthropic');
-    const logs = s.memc('logs', 'bank-proxy');
-    assert.match(logs, /budget_refused/);
+    const budget = JSON.parse(s.memc('exec', '-T', 'llm-gateway', 'node', '--input-type=module', '-e',
+      "import fs from 'node:fs'; const r=await fetch('http://127.0.0.1:8790/status',{headers:{'x-api-key':fs.readFileSync('/run/secrets/hindsight_key','utf8').trim()}}); console.log(JSON.stringify((await r.json()).budget));"));
+    assert.equal(budget.usedRequests, 0, 'nothing was sent to a provider');
+    const logs = s.memc('logs', 'llm-gateway');
+    assert.match(logs, /DAILY_LIMIT/);
     // back under budget (local model again): the same record is indexed, text intact
-    Object.assign(s.env, { HUB_LLM_DAILY_CAP_MICROS: '500000', HINDSIGHT_LLM_PROVIDER: 'ollama', HINDSIGHT_LLM_MODEL: 'qwen2.5:7b', HINDSIGHT_LLM_BASE_URL: 'http://host.docker.internal:11434/v1' });
+    Object.assign(s.env, { HUB_LLM_DAILY_REQUEST_LIMIT: '500', HINDSIGHT_LLM_PROVIDER: 'ollama', HINDSIGHT_LLM_MODEL: 'qwen2.5:7b', HINDSIGHT_LLM_BASE_URL: 'http://host.docker.internal:11434/v1' });
     s.memc('up', '-d', '--wait', '--wait-timeout', '300', '--force-recreate', 'hindsight', 'bank-proxy');
     assert.equal(bridge('reindex', String(m.messageId)).code, 0);
     assert.equal(bridge('once').code, 0);

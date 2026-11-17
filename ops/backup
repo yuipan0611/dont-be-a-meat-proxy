@@ -19,6 +19,7 @@ HUB_PG_BACKUP="${HUB_PG_BACKUP:-0}"
 # L-02: opt in after the memory stack is deployed. Dumps database hindsight + the LLM budget ledger.
 HUB_HINDSIGHT_BACKUP="${HUB_HINDSIGHT_BACKUP:-0}"
 HUB_BANKPROXY_STATE_DIR="${HUB_BANKPROXY_STATE_DIR:-/var/lib/neighbor-hub/bank-proxy}"
+HUB_LLM_STATE_DIR="${HUB_LLM_STATE_DIR:-/var/lib/neighbor-hub/llm-gateway}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
@@ -40,7 +41,7 @@ Environment variables:
   HUB_DATA_DIR, HUB_STATE_DIR, CADDY_SNIPPET, CADDY_PRIVATE_DIR, HUB_CLOCK_DIR, BACKUP_DIR, RETENTION_DAYS
   HUB_PG_BACKUP=1 includes a consistent pg_dump of hub (fails closed if unavailable).
   HUB_PG_PROJECT, HUB_PRIVATE_DIR configure ops/postgres.
-  HUB_HINDSIGHT_BACKUP=1 adds a pg_dump of database hindsight and the bank-proxy LLM ledger (L-02).
+  HUB_HINDSIGHT_BACKUP=1 adds a pg_dump of hindsight and L-02 / F-11 LLM ledgers.
 EOF
   exit 1
 }
@@ -239,6 +240,7 @@ fi
 HAS_HINDSIGHT="false"
 HINDSIGHT_HASH=""
 LEDGER_HASH=""
+REQUEST_LEDGER_HASH=""
 if [[ "$HUB_HINDSIGHT_BACKUP" == "1" ]]; then
   mkdir -p "$STAGING_DIR/postgres" "$STAGING_DIR/bank-proxy"
   log "Creating consistent pg_dump of hindsight..."
@@ -250,6 +252,12 @@ if [[ "$HUB_HINDSIGHT_BACKUP" == "1" ]]; then
     cp "$HUB_BANKPROXY_STATE_DIR/llm-ledger.json" "$STAGING_DIR/bank-proxy/llm-ledger.json"
     chmod 600 "$STAGING_DIR/bank-proxy/llm-ledger.json"
     LEDGER_HASH="$(sha256_file "$STAGING_DIR/bank-proxy/llm-ledger.json")"
+  fi
+  if [[ -f "$HUB_LLM_STATE_DIR/gemini-requests.json" ]]; then
+    mkdir -p "$STAGING_DIR/llm-gateway"
+    cp "$HUB_LLM_STATE_DIR/gemini-requests.json" "$STAGING_DIR/llm-gateway/gemini-requests.json"
+    chmod 600 "$STAGING_DIR/llm-gateway/gemini-requests.json"
+    REQUEST_LEDGER_HASH="$(sha256_file "$STAGING_DIR/llm-gateway/gemini-requests.json")"
   fi
   HAS_HINDSIGHT="true"
 elif [[ "$HUB_HINDSIGHT_BACKUP" != "0" ]]; then
@@ -299,7 +307,9 @@ cat <<EOF > "$MANIFEST"
     "file": "postgres/hindsight.dump",
     "sha256": "$HINDSIGHT_HASH",
     "ledger_file": "bank-proxy/llm-ledger.json",
-    "ledger_sha256": "$LEDGER_HASH"
+    "ledger_sha256": "$LEDGER_HASH",
+    "request_ledger_file": "llm-gateway/gemini-requests.json",
+    "request_ledger_sha256": "$REQUEST_LEDGER_HASH"
   },
   "retention_policy_days": $RETENTION_DAYS
 }

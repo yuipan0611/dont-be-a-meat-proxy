@@ -46,6 +46,11 @@ export async function startStack({ keep = false, llm = 'ollama', groupId = 'grou
   writeFileSync(join(mem, 'bank-proxy/anthropic.key'), 'sk-lo\x63al-test-not-a-real-key', { mode: 0o644 });
   writeFileSync(join(mem, 'bank-proxy/hindsight-api.key'), s.tenant, { mode: 0o644 });
   writeFileSync(join(mem, 'bank-proxy/llm-gateway.key'), s.gateway, { mode: 0o644 });
+  const gatewayPrivate = join(dir, 'gateway-private');
+  mkdirSync(gatewayPrivate, { mode: 0o700 });
+  for (const [name, value] of [['hindsight', s.gateway], ['bot', hex()], ['eval', hex()]]) writeFileSync(join(gatewayPrivate, `${name}.key`), value, { mode: 0o644 });
+  const profile = join(dir, 'gemini-profile'), agyBin = join(dir, 'agy-bin');
+  mkdirSync(profile); mkdirSync(agyBin);
   const state = join(dir, 'state');
   mkdirSync(state, { mode: 0o777 });
   cpSync(join(root, 'supabase'), join(dir, 'supabase'), { recursive: true });
@@ -55,13 +60,34 @@ export async function startStack({ keep = false, llm = 'ollama', groupId = 'grou
     ...process.env, HUB_GROUP_ID: groupId, HUB_PG_PROJECT: dbProject, HUB_PRIVATE_DIR: priv, HUB_PG_SQL_DIR: join(dir, 'supabase'), HUB_PG_PLATFORM: arch,
     HUB_HS_PLATFORM: arch, HUB_MEMORY_PRIVATE_DIR: mem, HUB_BANKPROXY_STATE_DIR: state, HUB_BANKPROXY_PORT: String(port),
     HUB_BANKPROXY_UID: String(process.getuid()), HUB_BANKPROXY_GID: String(process.getgid()), HUB_BANKPROXY_TAG: 'l02-test',
+    HUB_LLM_PRIVATE_DIR: gatewayPrivate, HUB_GEMINI_PROFILE_DIR: profile, HUB_LLM_STATE_DIR: state, HUB_AGY_BIN_DIR: agyBin,
+    HUB_LLM_NETWORK: `${memProject}_llm-net`, HUB_LLM_DAILY_REQUEST_LIMIT: '500',
   };
   if (llm === 'ollama') {
     Object.assign(env, { HINDSIGHT_LLM_PROVIDER: 'ollama', HINDSIGHT_LLM_MODEL: 'qwen2.5:7b', HINDSIGHT_LLM_BASE_URL: 'http://host.docker.internal:11434/v1' });
   }
+  // The Ollama bypass exists only in this local test overlay. Production is fixed to the gateway.
+  const overlay = join(dir, 'memory-test.yaml');
+  writeFileSync(overlay, `services:
+  hindsight:
+    environment:
+      HINDSIGHT_API_LLM_PROVIDER: \${HINDSIGHT_LLM_PROVIDER:-openai}
+      HINDSIGHT_API_LLM_MODEL: \${HINDSIGHT_LLM_MODEL:-hub-llm}
+      HINDSIGHT_API_LLM_BASE_URL: \${HINDSIGHT_LLM_BASE_URL:-http://llm-gateway:8790/v1}
+  llm-gateway:
+    image: neighbor-llm-gateway:f11-test
+    build:
+      context: ${root}
+      dockerfile: ops/llm-gateway/Dockerfile.test
+    user: "${process.getuid()}:${process.getgid()}"
+    environment:
+      LLM_BACKEND: gemini-cli
+      LLM_UPSTREAM_MODEL: gemini-3.5-flash
+      GEMINI_BIN: /no-real-provider-installed
+`);
   const run = (file, args, o = {}) => execFileSync(file, args, { cwd: root, env, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 64 << 20, ...o });
   const pgc = (...a) => run('docker', ['compose', '-p', dbProject, '-f', pgCompose, ...a]);
-  const memc = (...a) => run('docker', ['compose', '-p', memProject, '-f', memCompose, ...a]);
+  const memc = (...a) => run('docker', ['compose', '-p', memProject, '-f', memCompose, '-f', overlay, ...a]);
   const pg = (cmd, args = []) => run('bash', [op, cmd, ...args]);
   const sql = (q, db = 'hub') => pg('psql', ['-d', db, '-Atqc', q]).trim();
   const stop = () => {

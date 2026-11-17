@@ -4,7 +4,7 @@
 # hindsight   — Hindsight 1.2.1 API only (control-plane UI off). DB = L-01 cluster, database hindsight,
 #               login hindsight_app, over hindsight-db-net only. LLM = the gateway below (never a real key).
 # bank-proxy  — :8780 member endpoint for Caddy (/memory/* → here), published on host loopback only;
-#               :8790 LLM gateway with the global 0.50 USD/day ledger, reachable only on memory-net.
+# llm-gateway — :8790 shared Gemini CLI backend (request-count ledger), internal llm-net only.
 services:
   hindsight:
     image: ghcr.io/vectorize-io/hindsight:1.2.1@sha256:d2bc230a714e933affd63753e181a0579328fdcbbc021800a76e0bc7b6e76b31
@@ -23,10 +23,11 @@ services:
       HINDSIGHT_API_WORKER_ID: hindsight-${HUB_GROUP_ID:?set HUB_GROUP_ID}   # stable: in-flight tasks are recovered after a container recreate
       HINDSIGHT_API_MCP_ENABLED_TOOLS: recall,list_memories,get_memory,get_document   # second wall behind bank-proxy
       HINDSIGHT_API_TENANT_EXTENSION: hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension
-      HINDSIGHT_API_LLM_PROVIDER: ${HINDSIGHT_LLM_PROVIDER:-anthropic}
-      HINDSIGHT_API_LLM_MODEL: ${HINDSIGHT_LLM_MODEL:-claude-haiku-5-5}
-      HINDSIGHT_API_LLM_BASE_URL: ${HINDSIGHT_LLM_BASE_URL:-http://bank-proxy:8790}
-      HINDSIGHT_API_LLM_MAX_CONCURRENT: "2"
+      HINDSIGHT_API_LLM_PROVIDER: openai
+      HINDSIGHT_API_LLM_MODEL: ${HUB_LLM_MODEL:-hub-llm}
+      HINDSIGHT_API_LLM_BASE_URL: http://llm-gateway:8790/v1
+      HINDSIGHT_API_LLM_MAX_CONCURRENT: "1"
+      HINDSIGHT_API_LLM_STRICT_SCHEMA: "false"  # CLI shim: JSON + Hindsight validation, no grammar-enforced schema
       HINDSIGHT_API_LLM_OUTPUT_LANGUAGE: "Traditional Chinese (zh-TW, 繁體中文); never convert to Simplified Chinese"
       HINDSIGHT_API_DB_POOL_MIN_SIZE: "1"
       HINDSIGHT_API_DB_POOL_MAX_SIZE: "5"
@@ -35,7 +36,7 @@ services:
       - hindsight_db_password
       - {source: hs_tenant_key, target: hindsight_api_key}
       - {source: hs_gateway_key, target: llm_gateway_key}
-    networks: [memory-net, hindsight-db-net]
+    networks: [memory-net, hindsight-db-net, llm-net]
     volumes:
       - hs_models:/home/hindsight/.cache   # embedding/reranker models, downloaded once
     mem_limit: ${HUB_HS_MEM_LIMIT:-2g}
@@ -61,16 +62,11 @@ services:
       HUB_GROUP_ID: ${HUB_GROUP_ID:?set HUB_GROUP_ID}
       HUB_DB_HOST: db
       HINDSIGHT_URL: http://hindsight:8888
-      ANTHROPIC_URL: ${HUB_ANTHROPIC_URL:-https://api.anthropic.com}
-      LEDGER_FILE: /state/llm-ledger.json
-      LLM_DAILY_CAP_MICROS: "${HUB_LLM_DAILY_CAP_MICROS:-500000}"   # override only for the over-cap test
     secrets:
       - hub_app_password
-      - anthropic_api_key
       - {source: bp_tenant_key, target: hindsight_api_key}
-      - {source: bp_gateway_key, target: llm_gateway_key}
     ports:
-      - "127.0.0.1:${HUB_BANKPROXY_PORT:-8780}:8780"   # 8790 (gateway) is deliberately not published
+      - "127.0.0.1:${HUB_BANKPROXY_PORT:-8780}:8780"
     networks: [memory-net, hub-db-net]
     volumes:
       - ${HUB_BANKPROXY_STATE_DIR:-/var/lib/neighbor-hub/bank-proxy}:/state
@@ -91,8 +87,54 @@ services:
       driver: json-file
       options: {max-size: 10m, max-file: "3"}
 
+  llm-gateway:
+    image: neighbor-llm-gateway:f11
+    build:
+      context: ../..
+      dockerfile: ops/llm-gateway/Dockerfile
+    user: "10004:10004"
+    hostname: hub-gemini
+    init: true
+    environment:
+      GEMINI_PROFILE_DIR: /home/gemini
+      LLM_BACKEND: ${HUB_LLM_BACKEND:-disabled} # 維護者 chooses after F-11 ToS/privacy review; never auto-fallback
+      LLM_MODEL: ${HUB_LLM_MODEL:-hub-llm}
+      LLM_UPSTREAM_MODEL: ${HUB_LLM_UPSTREAM_MODEL:-gemini-3.1-flash-lite}
+      LLM_DAILY_REQUEST_LIMIT: "${HUB_LLM_DAILY_REQUEST_LIMIT:-500}"
+      LLM_MAX_QUEUED: "20"
+      LLM_QUEUE_WAIT_MS: "30000"
+      GEMINI_TIMEOUT_MS: "90000"
+    secrets:
+      - {source: gw_hindsight_key, target: hindsight_key}
+      - {source: gw_bot_key, target: bot_key}
+      - {source: gw_eval_key, target: eval_key}
+    volumes:
+      - ${HUB_GEMINI_PROFILE_DIR:-/var/lib/neighbor-hub/gemini}:/home/gemini
+      - ${HUB_AGY_BIN_DIR:-/var/lib/neighbor-hub/agy-bin}:/opt/agy:ro
+      - ${HUB_LLM_STATE_DIR:-/var/lib/neighbor-hub/llm-gateway}:/state
+    networks: [llm-net, llm-egress]
+    # No host port; only Hindsight and bot can reach the authenticated listener.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:rw,nosuid,noexec,size=64m]
+    mem_limit: 768m
+    restart: unless-stopped
+    stop_grace_period: 130s
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8790/healthz]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
 networks:
-  memory-net: {}   # bridge with egress: model download (hindsight) and api.anthropic.com (gateway)
+  memory-net: {}   # Hindsight first-run model downloads
+  llm-net:
+    internal: true
+  llm-egress: {}   # official Gemini CLI Google services
   hindsight-db-net:
     external: true
     name: ${HUB_PG_PROJECT:-neighbor-hub-db}_hindsight-db-net
@@ -113,9 +155,11 @@ secrets:
     file: ${HUB_MEMORY_PRIVATE_DIR:-/var/lib/neighbor-hub/private/memory}/hindsight/llm-gateway.key
   hub_app_password:
     file: ${HUB_MEMORY_PRIVATE_DIR:-/var/lib/neighbor-hub/private/memory}/bank-proxy/hub-app.password
-  anthropic_api_key:
-    file: ${HUB_MEMORY_PRIVATE_DIR:-/var/lib/neighbor-hub/private/memory}/bank-proxy/anthropic.key
   bp_tenant_key:
     file: ${HUB_MEMORY_PRIVATE_DIR:-/var/lib/neighbor-hub/private/memory}/bank-proxy/hindsight-api.key
-  bp_gateway_key:
-    file: ${HUB_MEMORY_PRIVATE_DIR:-/var/lib/neighbor-hub/private/memory}/bank-proxy/llm-gateway.key
+  gw_hindsight_key:
+    file: ${HUB_LLM_PRIVATE_DIR:-/var/lib/neighbor-hub/private/llm-gateway}/hindsight.key
+  gw_bot_key:
+    file: ${HUB_LLM_PRIVATE_DIR:-/var/lib/neighbor-hub/private/llm-gateway}/bot.key
+  gw_eval_key:
+    file: ${HUB_LLM_PRIVATE_DIR:-/var/lib/neighbor-hub/private/llm-gateway}/eval.key
