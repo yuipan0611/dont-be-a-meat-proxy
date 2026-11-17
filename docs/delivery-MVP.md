@@ -1,7 +1,7 @@
 # MVP 驗收紀錄（H-08，目標 2026-11-23）
 
 - 負責：維護者 執行｜PM 記錄｜依據：`docs/06-test-plan.md` TC-01～13
-- 狀態：**未開始**，等 VPS 部署（`docs/ops/runbook-H02-deploy.md`）
+- 狀態：**進行中**（2026-11-17）：VPS 部署完成；Mac 真 session 驗收完成；剩 Windows 相關項目
 - 規則：每個 TC 附實際輸出或截圖路徑；沒過的寫原因與處理，不寫「通過」二字代替證據。
 
 ## 前置
@@ -31,7 +31,7 @@ client 45、hub-hook 36、hub-hook 整合 5（TC-02／04／13、session.closed�
 | TC-06 | question 60 秒內自動回答 | 人工 | ✅（Mac 真 session＋模擬 RedStone） | #4 問 → #5 答，**18 秒**，答案正確（列出 8 個項目）；HubClock `question:answered`。真 Windows 發問待 Windows 接入 |
 | TC-07 | action 先同意才執行 | 人工 | ✅ | #11：卡片先顯示（presented #12）、檔案未建；維護者 同意 → HubClock approved（#14，02:42:58Z）→ 10:43:06 才建立 tc07.txt（approved-ok） |
 | TC-08 | action 拒絕；混合請求當 action | 人工 | ✅ 拒絕部分 | #16：維護者 拒絕 → HubClock rejected（#19），tc08.txt 未建立。混合請求：envelope 未帶 intent 時預設 action（程式行為，見下方已知問題） |
-| TC-09 | 確認逾時 30 分鐘＝拒絕 | 人工（要等 30 分鐘） | ⬜ | |
+| TC-09 | 確認逾時 30 分鐘＝拒絕 | 人工（要等 30 分鐘） | ✅ | #20 卡片 presented（#21）約 02:44:47Z，無人回應 → HubClock expired（#28）03:14:59Z（約 30 分 12 秒，含 15 秒 tick）；tc09.txt 未建立，Mac session 收到 expired 後沒有執行 |
 | TC-10 | 撤銷 Windows，Mac 不受影響 | runbook-H02 §6 | ✅ | 同 session 下一請求 401、Mac 正常；Mail／Caddy 未重啟 |
 | TC-11 | 收件者不存在不保存 | 自動 | ✅ | E-RCPT，delivery tail 不變 |
 | TC-12 | 收件者離線時 action 只保存不執行 | 人工 | 🟡 前半 ✅ | #22 送給沒有 session 的 RedStone：已保存、無執行。待 Windows 開工時確認以卡片呈現、不自動執行 |
