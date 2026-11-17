@@ -118,7 +118,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:rw,nosuid,noexec,size=64m]
+    tmpfs: ["/tmp:rw,nosuid,noexec,size=64m"]
     mem_limit: 768m
     restart: unless-stopped
     stop_grace_period: 130s

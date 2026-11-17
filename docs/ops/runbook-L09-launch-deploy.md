@@ -1,8 +1,8 @@
 # L-09｜S1 上線單一路徑（PM 在 VPS root 執行）
 
-基線：master `0cc8934`，2026-11-17。此票整合部署程序；本機 Docker 假 VPS 演練不代表 `<VPS_IP>`、真 Discord、Anthropic、OAuth 或 Windows 已驗收。正式結果逐項寫入 [delivery-S1](../delivery-S1.md)。Codex 未登入 VPS、未 push、未修改 master。
+部署程序起始基線：master `0cc8934`，2026-11-17；P-1 重驗基線：master `e93e18e`，2026-11-18。此票整合部署程序；本機 Docker 假 VPS 演練不代表 `<VPS_IP>`、真 Discord、Groq、OAuth 或 Windows 已驗收。正式結果逐項寫入 [delivery-S1](../delivery-S1.md)。Codex 未登入 VPS、未 push、未修改 master。
 
-**F-11b 接線更新（2026-11-18）**：維護者 已選 Groq API，預設 `groq-api`／`openai/gpt-oss-120b`；bot／Hindsight／EVAL 只連共用 gateway，不再要求 Anthropic 或 Google 登入。Groq key 只掛 gateway，內部 consumers 使用各自的 gateway key。查證與資料保留限制見 [Groq](../research/F-11-gemini-subscription-backend.md#groq)。本頁既有完整 dry-run 是 F-11 前的部署基線；F-11b 單元／Compose／image 檢查另見 [收據](../research/F-11b-validation.txt)，**尚未重跑整套 L09 演練、真 key 或正式 LLM 驗收**，gateway liveness 不代表模型 readiness。
+**F-11b 接線更新（2026-11-18）**：維護者 已選 Groq API，預設 `groq-api`／`openai/gpt-oss-120b`；bot／Hindsight／EVAL 只連共用 gateway，不再要求 Anthropic 或 Google 登入。Groq key 只掛 gateway，內部 consumers 使用各自的 gateway key。查證與資料保留限制見 [Groq](../research/F-11-gemini-subscription-backend.md#groq)。F-11b 單元／Compose／image 檢查見 [收據](../research/F-11b-validation.txt)；目前 master 的完整 L09 重驗結果、失敗與每步 exit code 見 [P-1 演練證據](evidence/L09-rehearsal-2.md)。**真 key 與正式 LLM 驗收仍待 PM**，gateway liveness 不代表模型 readiness。
 
 部署順序固定為 **1 備份 → 2 schema/私密副本 → 3 建置及新服務 → 4 validator 維護窗 → 5 一次 Caddy 切換 → 6 consumers/排程 → 7 技術檢查 → 人工驗收**。不要再交錯執行舊 runbook 的 reload／render-caddy 指令。
 
@@ -180,7 +180,7 @@ flock /var/lib/neighbor-hub/applier-lock/global.lock /opt/neighbor-hub/ops/token
 
 ## 7｜技術收尾與真人驗收
 
-前置：步驟 6 PASS。執行 `ops/deploy-l09.sh --step 7`。預期完整八服務 running、RestartCount=0、OOMKilled=false、office 200、原容器不再改變；STEP 7 PASS **只代表當下技術檢查**。不把 idle RSS 當尖峰、不把 fixture／單元測試當正式驗收。
+前置：步驟 6 PASS。執行 `ops/deploy-l09.sh --step 7`。預期 Mail、HubClock、validator、web、bot、memory-bridge、Hindsight、bank-proxy、llm-gateway 九服務 running、RestartCount=0、OOMKilled=false，既有 PG 不重建、office 200、原容器不再改變；STEP 7 PASS **只代表當下技術檢查**。不把 idle RSS 當尖峰、不把 fixture／單元測試當正式驗收。
 
 PM 接著記 `free -h`、`docker stats --no-stream`，在 retain 與 web 十人並發／持續更新時取樣，確認 Hindsight/PG/validator/bot/web 都無 OOM／重啟，保留主機 MemAvailable 最低值、PG pool 實際 usename/count。8 GB 全 stack＋office 需有餘裕。失敗只停新負載／consumer，修後重驗，不調高上限掩蓋問題。
 
@@ -190,4 +190,4 @@ PM 接著記 `free -h`、`docker stats --no-stream`，在 retain 與 web 十人�
 
 實際 owning runbook：[L-01](runbook-L01-postgres.md)、[L-02](runbook-L02-memory.md)、[L-02b](L02b-memory-bridge.md)、[L-03/L-03b](runbook-L03-discord.md)、[L-04](L04-task-github.md)、[L-07](L07-validator.md)、[L-08](L08-group-isolation.md)、[UI](runbook-UI-guide.md)、[架構工作台](../10-architecture-workbench.md)。本文件是這一輪的唯一順序，舊文的 schema=5、web port=8780、各自 reload 與 legacy render-caddy 指令不適用本輪。
 
-本機重現：`bash ops/test/l09-dry-run.sh`；收據見 [L09-launch-dry-run.txt](evidence/L09-launch-dry-run.txt)。假的僅是 VPS 的 systemd adapter、Discord provider 及 Hindsight provider fixture（不花 LLM 費用）；真 Docker Compose／PG migrations+restore／Caddy validate+reload／Mail／validator／bank-proxy／web 與 Linux owner/mode 確實執行。validator 先在外層 Docker 從本次 source 建置再載入假 VPS（內層 go mod download 曾 exit 1），不是替身 binary；正式 VPS 的 build/download 可用性仍待 PM。fixture 範圍與未驗項必須與輸出一起保存，不可宣稱真服務驗收。
+本機重現：`bash ops/test/l09-dry-run.sh`；最新收據見 [L09-rehearsal-2.md](evidence/L09-rehearsal-2.md)，F-11 前的歷史收據保留於 [L09-launch-dry-run.txt](evidence/L09-launch-dry-run.txt)。假的僅是 VPS 的 systemd adapter、Discord provider 及 Hindsight provider fixture（不花 LLM 費用）；gateway 使用真正 `groq-api` adapter 與合成 key，未呼叫 Groq。真 Docker Compose／PG migrations+restore／Caddy validate+reload／Mail／validator／bank-proxy／web 與 Linux owner/mode 確實執行。validator、bank-proxy、web 先在外層 Docker 從本次 source 建置再載入假 VPS（避開巢狀 Go/npm/apk 網路問題），不是替身實作；gateway 演練用 Dockerfile.test 省略歷史 CLI 安裝，Groq adapter 仍為正式來源，不能當成正式 gateway image 建置驗收。正式 VPS 的 build/download 可用性仍待 PM。fixture 範圍與未驗項必須與輸出一起保存，不可宣稱真服務驗收。

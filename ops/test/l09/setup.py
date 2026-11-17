@@ -22,16 +22,19 @@ for p in sorted((sql/'migrations').glob('*.sql'))[4:]: p.unlink()
 if subprocess.run(['docker','image','inspect','l09-pg-cached'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode == 0:
     path=root/'deploy/postgres/compose.yaml'
     path.write_text(path.read_text().replace('pgvector/pgvector:pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782','l09-pg-cached'))
-# Fixture provider image reuses the already pulled node image, with Alpine python/bash packages.
+# Fixture provider reuses the local VPS image's Python/Bash, with no nested package download.
 f=root/'ops/test/l09'
-(f/'Dockerfile.provider').write_text('FROM node:24-alpine\nRUN apk add --no-cache python3 bash\nWORKDIR /app\nCOPY provider.py /app/provider.py\nRUN printf "#!/bin/bash\\nexec python3 /app/provider.py\\n" > /app/start-all.sh && chmod +x /app/start-all.sh\n')
+(f/'Dockerfile.provider').write_text('FROM neighbor-l09-vps:test\nRUN ln -sf /usr/bin/python3 /usr/local/bin/python\nWORKDIR /app\nCOPY provider.py /app/provider.py\nRUN printf "#!/bin/bash\\nexec python3 /app/provider.py\\n" > /app/start-all.sh && chmod +x /app/start-all.sh\n')
 subprocess.run(['docker','build','-t','l09-hindsight-fixture',str(f),'-f',str(f/'Dockerfile.provider')],check=True,stdout=subprocess.DEVNULL)
 p=root/'deploy/memory/compose.yaml'
 s=p.read_text(); s=s.replace('ghcr.io/vectorize-io/hindsight:1.2.1@sha256:d2bc230a714e933affd63753e181a0579328fdcbbc021800a76e0bc7b6e76b31','l09-hindsight-fixture'); p.write_text(s)
-# This fixture explicitly selects disabled below: no provider calls or account is needed.
+# Use the real Groq adapter with a synthetic key; liveness never invokes a provider.
 (root/'ops/llm-gateway/Dockerfile').write_text((root/'ops/llm-gateway/Dockerfile.test').read_text())
 # Use the real validator artifact built from this checkout by the outer Docker builder.
 (root/'server/validator/Dockerfile').write_text('FROM neighbor-l09-validator:dry-built\n')
+# Import real source artifacts to avoid nested DNS/npm/apk failures; no substitute implementations.
+(root/'ops/bank-proxy/Dockerfile').write_text('FROM neighbor-l09-bank-proxy:dry-built\n')
+(root/'web/Dockerfile').write_text('FROM neighbor-l09-web:dry-built\n')
 # Bot fixture checks orchestration start/register boundaries, never reaches Discord REST/Gateway.
 p=root/'bot/Dockerfile'
 p.write_text('FROM node:24-alpine\nENTRYPOINT ["node", "-e", "if(process.argv[1]===\\\"run\\\"){setInterval(()=>{},1000)}else{console.log(\\\"fixture command accepted\\\")}"]\nCMD ["run"]\n')
@@ -75,7 +78,7 @@ subprocess.run([str(root/'ops/render-caddy'),'--state-dir',str(P),'--prepare-onl
 (c/'hub.caddy').write_text('http://127.0.0.1:8088 {\n import /etc/caddy/hub-private/auth.caddy\n}\n')
 subprocess.Popen(['runuser','-u','caddy','--','caddy','run','--config',str(c/'Caddyfile'),'--adapter','caddyfile'],stdout=open('/tmp/l09-caddy.log','w'),stderr=subprocess.STDOUT)
 config=Path('/etc/neighbor-hub/l09.env'); config.parent.mkdir(parents=True,exist_ok=True)
-config.write_text('HUB_DISCORD_GUILD_ID=12345678\x39012345678\nHUB_DISCORD_APPLICATION_ID=12345678\x39012345679\nL09_OWNER_DISCORD_ID=12345678\x39012345680\nHUB_WEB_MAP_FILE=/opt/neighbor-hub/web/architecture.json\nHUB_LLM_BACKEND=disabled\nHUB_PUBLIC_URL=http://127.0.0.1:8088\nL09_OFFICE_URL=http://127.0.0.1:8089\nHUB_PG_PLATFORM='+os.environ['TEST_PLATFORM']+'\nHUB_HS_PLATFORM='+os.environ['TEST_PLATFORM']+'\nHUB_VALIDATOR_PLATFORM='+os.environ['TEST_PLATFORM']+'\n')
+config.write_text('HUB_DISCORD_GUILD_ID=12345678\x39012345678\nHUB_DISCORD_APPLICATION_ID=12345678\x39012345679\nL09_OWNER_DISCORD_ID=12345678\x39012345680\nHUB_WEB_MAP_FILE=/opt/neighbor-hub/web/architecture.json\nHUB_LLM_BACKEND=groq-api\nHUB_LLM_UPSTREAM_MODEL=openai/gpt-oss-120b\nHUB_PUBLIC_URL=http://127.0.0.1:8088\nL09_OFFICE_URL=http://127.0.0.1:8089\nHUB_PG_PLATFORM='+os.environ['TEST_PLATFORM']+'\nHUB_HS_PLATFORM='+os.environ['TEST_PLATFORM']+'\nHUB_VALIDATOR_PLATFORM='+os.environ['TEST_PLATFORM']+'\n')
 config.chmod(0o600)
 # Web validates an HTTPS origin; Caddy test transport is plain HTTP on a different port.
 # Preserve this one env override in fake checkout only.
