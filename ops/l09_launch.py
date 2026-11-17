@@ -521,7 +521,7 @@ def main():
             k, sep, v = line.partition('=')
             valid_value = re.fullmatch(r'[A-Za-z0-9_./:@-]+', v)
             if k == 'HUB_LLM_UPSTREAM_MODEL':
-                valid_value = re.fullmatch(r'[A-Za-z0-9 ._-]{1,128}', v)
+                valid_value = re.fullmatch(r'[A-Za-z0-9 ./_-]{1,128}', v)
             require(sep and k in allowed and valid_value, 'invalid/non-allowlisted non-secret config')
             ENV[k] = v
             config_keys.add(k)

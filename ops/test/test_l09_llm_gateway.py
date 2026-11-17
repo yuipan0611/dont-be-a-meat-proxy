@@ -1,12 +1,40 @@
 """F-11/L-09 wiring: no VPS, root operations, provider calls or account credentials."""
 from types import SimpleNamespace
+from pathlib import Path
+import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, mock_open
 
 from ops import l09_launch as launch
 
 
 class GatewayLaunchTest(unittest.TestCase):
+    def test_documented_groq_model_reaches_launch_step(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            (root / 'hubclock.sender.json').write_text('{}')
+            map_file = root / 'map.json'
+            map_file.write_text('{}')
+            config = '\n'.join([
+                'HUB_DISCORD_GUILD_ID=11111111\x3111111111',
+                'HUB_DISCORD_APPLICATION_ID=22222222\x3222222222',
+                'L09_OWNER_DISCORD_ID=33333333\x3333333333',
+                f'HUB_WEB_MAP_FILE={map_file}',
+                'HUB_LLM_BACKEND=groq-api',
+                'HUB_LLM_UPSTREAM_MODEL=openai/gpt-oss-120b',
+            ])
+            reached = []
+            with patch.object(launch.os, 'geteuid', return_value=0), \
+                 patch.object(launch, 'secret_file', return_value=config), \
+                 patch.object(launch, 'PRIVATE', root), patch.object(launch, 'STATE', root), \
+                 patch.dict(launch.ENV, {}, clear=True), patch.dict(launch.J, {}, clear=True), \
+                 patch.object(launch, 'directory'), patch.object(launch, 'save'), \
+                 patch('sys.argv', ['l09_launch.py', '--step', '1']), \
+                 patch('builtins.open', mock_open()), patch.object(launch.fcntl, 'flock'), \
+                 patch.object(launch, 'step1', side_effect=lambda: reached.append(launch.ENV['HUB_LLM_UPSTREAM_MODEL'])):
+                self.assertEqual(launch.main(), 0)
+            self.assertEqual(reached, ['openai/gpt-oss-120b'])
+
     def test_explicit_disabled_launch_does_not_require_provider_key_overlay(self):
         with patch.dict(launch.ENV, {'HUB_LLM_BACKEND': 'disabled'}, clear=True), patch.object(launch, 'dc') as dc:
             launch.mem('config', '--quiet')
