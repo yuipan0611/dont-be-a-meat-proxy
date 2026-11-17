@@ -144,6 +144,7 @@ flowchart TD
 | L-03 Discord bot | <ORCA_ID> | <ORCA_ID> | swe-Tom | 11-27 | ✅ 程式 21bb2ad 併入 master（f892509），PM 重跑 bot 44/44；未部署：需 維護者 建 Discord application；**L-03b TokenApplier ✅** 1082a08 併入 master，PM 重跑 token_applier 15/15、hub_ops 7 OK（1 skip）；VPS 部署（含 import-mvp、Caddy reload）與 bot 一起做 |
 | L-04 Discord 建 GitHub Issue | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-2 | 11-28 | ✅ 33a5143 併入 master，PM 重跑 bot 56/56；未部署：需 GitHub token（維護者）＋ register-commands |
 | L-05 決策草稿→正式 | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-1 | 11-28 | 🔄 派工中 |
+| EVAL-01 question／action 分類評測 | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-2 | 11-29 | ✅ 30 則 fixtures＋runner 併入 master，PM 重跑單元 10/10；真模型（claude CLI）量測由 PM 執行 |
 | EVAL-01 收件端判斷 question／action | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-2 | 11-28 | ✅ 資料集 fixtures/eval-classify-v1.jsonl（30 則，10 Q/10 A/10 mixed）、評測 runner ops/eval/eval-classify.mjs、單元測試 10/10 PASS |
 
 註：Codex worker 沒有 Hostinger MCP 工具（escalation <ORCA_ID>）→ DNS／防火牆改由 PM 端 Hostinger MCP 處理，Codex 只寫 runbook＋hPanel 手動備案。
