@@ -158,5 +158,5 @@ flowchart TD
 
 註：Codex worker 沒有 Hostinger MCP 工具（escalation <ORCA_ID>）→ DNS／防火牆改由 PM 端 Hostinger MCP 處理，Codex 只寫 runbook＋hPanel 手動備案。
 | P-1 上線前閘門：全測試＋Go 重跑＋L-09 對 Groq 再演練 | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-P1） | 11-18 | 🔄 派工中（維護者：趁 Codex 額度到期前用掉） |
-| P-2 TC-16～21 VPS 驗收腳本＋checklist | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-P2） | 11-18 | 🔄 派工中 |
+| P-2 TC-16～21 VPS 驗收腳本＋checklist | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-P2） | 11-18 | ✅ 56dbcd6 併入 master（c9c4c87）：ops/acceptance/ tc-14、16～21 腳本＋7 份 checklist（🟡 標 維護者 步驟）；PM 重跑 acceptance＋bot 65 0 fail；delivery-S1 改 Groq |
 | P-3 上線前安全審查（交叉審查） | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-P3） | 11-18 | 🔄 派工中 |
