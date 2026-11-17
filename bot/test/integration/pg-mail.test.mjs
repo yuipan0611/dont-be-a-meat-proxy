@@ -90,6 +90,30 @@ test('pg: DB enforces summary ≤200 and that a revoked token cannot come back',
   await assert.rejects(pool.query('update audit_log set action = $1', ['x']), /permission denied|append-only/);
 });
 
+test('R-05 pg: Mail saved before DB failure replays one immutable action after restart', { skip: skipPg }, async () => {
+  const { store, pool, db } = await freshStore();
+  await store.recordDecisionDraft({ groupId: 'group-a', draftMailId: 779, authorAgent: 'BlueLake' });
+  psql(db, `create function public.reject_decision_finish() returns trigger language plpgsql as $$
+    begin if new.status = 'confirmed' then raise exception 'synthetic DB finish failure'; end if; return new; end $$;
+    create trigger test_finish_failure before update on decisions for each row execute function public.reject_decision_finish();`);
+  const request = { draftMailId: 779, status: 'confirmed', memberId: '00000000-0000-4000-8000-0000000000a1',
+    discordUserId: OWNER_DISCORD, memberName: '維護者', now: '2026-11-20T01:00:00.000Z' };
+  const saved = new Map(), bodies = [];
+  const send = async a => { bodies.push(a); if (!saved.has(a.key)) saved.set(a.key, 880); return { messageId: saved.get(a.key) }; };
+  await assert.rejects(store.deliverDecision(request, send), /synthetic DB finish failure/);
+  const pending = await store.getDecisionByMailId(779);
+  assert.equal(pending.status, 'draft');
+  assert.ok(pending.mail_action);
+  psql(db, 'drop trigger test_finish_failure on decisions;');
+  const restarted = createPgStore({ pool, groupId: 'group-a' });
+  const done = await restarted.deliverDecision({ ...request, now: '2026-11-21T01:00:00.000Z' }, send);
+  assert.equal(done.decision.status, 'confirmed');
+  assert.deepEqual(bodies[0], bodies[1]);
+  assert.equal(saved.size, 1);
+  assert.equal((await pool.query("select count(*)::int as n from audit_log where action='discord.decision.confirmed'")).rows[0].n, 1);
+  await assert.rejects(createPgStore({ pool, groupId: 'group-b' }).deliverDecision(request, send), /not found/);
+});
+
 const skipMail = (skipPg || !(await mailBinAvailable())) && 'docker or mcp-agent-mail binary not available';
 
 test('TC-18 end-to-end: real Mail + real Postgres → one DM; unknown recipient → nothing', { skip: skipMail, timeout: 60_000 }, async () => {
@@ -173,7 +197,7 @@ test('L08 + L05: decision queries and mutations stay in their bound group', {ski
  await a.commitIngest({groupId:'group-a',agentName:'RedStone',cursor:1,rows:[{groupId:'group-a',memberId:'00000000-0000-4000-8000-0000000000a1',mailId:1,recipientAgent:'RedStone',label:'決策',sender:'A',subject:'A',summary:'A',mailCreatedAt:'2026-11-20T00:00:00Z',state:'pending'}]});
  await b.updateDecisionStatus({...update,draftMailId:1,memberId:'00000000-0000-4000-8000-0000000000b1'});
  assert.equal((await a.recentItems('group-a',10))[0].decision_status,'草稿','foreign status must not join onto own mail ID');
- const decisions=createDecisionsManager({store:a,discord:createFakeDiscord(),clock:{nowMs:()=>Date.now()},defaultGuildId:'10000000\x30000000001'});
+ const decisions=createDecisionsManager({store:a,discord:createFakeDiscord(),mailClient:{sendDecision:async()=>({messageId:999})},clock:{nowMs:()=>Date.now()},defaultGuildId:'10000000\x30000000001'});
  const foreignButton=fakeButtonInteraction('decision:confirm:201');await decisions.handleButton(foreignButton);
  assert.ok(foreignButton.log.some(x=>/找不到/.test(x.content)));assert.equal((await b.getDecisionByMailId(201)).status,'draft');
  const strangerButton=fakeButtonInteraction('decision:confirm:1',{userId:'20000000\x30000000099'});await decisions.handleButton(strangerButton);

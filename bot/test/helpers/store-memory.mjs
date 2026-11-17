@@ -1,7 +1,10 @@
 // In-memory twin of src/store-pg.mjs for unit tests. test/store-pg.integration.test.mjs runs the
 // same contract (test/helpers/store-contract.mjs) against both, so the twin cannot drift silently.
 
+import { decisionAction } from '../../src/decision-action.mjs';
+
 export function createMemoryStore({ groups = [], members = [], links = [], devices = [] } = {}) {
+  const deliveryLocks = new Map();
   const db = {
     groups: [...groups],
     members: members.map((m) => ({ role: 'member', status: 'active', ...m })),
@@ -158,6 +161,30 @@ export function createMemoryStore({ groups = [], members = [], links = [], devic
         .sort((a, b) => (a.created_at === b.created_at ? b.id - a.id : b.created_at.localeCompare(a.created_at)))
         .slice(0, limit)
         .map((d) => ({ ...d }));
+    },
+    async deliverDecision(request, send) {
+      const previous = deliveryLocks.get(request.draftMailId) ?? Promise.resolve();
+      let release;
+      deliveryLocks.set(request.draftMailId, new Promise(r => { release = r; }));
+      await previous;
+      try {
+        const d = db.decisions.find(x => x.draft_mail_id === request.draftMailId);
+        if (!d) throw new Error('Decision not found');
+        if (d.status !== 'draft') return { already: true, decision: { ...d } };
+        if (d.mail_action && d.mail_action.status !== request.status) throw new Error('Another decision action is pending');
+        d.mail_action ??= decisionAction(d, request);
+        const a = d.mail_action;
+        const receipt = await send(structuredClone(a));
+        if (!Number.isSafeInteger(receipt?.messageId) || receipt.messageId < 1) throw new Error('Mail receipt unconfirmed');
+        Object.assign(d, { status: a.status, confirmed_by: a.memberId, confirmed_by_discord_id: a.discordUserId,
+          confirmed_by_name: a.memberName, confirmed_at: a.now.replace(/\.000Z$/, '.000000Z'), updated_at: a.now,
+          version: d.version + 1, mail_message_id: receipt.messageId });
+        db.audit.push({ groupId: d.group_id, action: `discord.decision.${a.status}`, requestId: a.key,
+          details: { draft_mail_id: d.draft_mail_id, status: a.status, confirmed_by: a.memberName, confirmed_at: a.now } });
+        return { already: false, decision: { ...d } };
+      } finally {
+        release();
+      }
     },
     async updateDecisionStatus({ draftMailId, status, memberId, discordUserId, memberName, reason = null, now = null }) {
       const d = db.decisions.find((x) => x.draft_mail_id === Number(draftMailId) && x.status === 'draft');

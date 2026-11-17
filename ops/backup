@@ -203,19 +203,16 @@ if [[ -d "$HUB_CLOCK_DIR" ]]; then
     HAS_HUBCLOCK_STATE="true"
     HUBCLOCK_HASH="$(sha256_file "$HUBCLOCK_STATE_FILE")"
     if command -v node >/dev/null 2>&1; then
-      eval "$(node -e '
+      read -r HUBCLOCK_CURSOR HUBCLOCK_OUTBOX_COUNT HUBCLOCK_PROCESSED_COUNT < <(node -e '
         const fs = require("node:fs");
         try {
           const s = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-          console.log(`HUBCLOCK_CURSOR=${JSON.stringify(s.cursor ?? null)}`);
-          console.log(`HUBCLOCK_OUTBOX_COUNT=${Object.keys(s.outbox ?? {}).length}`);
-          console.log(`HUBCLOCK_PROCESSED_COUNT=${(s.processed ?? []).length}`);
+          const cursor = Number.isSafeInteger(s.cursor) && s.cursor >= 0 ? s.cursor : null;
+          console.log([cursor ?? "null", Object.keys(s.outbox ?? {}).length, Array.isArray(s.processed) ? s.processed.length : 0].join(" "));
         } catch (e) {
-          console.log("HUBCLOCK_CURSOR=null");
-          console.log("HUBCLOCK_OUTBOX_COUNT=0");
-          console.log("HUBCLOCK_PROCESSED_COUNT=0");
+          console.log("null 0 0");
         }
-      ' "$HUBCLOCK_STATE_FILE" 2>/dev/null || true)"
+      ' "$HUBCLOCK_STATE_FILE" 2>/dev/null)
     fi
     log "HubClock state preserved (hash: $HUBCLOCK_HASH, cursor: $HUBCLOCK_CURSOR, outbox: $HUBCLOCK_OUTBOX_COUNT, processed: $HUBCLOCK_PROCESSED_COUNT)"
   fi

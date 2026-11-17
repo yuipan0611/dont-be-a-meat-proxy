@@ -126,13 +126,22 @@ def put_secret(path, value, uid=0, gid=0, mode=0o400):
         write(path, value + '\n', uid, gid, mode)
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def request(url, token=None):
     try:
         req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + token} if token else {})
-        with urllib.request.urlopen(req, timeout=15) as r:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+        with opener.open(req, timeout=15) as r:
             return r.status
     except urllib.error.HTTPError as e:
-        return e.code
+        try:
+            return e.code
+        finally:
+            e.close()
     except (OSError, ValueError):
         raise Stop('HTTP probe unreachable; details suppressed') from None
 
@@ -345,6 +354,8 @@ assert urllib.request.urlopen(r,timeout=60).status==200
     run([ROOT / 'ops/bootstrap', '--state-dir', PRIVATE, '--url', 'http://127.0.0.1:8765/mcp/'], 'MemoryBridge registration')
     p = PRIVATE / 'memorybridge.sender.json'
     os.chown(p, int(ENV['HUB_OPS_UID']), int(ENV['HUB_OPS_GID']))
+    put_secret(PRIVATE / 'bot/hubbot.sender.json', secret_file(PRIVATE / 'hubbot.sender.json'),
+               int(ENV['HUB_BOT_UID']), int(ENV['HUB_BOT_GID']))
     evidence('new_services', 'gateway liveness only (not LLM readiness); Hindsight healthy; bank created; bank-proxy healthy; explorer.js 200; bot config OK')
     unchanged(J['before'])
     office()
@@ -521,7 +532,7 @@ def main():
             k, sep, v = line.partition('=')
             valid_value = re.fullmatch(r'[A-Za-z0-9_./:@-]+', v)
             if k == 'HUB_LLM_UPSTREAM_MODEL':
-                valid_value = re.fullmatch(r'[A-Za-z0-9 ._-]{1,128}', v)
+                valid_value = re.fullmatch(r'[A-Za-z0-9 ./_-]{1,128}', v)
             require(sep and k in allowed and valid_value, 'invalid/non-allowlisted non-secret config')
             ENV[k] = v
             config_keys.add(k)

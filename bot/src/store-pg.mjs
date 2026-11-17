@@ -2,6 +2,7 @@
 // Every multi-row change is one transaction. Discord IDs stay strings (never JS numbers).
 
 import pg from 'pg';
+import { decisionAction } from './decision-action.mjs';
 
 const NOTIF_COLS = `id, group_id, member_id, mail_id::int as mail_id, recipient_agent, label, sender, subject, summary,
   to_char(mail_created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as mail_created_at, state`;
@@ -9,7 +10,7 @@ const NOTIF_COLS = `id, group_id, member_id, mail_id::int as mail_id, recipient_
 const DECISION_COLS = `id, group_id, draft_mail_id::int as draft_mail_id, draft_id, author_agent, subject, summary, text,
   status, version, confirmed_by, confirmed_by_discord_id, confirmed_by_name,
   to_char(confirmed_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as confirmed_at,
-  decision_reason, discord_message_id, reminder_sent,
+  decision_reason, discord_message_id, mail_action, mail_message_id, reminder_sent,
   to_char(reminder_sent_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as reminder_sent_at,
   to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
   to_char(updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at`;
@@ -249,6 +250,50 @@ export function createPgStore({ pool, groupId: boundGroup = 'group-a' }) {
         [groupId, limit]
       );
       return r.rows;
+    },
+
+    async deliverDecision(request, send) {
+      const { draftMailId, memberId, status } = request;
+      if (!['confirmed', 'rejected'].includes(status)) throw new Error('Invalid decision action');
+      const lock = async c => {
+        const r = await c.query(`select ${DECISION_COLS} from public.decisions where group_id = ${scope} and draft_mail_id = $1 for update`, [draftMailId]);
+        return r.rows[0];
+      };
+      const owner = async (c, id) => {
+        const r = await c.query(`select 1 from public.members where group_id = ${scope} and id = $1 and status = 'active' and role = 'owner'`, [id]);
+        if (!r.rowCount) throw new Error('Decision permission denied');
+      };
+      // This transaction commits even if the subsequent network request fails or the process dies.
+      const prepared = await tx(async c => {
+        const d = await lock(c);
+        if (!d) throw new Error('Decision not found');
+        await owner(c, memberId);
+        if (d.status !== 'draft') return { already: true, decision: d };
+        if (d.mail_action && d.mail_action.status !== status) throw new Error('Another decision action is pending');
+        if (!d.mail_action) await c.query(`update public.decisions set mail_action = $2 where group_id = ${scope} and draft_mail_id = $1`, [draftMailId, decisionAction(d, request)]);
+        return null;
+      });
+      if (prepared) return prepared;
+      // Row lock serializes separate bot processes, including retries after an unknown Mail result.
+      return tx(async c => {
+        const d = await lock(c);
+        await owner(c, memberId);
+        if (d.status !== 'draft') return { already: true, decision: d };
+        const a = d.mail_action;
+        await owner(c, a.memberId);
+        const receipt = await send(a);
+        if (!Number.isSafeInteger(receipt?.messageId) || receipt.messageId < 1) throw new Error('Mail receipt unconfirmed');
+        const r = await c.query(`update public.decisions set status = $2, confirmed_by = $3,
+          confirmed_by_discord_id = $4, confirmed_by_name = $5, confirmed_at = $6::timestamptz,
+          updated_at = $6::timestamptz, version = version + 1, mail_message_id = $7
+          where group_id = ${scope} and draft_mail_id = $1 returning ${DECISION_COLS}`,
+          [draftMailId, a.status, a.memberId, a.discordUserId, a.memberName, a.now, receipt.messageId]);
+        await audit({ groupId: boundGroup, actorType: 'member', actorId: a.discordUserId,
+          action: `discord.decision.${a.status}`, requestId: a.key,
+          details: { draft_mail_id: draftMailId, status: a.status, confirmed_by: a.memberName,
+            confirmed_at: a.now, mail_message_id: receipt.messageId } }, c);
+        return { already: false, decision: r.rows[0] };
+      });
     },
 
     async updateDecisionStatus({ draftMailId, status, memberId, discordUserId, memberName, reason = null, now = null }) {
