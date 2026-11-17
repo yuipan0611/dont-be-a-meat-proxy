@@ -8,8 +8,8 @@
 
 | 項目 | 狀態 | 證據 |
 |---|---|---|
-| H-02 VPS 部署（mail-a＋hub Caddy 片段＋HubClock） | ⬜ | |
-| office.example.invalid 部署前後都正常 | ⬜ | |
+| H-02 VPS 部署（mail-a＋hub Caddy 片段＋HubClock） | ✅ mail-a＋Caddy（HubClock 待啟動） | docs/ops/vps-inventory.md「H-02 實機部署紀錄」 |
+| office.example.invalid 部署前後都正常 | ✅ | before 200 → after 200 |
 | Mac 接入（onboarding-S1） | ⬜ | |
 | Windows 接入，≤15 分鐘 | ⬜ | 實際分鐘： |
 | 兩台都已信任專案、`/hooks` 看得到 hub-hook | ⬜ | |
@@ -22,7 +22,7 @@ client 45、hub-hook 36、hub-hook 整合 5（TC-02／04／13、session.closed�
 
 | TC | 內容 | 方式 | 結果 | 證據 |
 |---|---|---|---|---|
-| TC-01 | 無／錯 token 一律 401 | Mac 跑 runbook-H02 §6 | ⬜ | |
+| TC-01 | 無／錯 token 一律 401 | Mac 跑 runbook-H02 §6 | ✅ | 20 次 401（9 路徑 GET＋MCP POST） |
 | TC-02 | G-02 非同步交接 Mac→Windows，再反向 | 人工 | ⬜ | |
 | TC-03 | 交接原文逐字取回 | 自動 | ⬜ | |
 | TC-04 | 沒未讀／Hub 連不上時的開工畫面 | 人工 | ⬜ | |
@@ -32,7 +32,7 @@ client 45、hub-hook 36、hub-hook 整合 5（TC-02／04／13、session.closed�
 | TC-08 | action 拒絕；混合請求當 action | 人工 | ⬜ | |
 | TC-09 | 確認逾時 30 分鐘＝拒絕 | 人工（要等 30 分鐘） | ⬜ | |
 | TC-10 | 撤銷 Windows，Mac 不受影響 | runbook-H02 §6 | ⬜ | |
-| TC-11 | 收件者不存在不保存 | 自動 | ⬜ | |
+| TC-11 | 收件者不存在不保存 | 自動 | ✅ | E-RCPT，delivery tail 不變 |
 | TC-12 | 收件者離線時 action 只保存不執行 | 人工 | ⬜ | |
 | TC-13 | 延遲（每方向 n≥5，≤60 秒） | 自動＋人工 | ⬜ | |
 
