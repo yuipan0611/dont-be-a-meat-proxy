@@ -8,9 +8,22 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>__HOME__/project/ops/pull-weekly-backup.sh</string>
+        <string>__REPO__/ops/pull-weekly-backup.sh</string>
+        <string>--host</string><string>192.0.2.10</string>
+        <string>--user</string><string>root</string>
+        <string>--port</string><string>22</string>
+        <string>--remote-dir</string><string>/var/lib/neighbor-hub/backups</string>
+        <string>--age-recipient-file</string><string>__HOME__/.config/hub-backup/recipient.txt</string>
+        <string>--local-dir</string><string>__HOME__/Backups/neighbor-hub</string>
+        <string>--keep-weeks</string><string>12</string>
         <string>--quiet</string>
     </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
 
     <key>StartCalendarInterval</key>
     <dict>

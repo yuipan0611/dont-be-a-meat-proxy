@@ -10,6 +10,7 @@
 |---|---|---|
 | H-02 VPS 部署（mail-a＋hub Caddy 片段＋HubClock） | ✅ mail-a＋Caddy＋HubClock（SandyThrush） | docs/ops/vps-inventory.md「H-02 實機部署紀錄」 |
 | office.example.invalid 部署前後都正常 | ✅ | before 200 → after 200 |
+| H-06 備份上線（每日備份、還原演練、Mac 每週加密拉回） | ✅ | docs/ops/vps-inventory.md「H-06 實機備份上線」 |
 | Mac 接入（onboarding-S1） | ⬜ | |
 | Windows 接入，≤15 分鐘 | ⬜ | 實際分鐘： |
 | 兩台都已信任專案、`/hooks` 看得到 hub-hook | ⬜ | |

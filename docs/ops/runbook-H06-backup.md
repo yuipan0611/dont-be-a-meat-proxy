@@ -150,7 +150,8 @@ age-keygen -o ~/.config/hub-backup/key.txt
 chmod 600 ~/.config/hub-backup/key.txt
 
 # 查看公開金鑰（age1...）
-grep "public key:" ~/.config/hub-backup/key.txt
+age-keygen -y ~/.config/hub-backup/key.txt > ~/.config/hub-backup/recipient.txt   # 只含公鑰；--age-recipient-file 必須用這個檔，不能用 key.txt（age 會拒絕含私鑰的檔）
+cat ~/.config/hub-backup/recipient.txt
 ```
 
 ### 3.2 手動執行拉回演練（Mac）
@@ -162,7 +163,7 @@ grep "public key:" ~/.config/hub-backup/key.txt
   --user root \
   --port 22 \
   --remote-dir /var/lib/neighbor-hub/backups \
-  --age-recipient-file ~/.config/hub-backup/key.txt \
+  --age-recipient-file ~/.config/hub-backup/recipient.txt \
   --local-dir ~/Backups/neighbor-hub \
   --keep-weeks 12
 ```
@@ -194,7 +195,7 @@ Status:         PULL_AND_ENCRYPT_SUCCEEDED
 
 ```bash
 # 1. 複製 plist 到使用者 LaunchAgents
-cp /path/to/ops/templates/invalid.example.hub-weekly-backup.plist ~/Library/LaunchAgents/
+sed -e "s#__REPO__#$PWD#g" -e "s#__HOME__#$HOME#g" ops/templates/invalid.example.hub-weekly-backup.plist > ~/Library/LaunchAgents/invalid.example.hub-weekly-backup.plist   # 在 repo 根目錄執行
 
 # 2. 載入排程
 launchctl load ~/Library/LaunchAgents/invalid.example.hub-weekly-backup.plist
