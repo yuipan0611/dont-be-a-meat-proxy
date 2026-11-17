@@ -9,10 +9,15 @@ import { createHash } from 'node:crypto';
 export const CONTROL_VERSION = 1;
 
 /** Events a controlled client sends (CC or To the HubClock agent). */
-export const CLIENT_EVENTS = Object.freeze(['presented', 'answer', 'choice', 'session.closed']);
+export const CLIENT_EVENTS = Object.freeze(['presented', 'answer', 'choice', 'session.closed', 'auto.on', 'auto.off', 'auto.executed']);
 /** Result records HubClock publishes into the root thread. */
 export const RESULT_EVENT = 'result';
 export const CHOICES = Object.freeze(['approve', 'reject']);
+export const AUTO_OUTCOMES = Object.freeze(['succeeded', 'failed']);
+
+// L-06 auto mode (SR-AUTO-02): default 60 min, integer 1..240.
+export const AUTO_DEFAULT_MINUTES = 60;
+export const AUTO_MAX_MINUTES = 240;
 
 export const QUESTION_TIMEOUT_MS = 24 * 60 * 60 * 1000; // SRS §4.4 / 維護者
 export const ACTION_TIMEOUT_MS = 30 * 60 * 1000; // SR-CFM-02/03, from `presented`
@@ -66,12 +71,18 @@ export function parseItem(bodyMd) {
 }
 
 /** What a client sends; exported so H-04 builds the exact shape HubClock consumes. */
-export function buildClientControl({ eventType, rootMailId, recipientSession, agent, choice, reason }) {
+// auto.on fields are passed through unvalidated on purpose: HubClock is the only judge (SR-AUTO-01/02).
+export function buildClientControl({ eventType, rootMailId, recipientSession, agent, choice, reason, recipientAgent, target, minutes, outcome }) {
   if (!CLIENT_EVENTS.includes(eventType)) throw new Error(`unknown control event_type ${eventType}`);
   if (eventType === 'choice' && !CHOICES.includes(choice)) throw new Error('choice must be approve|reject');
+  if (eventType === 'auto.executed' && !AUTO_OUTCOMES.includes(outcome)) throw new Error('outcome must be succeeded|failed');
   const c = { v: CONTROL_VERSION, event_type: eventType, root_mail_id: rootMailId ?? null, recipient_session: recipientSession, agent };
   if (choice) c.choice = choice;
   if (reason) c.reason = reason;
+  if (recipientAgent !== undefined) c.recipient_agent = recipientAgent;
+  if (target !== undefined) c.target = target;
+  if (minutes !== undefined) c.minutes = minutes;
+  if (outcome !== undefined) c.outcome = outcome;
   return c;
 }
 
@@ -91,7 +102,13 @@ const RESULT_TEXT = {
   rejected: '已拒絕，未執行。',
   expired: '確認提示顯示後 30 分鐘未回應，已逾時，視同拒絕，未執行。',
   invalidated: '對方 session 已結束，此確認已失效，未執行；需要的話請重送。',
+  auto_approved: 'auto mode 生效中，寄件者是指定對象：不需確認，收件端可直接執行，執行結果會另行記錄。',
 };
+
+/** Idempotency key for an auto-mode notice; `ref` is the grant key or the rejected control's Mail ID. */
+export function autoNoticeKey({ groupId, ref, status }) {
+  return stableUuid(`hubclock:${groupId}:auto:${ref}:${status}`);
+}
 
 export function resultText(status, reason) {
   const base = RESULT_TEXT[status] ?? status;
