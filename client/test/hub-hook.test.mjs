@@ -454,7 +454,7 @@ test('read: prints the original verbatim, marks it read on the Hub, and it leave
 });
 
 // ---- HubClock alignment (H-05: ops/lifecycle/protocol.mjs) ----
-import { buildClientControl, clientControlKey } from '../../ops/lifecycle/protocol.mjs';
+import { buildClientControl, clientControlKey, resultText } from '../../ops/lifecycle/protocol.mjs';
 
 test('a question or action request CCs the configured HubClock; handoffs and checkpoints do not', async () => {
   const hub = createFakeHub();
@@ -645,4 +645,76 @@ test('the HubClock path for a reclassified question is unchanged: presented on a
   assert.match(r.stdout, new RegExp(`^已保存 #\\d+（presented，請求 #${q.messageId}）`));
   assert.deepEqual(JSON.parse(hub.messages.at(-1).body_md),
     buildClientControl({ eventType: 'presented', rootMailId: q.messageId, recipientSession: 'sess-1', agent: 'RedStone' }));
+});
+
+// ---- L-00 display: replies and HubClock notices (delivery-MVP 已知問題 #44 #59 #68 #72) ----
+
+/** The exact control HubClock (ops/lifecycle buildResult) publishes into the root thread. */
+async function hubClockResult(hub, root, { status, kind = 'action', reason = null }) {
+  const control = {
+    v: 1, event_type: 'result', root_mail_id: root.messageId, kind, status, requester: 'BlueLake',
+    recipient_agent: 'RedStone', recipient_session: 'sess-1', deadline_at: null,
+    decided_at: '2026-11-18T01:30:00.000000Z', decided_by: 'RedStone', decision_mail_id: null, reason,
+    text: resultText(status, reason),
+  };
+  return hub.client('JadeBluff').sendControl({
+    to: ['BlueLake', 'RedStone'], subject: `[HubClock] ${status}｜#${root.messageId}`, threadId: root.threadId,
+    control, idempotencyKey: '00000000-0000-4000-a000-000000000001',
+  });
+}
+
+test('L-00: a reply in a thread is labelled 回覆 (no kind/intent) in start, inbox and the wake line', async () => {
+  const hub = createFakeHub();
+  const root = await hub.send('RedStone', handoff({ to: ['BlueLake'], kind: 'help', intent: 'question', subject: '求助' }));
+  // A reply that (like #44/#59) carries the envelope's default intent `action`.
+  const reply = await hub.send('RedStone', handoff({ to: ['BlueLake'], kind: 'task', subject: 'Re: 求助', threadId: root.threadId }));
+  const mac = machine(hub, { agent: 'BlueLake' });
+  const c = ctx(await mac.run('start'));
+  assert.match(c, new RegExp(`#${reply.messageId}｜[^\\n]*｜回覆｜主旨：Re: 求助`));
+  assert.doesNotMatch(c, /task\/action/);
+
+  const hub2 = createFakeHub();
+  const mac2 = machine(hub2, { agent: 'BlueLake' });
+  await mac2.run('start');
+  const r2 = await hub2.send('RedStone', handoff({ to: ['BlueLake'], kind: 'help', intent: 'question', subject: '求助' }));
+  const rep2 = await hub2.send('RedStone', handoff({ to: ['BlueLake'], kind: 'help', subject: 'Re: 求助', threadId: r2.threadId }));
+  const inbox = (await mac2.run('inbox')).stdout;
+  assert.match(inbox, new RegExp(`#${rep2.messageId}｜[^\\n]*｜回覆｜`));
+  assert.doesNotMatch(inbox, /help\/action/);
+  assert.match(inbox, /help\/question/, 'the root request keeps its kind/intent');
+
+  const hub3 = createFakeHub();
+  const mac3 = machine(hub3, { agent: 'BlueLake' });
+  await mac3.run('start');
+  const p = mac3.run('watch');
+  await mac3.clock.advance(1000);
+  await hub3.send('RedStone', handoff({ to: ['BlueLake'], kind: 'help', subject: 'Re: x', threadId: 'thread-of-some-root' }));
+  const w = await drive(p, mac3.clock);
+  assert.match(w.stderr, /｜回覆｜/);
+  assert.doesNotMatch(w.stderr, /help\/action/);
+});
+
+test('L-00: a HubClock result shows as 「HubClock 通知：<事件>」 with the first line of its text as summary, never undefined', async () => {
+  const hub = createFakeHub();
+  const root = await hub.send('BlueLake', handoff({ kind: 'task', intent: 'action', subject: '合併 PR' }));
+  const res = await hubClockResult(hub, root, { status: 'expired' });
+  const mac = machine(hub, { agent: 'BlueLake' });
+  const c = ctx(await mac.run('start'));
+  assert.match(c, new RegExp(`#${res.messageId}｜[^\\n]*｜HubClock 通知：已逾時｜`));
+  assert.match(c, new RegExp(`摘要：${resultText('expired')}`));
+  assert.doesNotMatch(c, /undefined/);
+
+  const hub2 = createFakeHub();
+  const mac2 = machine(hub2, { agent: 'BlueLake' });
+  await mac2.run('start');
+  const p = mac2.run('watch');
+  await mac2.clock.advance(1000);
+  const q = await hub2.send('BlueLake', handoff({ to: ['RedStone'], kind: 'help', intent: 'question', subject: '問' }));
+  await hubClockResult(hub2, q, { status: 'unanswered', kind: 'question' });
+  const w = await drive(p, mac2.clock);
+  assert.match(w.stderr, /HubClock 通知：未回答/);
+  assert.match(w.stderr, /24 小時內沒有回答/);
+  assert.doesNotMatch(w.stderr, /undefined/);
+  const inbox = (await mac2.run('inbox')).stdout;
+  assert.doesNotMatch(inbox, /undefined|action\/|question\//);
 });
