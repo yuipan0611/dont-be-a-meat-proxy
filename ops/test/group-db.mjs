@@ -26,5 +26,15 @@ try {
  await assert.rejects(a.reserveBudget({groupId:'grp-test2'}),/Group boundary/);
  await assert.rejects(a.issueDevice({groupId:'grp-test2',memberId:member}),/Group boundary/);
  await assert.rejects(a.commitIngest({groupId:'grp-test',agentName:'RedStone',cursor:200,rows:[{groupId:'grp-test2'}]}),/Group boundary/);
+ await b.recordDecisionDraft({groupId:'grp-test2',draftMailId:201,authorAgent:'B',createdAt:'2026-01-01T00:00:00Z'});
+ assert.equal(await a.getDecisionByMailId(201),null);assert.equal(await a.getDecisionByDraftId('201'),null);
+ assert.deepEqual(await a.listDecisions('grp-test2'),[]);assert.deepEqual(await a.listDueDraftReminders(Date.now()),[]);
+ assert.equal(await a.markDraftReminderSent(201),null);
+ const update={draftMailId:201,status:'confirmed',memberId:'00000000-0000-4000-8000-0000000000a1',discordUserId:'test',memberName:'A'};
+ assert.equal(await a.updateDecisionStatus(update),null);assert.equal(await b.updateDecisionStatus(update),null);
+ await assert.rejects(a.recordDecisionDraft({groupId:'grp-test2',draftMailId:202,authorAgent:'A'}),/Group boundary/);
+ for(const [store,groupId,authorAgent] of [[a,'grp-test','A'],[b,'grp-test2','B']]) await store.recordDecisionDraft({groupId,draftMailId:1,authorAgent});
+ assert.equal((await a.getDecisionByMailId(1)).author_agent,'A');assert.equal((await b.getDecisionByMailId(1)).author_agent,'B');
+ console.log('PASS TC14 decisions: foreign draft/read/update/reminder/confirmation denied; same Mail and draft IDs independent');
  console.log('PASS TC14 DB: hub_app/service_role; foreign registry/member/notification/cursor/budget/device access denied; same-name cursor independent');
 } finally {await registry.end();await pool.end();}

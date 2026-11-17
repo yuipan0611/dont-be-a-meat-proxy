@@ -10,10 +10,11 @@ import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
 import pg from 'pg';
 import { createPgStore } from '../../src/store-pg.mjs';
+import { createDecisionsManager } from '../../src/decisions.mjs';
 import { createBridge, createMailReader } from '../../src/bridge.mjs';
 import { createDelivery } from '../../src/deliver.mjs';
 import { storeContract } from '../helpers/store-contract.mjs';
-import { createFakeDiscord, OWNER_DISCORD } from '../helpers/fakes.mjs';
+import { createFakeDiscord, OWNER_DISCORD, fakeButtonInteraction } from '../helpers/fakes.mjs';
 import { createMailClient } from '../../../client/mail-client.mjs';
 import { startLocalMail, mailBinAvailable } from '../../../client/test/helpers/local-mail-server.mjs';
 
@@ -67,7 +68,7 @@ test('pg: connects as hub_app with role service_role; anon cannot read the new t
   const { pool, db } = await freshStore();
   const r = await pool.query('select session_user, current_user');
   assert.deepEqual(r.rows[0], { session_user: 'hub_app', current_user: 'service_role' });
-  assert.equal(execFileSync('docker', ['exec', name, 'psql', '-X', '-Atq', '-U', 'postgres', '-d', db, '-c', `select has_table_privilege('anon','discord_notifications','SELECT'), has_table_privilege('authenticated','assistant_budget','SELECT'), count(*) filter (where relrowsecurity) from pg_class where relnamespace='public'::regnamespace and relkind='r'`], { encoding: 'utf8' }).trim(), 'f|f|13');
+  assert.equal(execFileSync('docker', ['exec', name, 'psql', '-X', '-Atq', '-U', 'postgres', '-d', db, '-c', `select has_table_privilege('anon','discord_notifications','SELECT'), has_table_privilege('authenticated','assistant_budget','SELECT'), count(*) filter (where relrowsecurity) from pg_class where relnamespace='public'::regnamespace and relkind='r'`], { encoding: 'utf8' }).trim(), 'f|f|14');
 });
 
 test('pg: 20 concurrent reservations never exceed the cap (atomic E-QUOTA check)', { skip: skipPg }, async () => {
@@ -148,4 +149,44 @@ test('L08: service_role store isolates foreign members, notifications, cursors a
  await assert.rejects(a.issueDevice({groupId:'group-b',memberId:member}),/group/i);
  await assert.rejects(a.reserveBudget({groupId:'group-b',day:'2026-11-20',estimateUsd:0.1,capUsd:0.5}),/group/i);
  assert.ok((await a.watchedAgents()).every(x=>x.groupId==='group-a'));
+});
+
+test('L08 + L05: decision queries and mutations stay in their bound group', {skip:skipPg}, async()=>{
+ const {pool}=await freshStore();
+ await pool.query(`insert into groups(id,display_name,project_key,mail_hostname) values ('grp-test2','B','/data/projects/grp-test2','b.local');
+ insert into members(id,group_id,display_name,role) values ('00000000-0000-4000-8000-0000000000b1','grp-test2','B','owner');`);
+ const a=createPgStore({pool,groupId:'group-a'}),b=createPgStore({pool,groupId:'grp-test2'});
+ await b.recordDecisionDraft({groupId:'grp-test2',draftMailId:201,draftId:'dec_private',authorAgent:'B',text:'private',createdAt:'2026-01-01T00:00:00Z'});
+ assert.equal(await a.getDecisionByMailId(201),null);
+ assert.equal(await a.getDecisionByDraftId('dec_private'),null);assert.equal(await a.getDecisionByDraftId('201'),null);
+ assert.deepEqual(await a.listDecisions('grp-test2'),[]);assert.deepEqual(await a.listDecisions('grp-test2',{status:'draft'}),[]);
+ assert.deepEqual(await a.listDueDraftReminders(Date.parse('2026-11-20T00:00:00Z')),[]);
+ assert.equal(await a.markDraftReminderSent(201),null);
+ const update={draftMailId:201,status:'confirmed',memberId:'00000000-0000-4000-8000-0000000000a1',discordUserId:'test',memberName:'A'};
+ assert.equal(await a.updateDecisionStatus(update),null);
+ assert.equal(await b.updateDecisionStatus(update),null,'foreign confirmer cannot change own draft');
+ assert.equal((await b.getDecisionByMailId(201)).status,'draft');assert.equal((await b.getDecisionByMailId(201)).reminder_sent,false);
+ await assert.rejects(a.recordDecisionDraft({groupId:'grp-test2',draftMailId:202,authorAgent:'A'}),/Group boundary/);
+ await b.recordDecisionDraft({groupId:'grp-test2',draftMailId:1,authorAgent:'B'});
+ await a.recordDecisionDraft({groupId:'group-a',draftMailId:1,authorAgent:'A',createdAt:'2026-01-01T00:00:00Z'});
+ assert.equal((await a.getDecisionByMailId(1)).author_agent,'A');assert.equal((await b.getDecisionByMailId(1)).author_agent,'B');
+ await a.commitIngest({groupId:'group-a',agentName:'RedStone',cursor:1,rows:[{groupId:'group-a',memberId:'00000000-0000-4000-8000-0000000000a1',mailId:1,recipientAgent:'RedStone',label:'決策',sender:'A',subject:'A',summary:'A',mailCreatedAt:'2026-11-20T00:00:00Z',state:'pending'}]});
+ await b.updateDecisionStatus({...update,draftMailId:1,memberId:'00000000-0000-4000-8000-0000000000b1'});
+ assert.equal((await a.recentItems('group-a',10))[0].decision_status,'草稿','foreign status must not join onto own mail ID');
+ const decisions=createDecisionsManager({store:a,discord:createFakeDiscord(),clock:{nowMs:()=>Date.now()},defaultGuildId:'10000000\x30000000001'});
+ const foreignButton=fakeButtonInteraction('decision:confirm:201');await decisions.handleButton(foreignButton);
+ assert.ok(foreignButton.log.some(x=>/找不到/.test(x.content)));assert.equal((await b.getDecisionByMailId(201)).status,'draft');
+ const strangerButton=fakeButtonInteraction('decision:confirm:1',{userId:'20000000\x30000000099'});await decisions.handleButton(strangerButton);
+ assert.ok(strangerButton.log.some(x=>/沒有.*權限/.test(x.content)));
+ const confirmButton=fakeButtonInteraction('decision:confirm:1');await decisions.handleButton(confirmButton);
+ assert.equal((await a.getDecisionByMailId(1)).status,'confirmed');
+ assert.ok(confirmButton.log.some(x=>/已確認決策草稿/.test(x.content)));
+ const duplicateButton=fakeButtonInteraction('decision:confirm:1');await decisions.handleButton(duplicateButton);
+ assert.ok(duplicateButton.log.some(x=>/只能使用一次/.test(x.content)));
+ await a.recordDecisionDraft({groupId:'group-a',draftMailId:202,authorAgent:'A'});
+ const rejectButton=fakeButtonInteraction('decision:reject:202');await decisions.handleButton(rejectButton);
+ assert.equal((await a.getDecisionByMailId(202)).status,'rejected');
+ assert.equal(await a.updateDecisionStatus({...update,draftMailId:1}),null,'buttons remain single use');
+ await a.audit({groupId:null,actorType:'member',actorId:'stranger',action:'discord.decision.denied'});
+ assert.equal((await pool.query("select group_id from audit_log where actor_id='stranger'")).rows[0].group_id,'group-a');
 });

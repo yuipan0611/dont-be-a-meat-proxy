@@ -155,5 +155,16 @@ exception when insufficient_privilege then
 end $$;
 reset role;
 
+-- T10 anon 讀不到 decisions（L-05）
+set local role anon;
+do $$
+begin
+  perform 1 from public.decisions;
+  raise exception 'T10 FAIL: anon read decisions';
+exception when insufficient_privilege then
+  raise notice 'T10 PASS: anon select decisions -> permission denied';
+end $$;
+reset role;
+
 rollback;
 \echo ALL RLS TESTS PASSED

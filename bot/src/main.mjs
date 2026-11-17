@@ -10,6 +10,7 @@ import { createDelivery } from './deliver.mjs';
 import { createBudget } from './budget.mjs';
 import { createAssistant, createReadOnlyTools, MODEL } from './assistant.mjs';
 import { createConnect } from './connect.mjs';
+import { createDecisionsManager } from './decisions.mjs';
 import { createGitHubClient } from './github.mjs';
 import { createTaskService } from './task.mjs';
 import { createRouter } from './router.mjs';
@@ -81,6 +82,7 @@ async function run(cfg, { once = false } = {}) {
   });
   const assistant = createAssistant({ llm: { create: (p) => llm.messages.create(p) }, tools: createReadOnlyTools({ store, mail }), budget, log });
   const connect = createConnect({ store, applier: createSpoolApplier({ dir: cfg.spoolDir, groupId: cfg.groupId }), hubUrl: cfg.hubUrl, log });
+  const decisions = createDecisionsManager({ store, discord: dm, mailClient, clock, defaultGuildId: cfg.guildId, log });
   const github = createGitHubClient({
     token: cfg.github?.token,
     tokenFile: cfg.github?.tokenFile,
@@ -93,7 +95,7 @@ async function run(cfg, { once = false } = {}) {
     defaultRepo: cfg.github?.defaultRepo,
     log,
   });
-  const router = createRouter({ store, connect, assistant, taskService, log });
+  const router = createRouter({ store, connect, assistant, decisions, taskService, log });
   const bridge = createBridge({ mail, store, clock, log });
   const delivery = createDelivery({ store, discord: dm, clock, presenceEnabled: cfg.presence, log });
   wireEvents({ client, guildId: cfg.guildId, router, store, presence: cfg.presence, log });
@@ -105,7 +107,8 @@ async function run(cfg, { once = false } = {}) {
   const tick = async () => {
     const b = await bridge.tick();
     const d = await delivery.tick();
-    log({ ev: 'tick', ...b, ...d });
+    const dec = await decisions.tick();
+    log({ ev: 'tick', ...b, ...d, ...dec });
   };
   if (once) {
     await tick();

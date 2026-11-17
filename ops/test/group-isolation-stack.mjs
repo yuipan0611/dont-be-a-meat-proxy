@@ -127,7 +127,8 @@ try {
   for(const path of ['/mcp/'+g.id+'/','/mcp/','/v1/default/banks','/metrics']) assert.equal((await fetch('http://127.0.0.1:'+g.memoryPort+path,{headers:{authorization:'Bearer '+foreign.credentials.mac.token}})).status,401);
  }
  console.log('PASS TC14.3 real Hindsight: own bank initializes; list_banks/multi-bank/foreign bank path and bank_id refused; foreign token 401 at each proxy');
- run('docker',['run','--rm','--network',memory.dbProject+'_hub-db-net','-v',root+':/repo:ro','-v',memory.env.HUB_PRIVATE_DIR+':/run/private:ro','-e','FOREIGN_TEST_TOKEN','node:24-alpine','node','/repo/ops/test/group-db.mjs'],{...process.env,FOREIGN_TEST_TOKEN:b.credentials.mac.token});
+ const dbOutput=run('docker',['run','--rm','--network',memory.dbProject+'_hub-db-net','-v',root+':/repo:ro','-v',memory.env.HUB_PRIVATE_DIR+':/run/private:ro','-e','FOREIGN_TEST_TOKEN','node:24-alpine','node','/repo/ops/test/group-db.mjs'],{...process.env,FOREIGN_TEST_TOKEN:b.credentials.mac.token});
+ console.log(dbOutput);
  console.log('PASS TC14 DB application queries as hub_app/service_role: registry/member/notification/cursor/device/budget isolation');
  const officeReply=await fetch(office);assert.equal(await officeReply.text(),'office preserved');
  console.log('PASS TC14 complete: grp-test + grp-test2; office preserved; no LLM generation requested');

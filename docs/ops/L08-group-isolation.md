@@ -75,3 +75,5 @@ GREEN 證據均在 `docs/ops/evidence/`：
 未完成的環境驗收：VPS 部署、各組 hostname/TLS、Linux secret owner/mode、實際 Discord `/connect`。未 push、未改 master、未登入 VPS；本機通過不能代替上述項目。原 L02 含 Ollama retain/recall 的完整付費模型/內容回歸未重跑；本票以真實 Hindsight initialize 加拒絕測試驗證隔離，並同步原測試對新的 401／403 契約。
 
 L07 首輪在同時建置 TC14 stacks 時，paired p95 130.346 ms／max 152.838 ms，未達 100 ms；原始摘要保留於 `L08-l07-latency-first-run.txt`。清理競爭 stacks 後，單獨重跑 p95 7.852 ms／max 8.140 ms、validator max 6.676 ms，核心驗收及 HubClock 均通過；沒有修改延遲測試或門檻。另以 `L08-import-red.txt` 記錄發現的 registry/cfg 組別不符時 import 先寫 DB 的缺口，修正後 18 個 TokenApplier tests 通過。
+
+L05 合併後的決策 DB 組別邊界、migration 與整合驗證另見 `docs/ops/L08-L05-merge-validation.md`；部署新增 `20261122000000_l08_l05_decision_groups.sql`，以免跨組相同 Mail/draft ID 衝突。

@@ -78,5 +78,54 @@ export function storeContract(t, make) {
       assert.equal(await s.markCapNotified(k.groupId, k.day), true);
       assert.equal(await s.markCapNotified(k.groupId, k.day), false);
     }),
+    t('decision lifecycle: record draft → update status (once) → reminders & list', async () => {
+      const s = await make();
+      const draft = await s.recordDecisionDraft({
+        groupId: 'group-a', draftMailId: 101, draftId: 'dec_101', authorAgent: 'BlueLake',
+        subject: '決策：登入改用 OAuth', summary: '改用 Discord OAuth', text: '全文...',
+        createdAt: '2026-11-10T00:00:00.000000Z',
+      });
+      assert.equal(draft.status, 'draft');
+      assert.equal(draft.draft_mail_id, 101);
+
+      const byMail = await s.getDecisionByMailId(101);
+      assert.equal(byMail.author_agent, 'BlueLake');
+      assert.equal(byMail.status, 'draft');
+
+      const byDraft = await s.getDecisionByDraftId('dec_101');
+      assert.equal(byDraft.draft_mail_id, 101);
+
+      const drafts = await s.listDecisions('group-a', { status: 'draft' });
+      assert.equal(drafts.length, 1);
+      assert.equal(drafts[0].draft_mail_id, 101);
+
+      // Overdue 7 days reminder check (2026-11-10 is > 7 days before 2026-11-20)
+      const due = await s.listDueDraftReminders(Date.parse('2026-11-20T00:00:00.000Z'));
+      assert.equal(due.length, 1);
+      assert.equal(due[0].draft_mail_id, 101);
+
+      await s.markDraftReminderSent(101, '2026-11-20T01:00:00.000Z');
+      const dueAfter = await s.listDueDraftReminders(Date.parse('2026-11-20T00:00:00.000Z'));
+      assert.equal(dueAfter.length, 0);
+
+      // Confirm decision (once)
+      const confirmed = await s.updateDecisionStatus({
+        draftMailId: 101, status: 'confirmed', memberId: 維護者, discordUserId: OWNER_DISCORD,
+        memberName: '維護者', now: '2026-11-20T02:00:00.000Z',
+      });
+      assert.equal(confirmed.status, 'confirmed');
+      assert.equal(confirmed.confirmed_by_name, '維護者');
+
+      // Second update must fail (buttons can only be used once)
+      const secondTry = await s.updateDecisionStatus({
+        draftMailId: 101, status: 'rejected', memberId: 維護者, discordUserId: OWNER_DISCORD,
+        memberName: '維護者', now: '2026-11-20T03:00:00.000Z',
+      });
+      assert.equal(secondTry, null);
+
+      const allDec = await s.listDecisions('group-a');
+      assert.equal(allDec.length, 1);
+      assert.equal(allDec[0].status, 'confirmed');
+    }),
   ];
 }

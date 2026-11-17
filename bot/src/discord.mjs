@@ -27,10 +27,13 @@ export function createDiscordClient({ presence = false }) {
 
 export function createDmSender(client) {
   return {
-    async sendDm(userId, content) {
+    async sendDm(userId, payload) {
       try {
         const user = await client.users.fetch(userId);
-        const msg = await user.send({ content: clip(content, 1900), allowedMentions: NO_MENTIONS });
+        const options = typeof payload === 'string'
+          ? { content: clip(payload, 1900), allowedMentions: NO_MENTIONS }
+          : { ...payload, content: clip(payload.content, 1900), allowedMentions: NO_MENTIONS };
+        const msg = await user.send(options);
         return { messageId: msg.id };
       } catch (e) {
         throw classifySendError(e);
