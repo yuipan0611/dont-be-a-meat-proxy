@@ -68,3 +68,13 @@ Inter and Geist Mono have verified official SIL OFL 1.1 sources linked in the [f
 ## Visual acceptance intent
 
 The desktop should feel like an open technical workspace: black/navy canvas, a narrow structured rail, clear diagram connections, quiet source context, mint selection, and blue source emphasis. The mobile view should keep the current level, selected item, and next action visible with touch-sized controls, while the graph and code panes manage their own overflow. Reference images remain documentation evidence only.
+
+## Implemented CSS mapping (v5)
+
+The proposed palette above is translated into these live variables in `web/public/tech.css`: `--tech-bg:#080c12`, `--tech-panel:#0e141d`, `--tech-raised:#141d29`, `--tech-text:#edf4f8`, `--tech-muted:#a4b3c3`, `--tech-accent:#6ee7b7`, `--tech-blue:#8bbdff`, decorative `--tech-border:#293746`, meaningful `--tech-control:#52697d`. Card borders use `#526a7f`; group frames use `#536c84`. These explicit outline values differ from the initial proposal and are checked as meaningful boundaries, while grid dots and ordinary dividers remain decorative.
+
+Inter and Geist Mono are self-hosted, unmodified Latin variable WOFF2 files from Fontsource 5.3.0, with OFL notices and SHA-256 provenance in `web/public/fonts/`. Chinese glyphs use the existing system fallback. There is no font CDN request and no copied website logo or image in the application.
+
+The source viewer retains exact, unmodified text and true line numbers; mint/blue source context and dark code surface are presentation only. Hover glow and moving signal circles are authored by the application, inspired by the reference language, not copied site graphics. The light effect accompanies related-edge highlighting and a written flow step so color/motion is not the sole signal.
+
+Additional implemented boundary checks: `#52697d` / surface = 3.23:1, card `#526a7f` / surface = 3.28:1, group `#536c84` / canvas = 3.59:1. Source line numbers `#8ca2b9` / `#080d14` = 7.41:1; command metadata `#a7bdcf` / selected surface `#1a3534` = 6.75:1. These are calculated opaque pairs; final rendered sample results are preserved in the delivery evidence rather than asserted as full-site certification.

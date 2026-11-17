@@ -1,4 +1,4 @@
-# Hub 架構白板（第四版）
+# Hub 架構白板（第五版深色科技主題）
 
 Notion 形式的巢狀架構頁面，主畫布實際採用 React Flow。保留第三版的真實來源模型、白話說明、訊息流程與受保護原碼 API。
 
@@ -56,3 +56,11 @@ Acorn 擷取 JS、Python ast 擷取 Python、Go 用明示限制的詞法範圍�
 [官方方案比較與授權](../docs/research/F-12-architecture-viz.md) 新增第四版章節：tldraw、Excalidraw、React Flow、AFFiNE。頁面樹／麵包屑／每頁視野由本應用建模，React Flow 的 sub-flow 不是現成 Notion 頁面管理器。
 
 [第四版交付、桌面手機截圖與驗證](../docs/12-infinite-architecture-board.md)。來源快照不等於已部署；本機瀏覽器檢查不替代真 Discord／VPS/TLS／實體裝置與新手理解度驗收。
+
+## v5 深色科技主題
+
+保留 v4 三欄與巢狀頁。參照 terax.app 的近黑層次與等寬 metadata、insforge.dev 的薄框／格線／薄荷綠，沒有複製 logo、文案或品牌圖片。Inter／Geist Mono 由同源提供，字型及 OFL notices 在 public/fonts；CJK 使用原有系統 fallback。
+
+⌘K／Ctrl K 或頂部搜尋按鈕開啟命令面板，可搜尋未展開的頁面，用上下鍵選取、Enter 跳頁、Escape 關閉。卡片 hover 顯示柔和光暈與關聯線，白板選取和目錄互相高亮。播放有沿連線移動的光點；進入／返回有縮放過場。reduced-motion 動態切換會停用光點、CSS 過場與新相機動畫，並取消正在進行的頁面過場。工作定位改用虛線，不降低可操作文字的透明度。
+
+新增固定同源資產 /tech.css、/fonts/inter-latin.woff2、/fonts/geist-mono-latin.woff2、/font-licenses.txt；CSP 與會員／group／原碼白名單未放寬。完整 [v5 交付與對比截圖](../docs/13-dark-tech-workbench.md)、[設計 tokens](../docs/ui/design-tokens.md)。

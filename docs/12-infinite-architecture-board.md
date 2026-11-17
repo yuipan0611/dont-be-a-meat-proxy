@@ -56,3 +56,7 @@
 - 最後文件／證據 commit：本報告、最終截圖、原始輸出與設計記錄。
 
 仍待 PM 整合與 維護者 主觀確認是否符合想要的 Notion 白板體驗；真 Discord callback、VPS/TLS、真 Mail/GitHub、完整 stack RAM／流量與實體裝置／新手理解度沒有在本次宣稱通過。正式部署前請使用 [UI runbook](ops/runbook-UI-guide.md)，來源快照不等於已部署。
+
+## v5 視覺接續（2026-11-18）
+
+維護者 保留本版版型，要求參照 Terax／InsForge 改為深色科技風格與更多互動。現行外觀以 [v5 交付](13-dark-tech-workbench.md) 及 tech-* 截圖為準；board-* 保留本版歷史。
