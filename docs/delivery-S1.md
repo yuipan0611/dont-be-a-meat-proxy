@@ -37,3 +37,4 @@
 正式收據存 `docs/evidence/S1/TC-14/`、`TC-16/`～`TC-21/` 與 `docs/evidence/S1/L09/`；每項記 UTC 時間、部署 commit、操作者、指令／非秘密輸出、exit、判定及未完成項。GitHub token 尚缺時 TC-19 正向保持 pending，不把整批服務啟動當所有 TC 通過。
 
 最新上線 gate（master `101363c`／SRS §4.6）：維護者 改要求 VPS Gemini 訂閱後端，F-11 查證/接線中；L09 原 Anthropic 整合路徑的七段 Docker 演練已通過，但正式 LLM consumers 上線須等 F-11，TC-17／21 不得以此收據勾選 Gemini 通過。
+| UI | 架構白板（深色科技風，第五版） | ✅ 維護者 主觀驗收合格（本機預覽）；VPS 部署與 3 人新手測試待做 | `docs/13-dark-tech-workbench.md`、`docs/ui/tech-*.png` |
