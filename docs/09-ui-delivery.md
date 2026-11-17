@@ -37,3 +37,7 @@
 真 Discord／VPS／TLS／Caddy 組合與既有入口回歸、真 Mail 資料、完整 stack RAM、新手 3 人測試均待操作者完成。沒有憑證或存取權時不宣稱已上線。
 
 設計：同一個任務連到受影響架構與原始依據，降低新手接手成本；GitHub 保持正式任務來源。UI-01～05 本機交付，11-30 上線 Gate 仍須以上驗收。
+
+## 2026-11-17 第三版補充
+
+維護者 判定前兩版畫面太簡陋，已依明確新需求重做。現行交付、測試與桌面手機五層截圖請以 [docs/11-architecture-atlas.md](11-architecture-atlas.md) 為準；原 OAuth／固定 group／唯讀 API 的隔離邊界沿用。
