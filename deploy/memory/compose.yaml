@@ -4,7 +4,7 @@
 # hindsight   — Hindsight 1.2.1 API only (control-plane UI off). DB = L-01 cluster, database hindsight,
 #               login hindsight_app, over hindsight-db-net only. LLM = the gateway below (never a real key).
 # bank-proxy  — :8780 member endpoint for Caddy (/memory/* → here), published on host loopback only;
-# llm-gateway — :8790 shared Gemini CLI backend (request-count ledger), internal llm-net only.
+# llm-gateway — :8790 shared Groq backend (F-11b, request-count ledger), internal llm-net only.
 services:
   hindsight:
     image: ghcr.io/vectorize-io/hindsight:1.2.1@sha256:d2bc230a714e933affd63753e181a0579328fdcbbc021800a76e0bc7b6e76b31
@@ -27,7 +27,7 @@ services:
       HINDSIGHT_API_LLM_MODEL: ${HUB_LLM_MODEL:-hub-llm}
       HINDSIGHT_API_LLM_BASE_URL: http://llm-gateway:8790/v1
       HINDSIGHT_API_LLM_MAX_CONCURRENT: "1"
-      HINDSIGHT_API_LLM_STRICT_SCHEMA: "false"  # CLI shim: JSON + Hindsight validation, no grammar-enforced schema
+      HINDSIGHT_API_LLM_STRICT_SCHEMA: "false"  # shared shim: JSON + Hindsight validation, no grammar-enforced schema
       HINDSIGHT_API_LLM_OUTPUT_LANGUAGE: "Traditional Chinese (zh-TW, 繁體中文); never convert to Simplified Chinese"
       HINDSIGHT_API_DB_POOL_MIN_SIZE: "1"
       HINDSIGHT_API_DB_POOL_MAX_SIZE: "5"
@@ -97,9 +97,10 @@ services:
     init: true
     environment:
       GEMINI_PROFILE_DIR: /home/gemini
-      LLM_BACKEND: ${HUB_LLM_BACKEND:-disabled} # 維護者 chooses after F-11 ToS/privacy review; never auto-fallback
+      LLM_BACKEND: ${HUB_LLM_BACKEND:-groq-api} # 維護者 decision; combine compose.groq.yaml for the private key
       LLM_MODEL: ${HUB_LLM_MODEL:-hub-llm}
-      LLM_UPSTREAM_MODEL: ${HUB_LLM_UPSTREAM_MODEL:-gemini-3.1-flash-lite}
+      LLM_UPSTREAM_MODEL: ${HUB_LLM_UPSTREAM_MODEL:-openai/gpt-oss-120b}
+      GROQ_API_KEY_FILE: /run/secrets/groq_api_key
       LLM_DAILY_REQUEST_LIMIT: "${HUB_LLM_DAILY_REQUEST_LIMIT:-500}"
       LLM_MAX_QUEUED: "20"
       LLM_QUEUE_WAIT_MS: "30000"
@@ -134,7 +135,7 @@ networks:
   memory-net: {}   # Hindsight first-run model downloads
   llm-net:
     internal: true
-  llm-egress: {}   # official Gemini CLI Google services
+  llm-egress: {}   # api.groq.com (or explicitly selected historical backend)
   hindsight-db-net:
     external: true
     name: ${HUB_PG_PROJECT:-neighbor-hub-db}_hindsight-db-net

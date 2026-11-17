@@ -6,7 +6,7 @@ import secrets
 import shutil
 import subprocess
 P=Path('/var/lib/neighbor-hub/private'); P.mkdir(parents=True, mode=0o700)
-for name in ('postgres.password','hub-app.password','discord.token','discord-client.secret'):
+for name in ('postgres.password','hub-app.password','discord.token','discord-client.secret','groq.key'):
     p=P/name; p.write_text(secrets.token_hex(32)+'\n'); p.chmod(0o600)
 for d in ('hubclock','memory-bridge'):
     p=Path('/var/lib/neighbor-hub')/d; p.mkdir(mode=0o700); os.chown(p,10001,10001)
@@ -28,7 +28,7 @@ f=root/'ops/test/l09'
 subprocess.run(['docker','build','-t','l09-hindsight-fixture',str(f),'-f',str(f/'Dockerfile.provider')],check=True,stdout=subprocess.DEVNULL)
 p=root/'deploy/memory/compose.yaml'
 s=p.read_text(); s=s.replace('ghcr.io/vectorize-io/hindsight:1.2.1@sha256:d2bc230a714e933affd63753e181a0579328fdcbbc021800a76e0bc7b6e76b31','l09-hindsight-fixture'); p.write_text(s)
-# F-11 gateway is disabled in this rehearsal: no Google CLI installation or account is needed.
+# This fixture explicitly selects disabled below: no provider calls or account is needed.
 (root/'ops/llm-gateway/Dockerfile').write_text((root/'ops/llm-gateway/Dockerfile.test').read_text())
 # Use the real validator artifact built from this checkout by the outer Docker builder.
 (root/'server/validator/Dockerfile').write_text('FROM neighbor-l09-validator:dry-built\n')
@@ -75,7 +75,7 @@ subprocess.run([str(root/'ops/render-caddy'),'--state-dir',str(P),'--prepare-onl
 (c/'hub.caddy').write_text('http://127.0.0.1:8088 {\n import /etc/caddy/hub-private/auth.caddy\n}\n')
 subprocess.Popen(['runuser','-u','caddy','--','caddy','run','--config',str(c/'Caddyfile'),'--adapter','caddyfile'],stdout=open('/tmp/l09-caddy.log','w'),stderr=subprocess.STDOUT)
 config=Path('/etc/neighbor-hub/l09.env'); config.parent.mkdir(parents=True,exist_ok=True)
-config.write_text('HUB_DISCORD_GUILD_ID=12345678\x39012345678\nHUB_DISCORD_APPLICATION_ID=12345678\x39012345679\nL09_OWNER_DISCORD_ID=12345678\x39012345680\nHUB_WEB_MAP_FILE=/opt/neighbor-hub/web/architecture.json\nHUB_PUBLIC_URL=http://127.0.0.1:8088\nL09_OFFICE_URL=http://127.0.0.1:8089\nHUB_PG_PLATFORM='+os.environ['TEST_PLATFORM']+'\nHUB_HS_PLATFORM='+os.environ['TEST_PLATFORM']+'\nHUB_VALIDATOR_PLATFORM='+os.environ['TEST_PLATFORM']+'\n')
+config.write_text('HUB_DISCORD_GUILD_ID=12345678\x39012345678\nHUB_DISCORD_APPLICATION_ID=12345678\x39012345679\nL09_OWNER_DISCORD_ID=12345678\x39012345680\nHUB_WEB_MAP_FILE=/opt/neighbor-hub/web/architecture.json\nHUB_LLM_BACKEND=disabled\nHUB_PUBLIC_URL=http://127.0.0.1:8088\nL09_OFFICE_URL=http://127.0.0.1:8089\nHUB_PG_PLATFORM='+os.environ['TEST_PLATFORM']+'\nHUB_HS_PLATFORM='+os.environ['TEST_PLATFORM']+'\nHUB_VALIDATOR_PLATFORM='+os.environ['TEST_PLATFORM']+'\n')
 config.chmod(0o600)
 # Web validates an HTTPS origin; Caddy test transport is plain HTTP on a different port.
 # Preserve this one env override in fake checkout only.

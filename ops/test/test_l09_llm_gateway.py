@@ -7,10 +7,15 @@ from ops import l09_launch as launch
 
 
 class GatewayLaunchTest(unittest.TestCase):
-    def test_default_launch_does_not_require_provider_key_overlay(self):
+    def test_explicit_disabled_launch_does_not_require_provider_key_overlay(self):
         with patch.dict(launch.ENV, {'HUB_LLM_BACKEND': 'disabled'}, clear=True), patch.object(launch, 'dc') as dc:
             launch.mem('config', '--quiet')
             self.assertEqual(dc.call_args.args[1], ['deploy/memory/compose.yaml'])
+
+    def test_selected_default_groq_mounts_only_its_private_key_overlay(self):
+        with patch.dict(launch.ENV, {}, clear=True), patch.object(launch, 'dc') as dc:
+            launch.mem('config', '--quiet')
+            self.assertEqual(dc.call_args.args[1], ['deploy/memory/compose.yaml', 'deploy/memory/compose.groq.yaml'])
 
     def test_only_explicit_api_backend_mounts_the_provider_secret_overlay(self):
         for backend in ('gemini-api-free', 'gemini-api-paid', 'gemini-cli', 'antigravity-cli'):

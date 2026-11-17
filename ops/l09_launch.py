@@ -69,7 +69,9 @@ def hub(*args, final=True, **kw):
 
 def mem(*args, **kw):
     files = ['deploy/memory/compose.yaml']
-    if ENV.get('HUB_LLM_BACKEND') in ('gemini-api-free', 'gemini-api-paid'):
+    if ENV.get('HUB_LLM_BACKEND', 'groq-api') == 'groq-api':
+        files.append('deploy/memory/compose.groq.yaml')
+    elif ENV.get('HUB_LLM_BACKEND') in ('gemini-api-free', 'gemini-api-paid'):
         files.append('deploy/memory/compose.gemini-api.yaml')
     return dc('neighbor-hub-memory', files, *args, **kw)
 
@@ -197,6 +199,8 @@ def step1():
         secret_file(PRIVATE / p)
     if ENV.get('HUB_LLM_BACKEND') in ('gemini-api-free', 'gemini-api-paid'):
         secret_file(PRIVATE / 'gemini-api.key')
+    if ENV.get('HUB_LLM_BACKEND', 'groq-api') == 'groq-api':
+        secret_file(PRIVATE / 'groq.key')
     for p in (PRIVATE / 'bot/github.token', PRIVATE / 'web/github.token'):
         require(not p.exists(), 'this launch requires GitHub token absent (/task fail-closed)')
     for p in ('8780', '8781'):
@@ -304,6 +308,8 @@ on conflict do nothing; commit;""")
     put_secret(PRIVATE / 'bot/llm-gateway.key', secret_file(gateway_private / 'bot.key', gateway_uid), botuid, botuid)
     if ENV.get('HUB_LLM_BACKEND') in ('gemini-api-free', 'gemini-api-paid'):
         put_secret(gateway_private / 'gemini-api.key', secret_file(PRIVATE / 'gemini-api.key'), gateway_uid, gateway_uid, 0o600)
+    if ENV.get('HUB_LLM_BACKEND', 'groq-api') == 'groq-api':
+        put_secret(gateway_private / 'groq.key', secret_file(PRIVATE / 'groq.key'), gateway_uid, gateway_uid, 0o600)
     put_secret(PRIVATE / 'memorybridge.hindsight-api.key', secret_file(mp / 'hindsight/hindsight-api.key', 1000, (0o400,)), opsuid, opsgid, 0o600)
     directory(Path('/var/lib/neighbor-hub/memory-bridge'), opsuid, opsgid)
     directory(PRIVATE / 'validator', opsuid, opsgid)
@@ -530,8 +536,8 @@ def main():
         require(ENV['HUB_BOT_UID'] == ENV['HUB_BOT_GID'] == ENV['HUB_WEB_UID'] == ENV['HUB_WEB_GID'] == '10002', 'L09 container copies require uid/gid 10002')
         ENV.setdefault('HUB_PUBLIC_URL', 'https://hub.example.invalid')
         ENV.setdefault('L09_OFFICE_URL', 'https://office.example.invalid')
-        ENV.setdefault('HUB_LLM_BACKEND', 'disabled')
-        require(ENV['HUB_LLM_BACKEND'] in ('disabled', 'gemini-cli', 'antigravity-cli', 'gemini-api-free', 'gemini-api-paid'), 'unknown LLM backend')
+        ENV.setdefault('HUB_LLM_BACKEND', 'groq-api')
+        require(ENV['HUB_LLM_BACKEND'] in ('groq-api', 'disabled', 'gemini-cli', 'antigravity-cli', 'gemini-api-free', 'gemini-api-paid'), 'unknown LLM backend')
         ENV.update(HUB_GROUP_ID='group-a', HUB_PRIVATE_DIR=str(PRIVATE), HUB_TOKEN_SPOOL_DIR=str(SPOOL),
                    HUB_PG_PROJECT='neighbor-hub-db', HUB_MAIL_PORT='8765', HUB_BANKPROXY_PORT='8780', HUB_WEB_PORT='8781',
                    HUB_WEB_GITHUB_TOKEN_FILE='', HUB_WEB_ORIGIN=ENV['HUB_PUBLIC_URL'])

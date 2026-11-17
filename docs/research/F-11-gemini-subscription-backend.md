@@ -2,7 +2,9 @@
 
 查證日期：**2026-11-17（Asia/Taipei）**。分支 `example-org/codex-F11`，由 `101363c`（起始時本機 master 最新）開始，交付前再 merge `d1746d6`（含 L-09 新部署程式）；沒有 push、改 master、SSH、帳號登入或 Chrome 操作。範圍含 PM 後續要求的 Antigravity CLI、AI Studio 免費 API 與付費 Flash-Lite 比較。
 
-## 結論先看
+> **現行決定（F-11b，2026-11-18）**：維護者 已選 Groq API／gpt-oss，實作預設為 `groq-api`／`openai/gpt-oss-120b`。請先讀文末 [Groq](#groq)；下列 Gemini／Antigravity 與 disabled 設定是 11/17 的研究歷史，不是目前部署預設。
+
+## F-11 原始結論（歷史）
 
 1. **原方案目前有官方停用阻礙**：Google 的 [consumer accounts 停用公告](https://developers.google.com/gemini-code-assist/docs/deprecations/code-assist-individuals)（頁面更新 2026-10-09）寫明 **2026-06-18 起**，個人免費版、Google AI Pro／Ultra 不能再以 Login with Google 使用 Gemini CLI；[Google Developers Blog](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/)（2026-05-19）交叉確認同一時程。CLI 的認證、Plans、quota 頁仍列舊方案，是官方資料互相矛盾，**不能據舊表保證 維護者 訂閱現在可用**。本次沒有登入來驗證特定帳號例外。
 2. **Antigravity 是官方遷移方向，但不等於可拿個人訂閱供多人 bot 使用**：它支援 SSH OAuth、headless；[附加條款第 6 點](https://antigravity.google/terms)限制透過第三方軟體／工具／服務存取，並列停權風險。用 gateway 包裝官方執行檔與直接重用 OAuth token 的技術不同，然而前者也沒有多人後端的明確授權；不能藉此宣稱符合條款。需 維護者 決定是否向 Google 確認此具體用途，或選 API。
@@ -189,3 +191,59 @@ bot 離線時沒有 Discord 通知保證：維護者 需監看 gateway `/readyz`
 最終驗證摘要（2026-11-17）：核心 gateway／L-02／EVAL **58 pass / 0 fail**（其中 F-11 22）；bot **65 pass / 0 fail**；memory bridge **16 pass / 0 fail**；真 Postgres **13 pass / 0 fail / 1 skip**（原生 Mail binary 缺少）。三種 Compose 與 test-only overlay 的 `config --quiet` 通過；gateway／bot／bank-proxy image 建置通過，image 內 `gemini --version` 為 **0.68.0**（沒有生成或登入）。
 
 整合最新 master 的 L-09 後，已同步其 secrets／gateway 啟動與 API overlay 選擇：不要求 Anthropic key，gateway 內部 keys 10004/0600，預設 disabled，L09 只驗 gateway liveness；新增 L09 wiring／既有 bridge-backup 共 **4 項 Python 測試通過**，F-11 ledger backup 合併後再次 **1/1 通過**。L09 完整 nested Docker 演練尚未重跑，舊收據不延伸成 F-11 上線驗收。
+
+## Groq
+
+### 現行決定與查證範圍（F-11b）
+
+**查證日期：2026-11-18（Asia/Taipei）**。維護者 於 11/17 決定用既有 Groq API 的 gpt-oss，無 Google 訂閱／Anthropic 入口。本次沿用 codex-F11，先 fast-forward merge 當時 master `7e7fb55`。只讀公開官方頁面，未登入 Groq Console、未讀本機 `~/.config/hub-llm/groq.key`、未呼叫真模型、未登入 VPS。
+
+### 模型與價格
+
+以下為 Groq 標準 inference 的美元／**100 萬 tokens**單價，不是 OpenAI 託管 API 費率，也不是訂閱月費：
+
+| Groq 模型 ID | 輸入 | cached 輸入 | 輸出 | context／max completion |
+| --- | ---: | ---: | ---: | --- |
+| `openai/gpt-oss-120b`（預設） | $0.15 | $0.075 | $0.60 | 131,072／65,536 |
+| `openai/gpt-oss-20b` | $0.075 | $0.037 | $0.30 | 131,072／65,536 |
+
+來源：[Groq 120B model](https://console.groq.com/docs/model/openai/gpt-oss-120b)、[20B model](https://console.groq.com/docs/model/openai/gpt-oss-20b)。保留 維護者 建議的 120b 作工具選擇／記憶萃取基線；20b 便宜，但尚未有本專案繁中品質比較，不自動降級。官方頁的約 500／1,000 tps 是供應商宣傳數值，沒有本專案 p50/p95 或 VPS round-trip 測量。
+
+重算例：平均每次 2,000 input／500 output、每天 500 次、30 天、無 cache，120b 約 `15,000 × (2,000×0.15 + 500×0.60) / 1,000,000 = US$9`；20b 約 $4.50。這只是情境估算，工具多輪、Hindsight 長 prompt／reasoning tokens 都會改變實際費用；本地 500 次上限**不是美元硬上限**，PM 另核對 Groq Console Spend Limits。
+
+### 免費／付費 rate limit
+
+| 模型／方案 | RPM | RPD | TPM | TPD |
+| --- | ---: | ---: | ---: | ---: |
+| 120b／Free | 30 | 1,000 | 8,000 | 200,000 |
+| 20b／Free | 30 | 1,000 | 8,000 | 200,000 |
+| 120b／Developer 付費基準 | 1,000 | 500,000 | 250,000 | `-`（未列固定值） |
+| 20b／Developer 付費基準 | 1,000 | 500,000 | 250,000 | `-`（未列固定值） |
+
+來源：[Groq rate limits](https://console.groq.com/docs/rate-limits) 的 Free／Developer tabs；Developer tab 的公開頁 HTML 內兩列均是 `1K / 500K / 250K / -`，另由 [models](https://console.groq.com/docs/models) 交叉核對付費 RPM／TPM。這是公開基準，不證明 維護者 帳號已付費或取得相同 limits；實際以其 Console Limits 為準。限制按 **organization 共用**，cached tokens 不計入；部分帳號另有 ITPM／OTPM。
+
+gateway 保留台北日 500 次 durable ledger、單一 active FIFO、最多 20 個 pending、排隊 30 秒、單次 HTTP 90 秒；它沒有按 Groq TPM／RPM 排速，所以免費 8K TPM 或長 Hindsight prompt 可先遇 429。上游 429 回 `UPSTREAM_QUOTA`，本地日限是 `DAILY_LIMIT`，不混成同一訊息、不自動 retry／換模型。送出後失敗／取消仍保守計次。一次 bot 工具問答通常至少兩次模型呼叫；Hindsight 自己的 pipeline 或重試可多次進 gateway，每次分別計數。
+
+### 資料訓練、保留與應用條款
+
+[Groq Services Agreement](https://console.groq.com/docs/legal/services-agreement)（Last Modified 2026-06-22）§4.2 表明，除客戶明確允許／指示外，不拿 Inputs／Outputs 訓練或 fine-tune 模型；仍有營運、安全、法律等處理用途。§3.1 明文涵蓋以 API 整合 Customer Application 並提供 End Users，§3.2 禁止轉租／轉售帳號，帳號與 key 安全仍由客戶負責。**判讀**：本案讓組員透過自建 bot 使用 API，屬文件列出的應用整合路徑；不把 consumer Google OAuth 訂閱的授權疑義套成 Groq 已禁止此用途，也不代替 維護者 確認其實際契約／適用 model terms。
+
+依 [Your Data](https://console.groq.com/docs/your-data)，一般 inference 預設不保留 input/output，但可靠性故障排查或 abuse 調查可能暫存，通常最長 30 天，法律要求可更久；usage metadata 持續保存、排除 input/output。Data Controls 可開 ZDR 關閉這類 input/output 保存；官方頁稱所有客戶可設定，**本次沒有驗證 維護者 是否已開**。batch 檔可留 30 天、fine-tune 資料到刪除，本 adapter 不使用這些功能。保存的 customer data 位於美國 GCP。不能把「預設不訓練」說成「絕不保存／零跨境」；交接原文與組員資料上線前仍需 PM 核對 Data Controls 和告知範圍。
+
+### 相容端點與原生工具
+
+[OpenAI compatibility](https://console.groq.com/docs/openai) 指定 base `https://api.groq.com/openai/v1`，本 adapter 固定 POST `/chat/completions`、Bearer 私密檔金鑰，拒絕 redirect，沒有可由一般 caller 指定的 provider URL。模型是 OpenAI open-weight、由 **Groq** 服務；沒有呼叫 `api.openai.com`。
+
+[Tool use overview](https://console.groq.com/docs/tool-use/overview) 列出兩款 gpt-oss 支援 local／remote function calling 與 JSON，**parallel tool calling 不支援**。adapter 送 `parallel_tool_calls:false`，只送現有唯讀 function definitions，不啟用 Groq browser/code execution／MCP built-ins。Groq 原生 `tool_calls` 轉成 Messages `tool_use` 或 OpenAI tool calls；下一輪保留 tool ID、assistant role 和 tool result，工具由 bot 原有唯讀 registry 執行，gateway 不執行。回覆若工具未宣告、arguments 非 object、超過一個 call、強制 choice 不符即拒絕。
+
+[Reasoning 的 GPT-OSS 段落](https://console.groq.com/docs/reasoning) 特別要求 `include_reasoning`，**不支援 `reasoning_format`**；故採 `include_reasoning:false`、`reasoning_effort:low`，避免將 reasoning 當最終答案，未宣稱可以免除其計費。Hindsight 使用現有 OpenAI shim，schema 設 non-strict、結果仍由 Hindsight 驗證；本次沒有把整個共用 shim 升級成嚴格 grammar validator。`stream=true` 沿用現有 buffered SSE，不是即時逐 token 串流。
+
+### 接線、部署與真 key 驗收
+
+- `main.mjs`／Compose 預設 `groq-api`、upstream `openai/gpt-oss-120b`；所有 consumers 仍傳邏輯 model `hub-llm`。EVAL-01 沿用歷史選項名 `gemini-gateway`（意為呼叫共用 gateway），不會因此執行 Gemini adapter。
+- Groq key 只由 gateway 從 `GROQ_API_KEY_FILE` 讀檔，預設容器 `/run/secrets/groq_api_key`；PM Mac 來源為 `~/.config/hub-llm/groq.key`。L09 保存 VPS root 600 來源 `private/groq.key`，複製到 10004:10004／600 的 `private/llm-gateway/groq.key`，只有 Groq overlay 掛此檔。consumers 只持有各自 internal key，供應商 key 不進 argv/env_file／Git／log。
+- 安裝／SCP／Compose／失效通知及一次性 smoke container 指令見 [L09 runbook](../ops/runbook-L09-launch-deploy.md)。不需要 Google 登入／OAuth refresh；401/403 變 `auth_required`，bot 原有 owner 通知去重仍有效。image 為保留明確選用的歷史 CLI adapter，仍含固定 Gemini CLI 套件；選 Groq 不 spawn 該 CLI。
+- [groq-smoke.mjs](../../ops/llm-gateway/groq-smoke.mjs) 由 PM 執行。使用已部署 gateway（provider key 由服務讀私密檔），腳本只從私密檔讀 gateway／Hindsight internal key：一次中文短答、一次強制唯讀 function call、一筆真正 Hindsight sync retain、原文與非空 facts recall，刪專用 UUID scratch bank。Hindsight REST 流程依 [retain](https://docs.hindsight.vectorize.io/api-reference/retain-memories/)／[recall](https://docs.hindsight.vectorize.io/api-reference/recall-memories/) 定義，1.2.1 的真機行為待 PM 執行，未用自行模擬 extraction 替代。
+- smoke 不顯示 key／原文／上游 body，失敗不自動重試。它只檢查中文存在與 facts 非空；繁簡、取證正確性、繁中萃取品質及延遲 SLA 仍須 PM 判讀。三階段不是固定三次 provider invocation，Hindsight 可能多次呼叫。未執行真 smoke、未花任何 維護者 API 額度。
+
+本機 fake HTTP／原有 fake CLI、bot 及部署回歸收據見 [F-11b-validation.txt](F-11b-validation.txt)。這些證明接線與拒絕行為，不證明真 Groq 帳號配額、模型品質或 VPS 已上線。

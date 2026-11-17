@@ -1,0 +1,9 @@
+# Selected F-11b production backend. Only the gateway receives the provider credential.
+# docker compose -p neighbor-hub-memory -f deploy/memory/compose.yaml -f deploy/memory/compose.groq.yaml ...
+services:
+  llm-gateway:
+    secrets:
+      - {source: gw_groq_key, target: groq_api_key}
+secrets:
+  gw_groq_key:
+    file: ${HUB_LLM_PRIVATE_DIR:-/var/lib/neighbor-hub/private/llm-gateway}/groq.key

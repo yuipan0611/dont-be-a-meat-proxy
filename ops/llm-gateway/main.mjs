@@ -6,6 +6,7 @@ import { createRequestBudget } from './request-budget.mjs';
 import { createQueue } from './queue.mjs';
 import { createBackend } from './backends.mjs';
 import { createGateway } from './gateway.mjs';
+import { GROQ_MODEL } from './groq-api.mjs';
 
 const env = process.env;
 const log = (o) => process.stdout.write(JSON.stringify({ t: new Date().toISOString(), ...o }) + '\n');
@@ -24,10 +25,12 @@ closeSync(openSync(lock, 'wx', 0o600));
 let server;
 try {
   const budget = createRequestBudget({ file, dailyLimit: Number(env.LLM_DAILY_REQUEST_LIMIT ?? 500) });
-  const type = env.LLM_BACKEND ?? 'disabled';
+  const type = env.LLM_BACKEND ?? 'groq-api';
   const gemini = createBackend({ type, command: type === 'antigravity-cli' ? env.AGY_BIN ?? '/opt/agy/agy' : env.GEMINI_BIN,
     profileDir: env.GEMINI_PROFILE_DIR ?? '/home/gemini', timeoutMs: Number(env.GEMINI_TIMEOUT_MS ?? 90_000),
-    model: env.LLM_UPSTREAM_MODEL, apiKey: ['gemini-api-free', 'gemini-api-paid'].includes(type) ? secret('gemini_api_key') : undefined });
+    model: env.LLM_UPSTREAM_MODEL ?? (type === 'groq-api' ? GROQ_MODEL : undefined),
+    apiKey: type === 'groq-api' ? readFileSync(env.GROQ_API_KEY_FILE ?? join(env.SECRETS_DIR ?? '/run/secrets', 'groq_api_key'), 'utf8').trim()
+      : ['gemini-api-free', 'gemini-api-paid'].includes(type) ? secret('gemini_api_key') : undefined });
   const gateway = createGateway({ budget, gemini, clientKeys: keys, models: [env.LLM_MODEL ?? 'hub-llm'],
     queue: createQueue({ maxQueued: Number(env.LLM_MAX_QUEUED ?? 20), waitMs: Number(env.LLM_QUEUE_WAIT_MS ?? 30_000) }), log });
   server = http.createServer(gateway.handle);

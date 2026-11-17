@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { GatewayError } from './queue.mjs';
+import { chatMessages } from './openai-messages.mjs';
 
 const bad = (message) => { throw new GatewayError('INVALID_REQUEST', 400, message); };
 const obj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -47,6 +48,12 @@ export function prepare(body, protocol, allowedModels) {
   ].join('\n');
   return {
     prompt, model: body.model, maxTokens,
+    chat: {
+      messages: chatMessages(body, protocol),
+      ...(tools.length ? { tools: tools.map((t) => ({ type: 'function', function: t })), tool_choice: tools.some((t) => t.name === choice) ? { type: 'function', function: { name: choice } } : choice } : {}),
+      ...(structured ? { response_format: format.type === 'json_schema' && !format.json_schema
+        ? { type: 'json_schema', json_schema: { name: 'response', schema: format.schema, strict: false } } : format } : {}),
+    },
     finish({ text, stats = {} }) {
       let content = text, calls = [];
       if (envelope) {

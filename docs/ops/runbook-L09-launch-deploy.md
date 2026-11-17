@@ -2,7 +2,7 @@
 
 基線：master `0cc8934`，2026-11-17。此票整合部署程序；本機 Docker 假 VPS 演練不代表 `<VPS_IP>`、真 Discord、Anthropic、OAuth 或 Windows 已驗收。正式結果逐項寫入 [delivery-S1](../delivery-S1.md)。Codex 未登入 VPS、未 push、未修改 master。
 
-**F-11 接線更新（2026-11-17）**：Compose／bot／EVAL／L09 driver 已改用獨立共用 gateway，預設 `disabled`，不再要求或複製 Anthropic key。個人 Gemini CLI 訂閱已見官方停用公告，Antigravity 的第三方服務條款及免費 API 的資料使用政策仍待 維護者 決定，詳 [F-11](../research/F-11-gemini-subscription-backend.md)。本頁既有完整 dry-run 是 F-11 前的部署基線；接線後僅完成單元／Compose／image 與備份回歸，**尚未重跑 L09 全套演練、真認證或 LLM 驗收**，不得以 gateway liveness 代替 readiness。
+**F-11b 接線更新（2026-11-18）**：維護者 已選 Groq API，預設 `groq-api`／`openai/gpt-oss-120b`；bot／Hindsight／EVAL 只連共用 gateway，不再要求 Anthropic 或 Google 登入。Groq key 只掛 gateway，內部 consumers 使用各自的 gateway key。查證與資料保留限制見 [Groq](../research/F-11-gemini-subscription-backend.md#groq)。本頁既有完整 dry-run 是 F-11 前的部署基線；F-11b 單元／Compose／image 檢查另見 [收據](../research/F-11b-validation.txt)，**尚未重跑整套 L09 演練、真 key 或正式 LLM 驗收**，gateway liveness 不代表模型 readiness。
 
 部署順序固定為 **1 備份 → 2 schema/私密副本 → 3 建置及新服務 → 4 validator 維護窗 → 5 一次 Caddy 切換 → 6 consumers/排程 → 7 技術檢查 → 人工驗收**。不要再交錯執行舊 runbook 的 reload／render-caddy 指令。
 
@@ -15,10 +15,11 @@ PM 在 Mac 執行（只有 PM 操作 SCP／VPS；下面不顯示檔案內容）�
 ```sh
 ssh root@<VPS_IP> 'install -d -m 700 /var/lib/neighbor-hub/private'
 scp ~/.config/hub-discord/bot.token root@<VPS_IP>:/var/lib/neighbor-hub/private/discord.token
-ssh root@<VPS_IP> 'chown root:root /var/lib/neighbor-hub/private/discord.token; chmod 600 /var/lib/neighbor-hub/private/discord.token'
+scp ~/.config/hub-llm/groq.key root@<VPS_IP>:/var/lib/neighbor-hub/private/groq.key
+ssh root@<VPS_IP> 'chown root:root /var/lib/neighbor-hub/private/discord.token /var/lib/neighbor-hub/private/groq.key; chmod 600 /var/lib/neighbor-hub/private/discord.token /var/lib/neighbor-hub/private/groq.key'
 ```
 
-SCP 完成到 chmod 之間視為封閉準備期，不啟動服務。來源檔需 Mac owner-only；不要 `cat`、`echo`、`set -x` 或把秘密放 argv/env_file、Git、驗收收據。來源保留 root:root 600；腳本建立 bot／web／bank-proxy uid 10002 的 0400 專用副本、Hindsight uid 1000 的 0400 副本及 bridge 原有 ops UID 的 0600 副本，不輪替既有值。副本與來源不一致就停下查原因，不覆蓋。F-11 gateway uid/gid 10004 的內部 key 副本為 0600，profile／request state 目錄 0700；bot 只得到自己的內部 gateway key。只有明確選 API 時，維護者 另把 root:root 0600 的來源 `private/gemini-api.key` 放妥，腳本才複製到 gateway 的 0600 secret，不給 bot／Hindsight。
+SCP 完成到 chmod 之間視為封閉準備期，不啟動服務。來源檔需 Mac owner-only；不要 `cat`、`echo`、`set -x` 或把秘密放 argv/env_file、Git、驗收收據。來源保留 root:root 600；腳本建立 bot／web／bank-proxy uid 10002 的 0400 專用副本、Hindsight uid 1000 的 0400 副本及 bridge 原有 ops UID 的 0600 副本，不輪替既有值。副本與來源不一致就停下查原因，不覆蓋。F-11 gateway uid/gid 10004 的內部 key 副本為 0600，profile／request state 目錄 0700；bot 只得到自己的內部 gateway key。Groq 的 root:root 0600 來源 `private/groq.key` 必須先就位；step 2 複製為 `private/llm-gateway/groq.key`（10004:10004、0600），Compose Groq overlay 唯讀掛到 gateway 的 `/run/secrets/groq_api_key`。bot／Hindsight／EVAL 不掛 provider key，`GROQ_API_KEY_FILE` 指向該掛載檔。API key 不需 OAuth refresh；撤銷／輪替後 provider 401/403 會讓 gateway 狀態成為 `auth_required`，bot 的 owner 通知每次故障只發一次，恢復後才重設。
 
 UI 還需要 **Discord OAuth client secret**（不同於 bot token），PM 由 Developer Portal 以同等私密方式放到 `private/discord-client.secret`（root:root 600）。加精確 redirect `https://hub.example.invalid/auth/callback`、identify scope；不變更 Gateway/Interactions Endpoint。先準備 Application ID、guild ID、維護者 user ID、核對過的架構 map（可用 `/opt/neighbor-hub/web/architecture.json`）。UID 1000、10002、10004 不應對應不受信任的 VPS 登入使用者；有衝突先停下規劃 UID，不讓秘密暴露給它們。
 
@@ -31,12 +32,12 @@ HUB_DISCORD_GUILD_ID=實際17到20位數字
 HUB_DISCORD_APPLICATION_ID=實際17到20位數字
 L09_OWNER_DISCORD_ID=實際17到20位數字
 HUB_WEB_MAP_FILE=/opt/neighbor-hub/web/architecture.json
-HUB_LLM_BACKEND=disabled
-HUB_LLM_UPSTREAM_MODEL=gemini-3.1-flash-lite
+HUB_LLM_BACKEND=groq-api
+HUB_LLM_UPSTREAM_MODEL=openai/gpt-oss-120b
 HUB_LLM_DAILY_REQUEST_LIMIT=500
 ```
 
-先依 F-11 確認 backend／條款／billing，再開始有 source fingerprint 的分段部署；不要中途換 provider 設定。`HUB_LLM_BACKEND` 可選 disabled、gemini-cli、antigravity-cli、gemini-api-free、gemini-api-paid；API 會自動合併 provider-key overlay，CLI 登入由 維護者 另依 F-11 執行，腳本不代登入。
+開始分段部署前，PM 核對 Groq Console 的方案、Limits、Spend Limits／Data Controls（是否開 ZDR）；不要中途換 provider 設定。L09 預設／選 `groq-api` 時自動合併 `deploy/memory/compose.groq.yaml`；手動操作 Compose 也須同時帶 base 與此 overlay，不能只用 base 啟動 gateway。歷史 disabled／Gemini／Antigravity adapter 保留供明確設定，沒有自動切換或 fallback。每日 500 次是共用請求數限制，並非金額預算；免費方案的 8K TPM／200K TPD 可能先擋住 Hindsight。
 
 既有 ops UID/GID 自動從 `private/hubclock.sender.json` 取；不要修改原 clock／Mail 憑證 owner。部署固定 group-a、project `neighbor-hub`／`neighbor-hub-db`／`neighbor-hub-memory`，memory 8780、web 8781、validator 8765，皆只綁 127.0.0.1。正式機使用 image 原平台；本機 arm64 演練才設定 HUB_PG_PLATFORM/HUB_HS_PLATFORM/HUB_VALIDATOR_PLATFORM。
 
@@ -101,9 +102,31 @@ systemctl list-units --all 'hub-token-applier*' --no-pager
 
 建 llm-gateway、bank-proxy、validator、bot、web images；pull Hindsight；啟動獨立 `neighbor-hub-memory` 的 llm-gateway/hindsight/bank-proxy（health 等待 600 秒，首次模型下載可能較久），在容器內建立 group-a bank，不花 LLM 費用。web 用 8781、HUB_WEB_MAP_FILE 實際接到 WEB_MAP_FILE，鏡像會建 source snapshot。啟動 web 用 `--no-deps`；bot 僅 run --no-deps check-config，尚不連 Discord。`ops/bootstrap` 用既有 loopback Mail 註冊 MemoryBridge，保留已有 Mac／Windows／HubClock sender，不輪替憑證。原容器每段前後都比對。
 
-預期：gateway liveness（disabled 時無模型 readiness）、Hindsight/bank-proxy healthy、`http://127.0.0.1:8781/explorer.js` 200、bot config OK、office 200、IDs+StartedAt unchanged、STEP 3 PASS。
+預期：gateway liveness（尚未發 LLM 請求時 backend=unverified，無模型 readiness）、Hindsight/bank-proxy healthy、`http://127.0.0.1:8781/explorer.js` 200、bot config OK、office 200、IDs+StartedAt unchanged、STEP 3 PASS。
 
 失敗回復：只 stop 新 web／memory，保留 Hindsight volume、DB／ledger。修復後重跑未 PASS 段；不重建 DB、Mail 或 clock，不開放 8780/8781 firewall。
+
+### PM 真 key 煙霧測試（step 3 後，另記驗收）
+
+先確認運行中的 gateway 設定是 `groq-api`／120b，Hindsight 的 OpenAI base URL 為它的 `/v1`、model=`hub-llm`、strict schema=false。下列腳本使用已部署 gateway，讓其從私密檔讀 Groq key；腳本只讀兩個內部認證檔，沒有直連 Groq 或另外建立不受每日上限管控的 client。
+
+PM 在 VPS 執行（Node 22；不要 `set -x`）。將一次性 smoke 容器接入內部 llm-net，來源兩檔受 root-only 宿主目錄保護，不新增 host port；一次性容器用 root＋DAC_OVERRIDE 讀取不同 UID 的唯讀 secret bind，未掛其餘 private／Docker socket：
+
+```sh
+cd /opt/neighbor-hub
+docker run --rm --network neighbor-hub-memory_llm-net --user 0:0 \
+  --read-only --cap-drop ALL --cap-add DAC_OVERRIDE --security-opt no-new-privileges \
+  --mount type=bind,src=/var/lib/neighbor-hub/private/llm-gateway/eval.key,dst=/run/private/gateway.key,readonly \
+  --mount type=bind,src=/var/lib/neighbor-hub/private/memory/hindsight/hindsight-api.key,dst=/run/private/hindsight.key,readonly \
+  --entrypoint node neighbor-llm-gateway:f11 \
+  /app/ops/llm-gateway/groq-smoke.mjs \
+  --gateway-url http://llm-gateway:8790 --gateway-key-file /run/private/gateway.key \
+  --hindsight-url http://hindsight:8888 --hindsight-key-file /run/private/hindsight.key
+```
+
+腳本順序：一次繁中短答、一次強制唯讀 function call（不執行工具）、一筆合成資料的 Hindsight sync retain＋原文核對＋非空 facts recall；最後刪除它自己建立的 `f11b-smoke-<UUID>` bank。讀檔拒絕 symlink／group/world 權限；不印 key、上游錯誤 body 或原文。輸出每階段耗時，HTTP／retain 不重試；若 cleanup 失敗會明列 scratch bank ID，PM 確認後單獨刪除。retain／recall 內部可能呼叫模型多次或有 Hindsight 自身重試；**不是保證僅三次 Groq 計費**，每次送達 gateway 都計入共用上限。
+
+全 PASS 仍需 PM 看 facts 是否正確、繁中品質、bot 真 `/status` 唯讀取證與 EVAL-01；英文／簡體或 facts 誤判不因協定 PASS 自動驗收。腳本只驗 Chinese 字元存在，沒有自動語言品質評分。`/readyz` 首次成功後才 ready；HTTP 429=上游 quota，與本地 DAILY_LIMIT 分開。保留去秘密的耗時／錯誤碼、gateway 當日前後計數與 Console 消耗；不貼完整容器 env 或私密資料。
 
 ## 4｜唯一 Mail/HubClock 維護窗（明確例外）
 
