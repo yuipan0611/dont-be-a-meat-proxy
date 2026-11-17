@@ -1,0 +1,43 @@
+# Append LAST after deploy/compose.yaml and optional hubclock override.
+# Deployment baseline: Compose >= 2.24.4; config must support !reset. Mandatory before S2 access.
+services:
+  mail-a:
+    ports: !reset []
+    environment:
+      CONVERT_IMAGES: "false"
+
+  validator:
+    image: ${HUB_VALIDATOR_IMAGE:-neighbor-hub-validator:l07}
+    build:
+      context: ../server/validator
+      dockerfile: Dockerfile
+    platform: ${HUB_VALIDATOR_PLATFORM:-linux/amd64}
+    environment:
+      VALIDATOR_UPSTREAM: http://mail-a:8765
+      VALIDATOR_ALLOWLIST: /run/private/validator-allowlist.json
+      GOMEMLIMIT: 96MiB
+    user: "${HUB_OPS_UID:-10001}:${HUB_OPS_GID:-10001}"
+    # Directory mount means an atomic allowlist rename becomes visible immediately.
+    volumes:
+      - ${HUB_VALIDATOR_POLICY_DIR:-/var/lib/neighbor-hub/private/validator}:/run/private:ro
+    ports:
+      - "127.0.0.1:${HUB_MAIL_PORT:-8765}:8766"
+    networks: [mail_a_net]
+    depends_on:
+      mail-a: { condition: service_healthy }
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 192m
+    memswap_limit: 192m
+    restart: unless-stopped
+    stop_grace_period: 15s
+    healthcheck:
+      test: [CMD, /validator, --healthcheck]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
