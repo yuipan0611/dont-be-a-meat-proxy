@@ -33,7 +33,7 @@ function adaptNodes(model, previous, memory, callbacks) {
  }));
  const nodes = (model.nodes ?? []).map((n,i) => {
   const old = prev.get(n.id), position = memory.positions.get(n.id) ?? old?.position ?? {x:n.x ?? (i%3)*330,y:n.y ?? Math.floor(i/3)*210};
-  const width = Math.max(260,n.w ?? 280),height = Math.max(152,n.h ?? 164);
+  const width = Math.max(260,n.w ?? 280),height = Math.max(180,n.h ?? 180);
   return {id:n.id,type:'page',position,data:{original:n,open:callbacks.onNodeOpen,active:n.stepIndex!==undefined&&n.stepIndex===model.activeStep},
    width,height,style:{width,height},selected:Boolean(n.selected ?? old?.selected),connectable:false,ariaLabel:n.name,
    className:n.workMatched===false?'rf-work-dim':undefined,

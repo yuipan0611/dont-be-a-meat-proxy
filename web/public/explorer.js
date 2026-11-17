@@ -135,7 +135,7 @@ export function createExplorer({map,api,onItem,onClear=()=>{}}){
  function graph(){const p=currentPage();let nodes=[],edges=[],bounds=[];
   if(p.kind==='overview'){
    nodes=contextNodes.map(n=>({...n,pageId:cardPageId(n)}));const xy=[[40,40],[40,300],[430,200],[430,500],[820,40],[820,500]];nodes.forEach((n,i)=>Object.assign(n,{x:xy[i][0],y:xy[i][1],w:290,h:150}));
-   edges=[['person','mac','發出任務'],['person','discord','手機查詢'],['mac','vps','HTTPS · 交接'],['windows','vps','HTTPS · 主動收件'],['vps','discord','通知 / OAuth'],['vps','github','HTTPS · Issues']].map(([from,to,label])=>({id:`${from}-${to}`,from,to,label,protocol:label.includes('HTTPS')?'HTTPS':'使用關係',type:'context-edge'}));bounds=[{id:'remote',x:400,y:160,w:350,h:220,label:'VPS · 共同協作中心'}];
+   edges=[['person','mac','發出任務'],['person','discord','手機查詢'],['mac','vps','HTTPS · 交接'],['windows','vps','HTTPS · 主動收件'],['vps','discord','通知 / OAuth'],['vps','github','HTTPS · Issues']].map(([from,to,label])=>({id:`${from}-${to}`,from,to,label,protocol:label.includes('HTTPS')?'HTTPS':'使用關係',type:'context-edge'}));bounds=[{id:'remote',x:400,y:160,w:350,h:250,label:'VPS · 共同協作中心'}];
   }else if(p.kind==='services'){
    const groups=[['安全入口',['gateway','validator','bank-proxy']],['協作核心',['mail','clock','bot','bridge','web','token-applier']],['記憶與資料',['memory','postgres']],['主機維運',['ops']]];let y=70;
    for(const [label,ids]of groups){const cards=ids.filter(id=>services.has(id)).map(id=>pageCard('service:'+id,{id}));nodes.push(...positions(cards,3,y+55));const h=Math.ceil(cards.length/3)*205+45;bounds.push({id:'group-'+label,x:30,y,w:1110,h,label});y+=h+50;}
