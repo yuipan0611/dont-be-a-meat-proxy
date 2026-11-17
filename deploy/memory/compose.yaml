@@ -62,7 +62,7 @@ services:
       HINDSIGHT_URL: http://hindsight:8888
       ANTHROPIC_URL: ${HUB_ANTHROPIC_URL:-https://api.anthropic.com}
       LEDGER_FILE: /state/llm-ledger.json
-      LLM_DAILY_CAP_MICROS: "500000"
+      LLM_DAILY_CAP_MICROS: "${HUB_LLM_DAILY_CAP_MICROS:-500000}"   # override only for the over-cap test
     secrets:
       - hub_app_password
       - anthropic_api_key

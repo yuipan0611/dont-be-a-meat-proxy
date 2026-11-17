@@ -1,0 +1,56 @@
+# L-02b memory bridge — the ONLY writer from saved Mail into Hindsight (SDS API-04, GAP-16).
+# Compose override on H-02's deploy/compose.yaml (same project as mail-a, like HubClock):
+#
+#   cd /opt/neighbor-hub
+#   docker compose -f deploy/compose.yaml -f deploy/hubclock/compose.hubclock.yaml \
+#                  -f deploy/memory-bridge/compose.bridge.yaml up -d memory-bridge
+#
+# Needs the memory project (deploy/memory, project neighbor-hub-memory) running: it joins its memory-net
+# to reach http://hindsight:8888. One replica only; the state-dir lock makes a manual `once` stand by.
+services:
+  mail-a:
+    environment:
+      HTTP_ALLOWED_HOSTS: mail-a          # same as the HubClock override (Host check, HTTP 421 otherwise)
+
+  memory-bridge:
+    # Same pinned image as HubClock (node:24-alpine index digest, 2026-11-17).
+    image: node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
+    command: [node, /app/ops/memory-bridge/main.mjs, run]
+    working_dir: /app
+    environment:
+      BRIDGE_MAIL_URL: http://mail-a:8765/mcp/
+      BRIDGE_HINDSIGHT_URL: http://hindsight:8888
+      BRIDGE_BANK: group-a
+      BRIDGE_INTERVAL_S: "15"
+      HUB_PRIVATE_DIR: /run/hub-private
+      BRIDGE_DATA_DIR: /data
+      TZ: UTC
+    user: "${HUB_OPS_UID:?set HUB_OPS_UID}:${HUB_OPS_GID:?set HUB_OPS_GID}"
+    volumes:
+      - ../client:/app/client:ro
+      - ../ops/lifecycle:/app/ops/lifecycle:ro
+      - ../ops/memory-bridge:/app/ops/memory-bridge:ro
+      - ${HUB_PRIVATE_DIR:-/var/lib/neighbor-hub/private}/mail-a.env:/run/hub-private/mail-a.env:ro
+      - ${HUB_PRIVATE_DIR:-/var/lib/neighbor-hub/private}/memorybridge.sender.json:/run/hub-private/memorybridge.sender.json:ro
+      - ${HUB_PRIVATE_DIR:-/var/lib/neighbor-hub/private}/memorybridge.hindsight-api.key:/run/hub-private/hindsight-api.key:ro
+      - ${HUB_BRIDGE_STATE_DIR:-/var/lib/neighbor-hub/memory-bridge}:/data   # back up with HubClock state
+    networks: [mail_a_net, memory-net]
+    depends_on:
+      mail-a:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=16m
+    mem_limit: 128m
+    restart: unless-stopped
+    stop_grace_period: 330s       # a sync retain may take minutes; SIGTERM finishes the tick first
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+
+networks:
+  memory-net:
+    external: true
+    name: ${HUB_MEMORY_PROJECT:-neighbor-hub-memory}_memory-net
