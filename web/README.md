@@ -1,85 +1,57 @@
-# Hub 專案導覽（UI-01～05）
+# Hub 系統圖譜（第三版）
 
-唯讀、零 LLM 呼叫的專案總覽、架構定位、工作回報及交接原文。純 JS/CSS/SVG；Node 22、pg 8.23.1（package-lock 固定依賴）。Discord OAuth 採官方 authorization code flow；不取代 MCP 裝置驗證。
+給程式新手看的五層架構探索：系統全貌 → VPS 服務 → 串接與協議 → 來源模組 → 函式與原始碼。每個零件提供白話用途、需要原因、輸入輸出、故障影響及來源。沿用純 Node／JS／CSS／SVG、Discord OAuth 與既有唯讀 API。
 
-## 本機看畫面
+## 本機預覽與驗證
+
+需要 Node >=22、npm、Python 3；Python 僅在建置時使用標準 AST，不執行被掃描的程式。
 
 ```sh
 npm ci --prefix web --ignore-scripts
 npm run demo --prefix web
-```
-
-開啟 http://127.0.0.1:8080 。示範模式只綁 loopback，資料為合成範例；正式入口 `src/main.mjs` 沒有 demo 開關。畫面每 30 秒更新；鍵盤焦點在工作卡或架構時暫緩自動重繪，可隨時手動更新。可點工作 → 查看詳情 → 在架構定位；手機改為元件清單。
-
-```sh
+# 預設 8080 被占用時：
+DEMO_PORT=8083 npm run demo --prefix web
 npm test --prefix web
 node --test client/test/*.test.mjs
 ```
 
-## 正式資料與界面
+`demo` 自動先建置架構，僅綁 127.0.0.1。工作紀錄是明確標示的合成範例，架構則來自目前 repo 的真實來源快照。正式 `src/main.mjs` 沒有 demo 開關。工作回報每 30 秒更新，焦點在工作卡／架構工作台時暫停自動重繪；不重置已讀程式碼。
 
-- `GET /api/me`：成員名稱。
-- `GET /api/architecture`：版本化元件與連線設定。
-- `GET /api/overview`：最近 100 則工作紀錄（四種 topic 各讀最近 30 則後去重）、最近 50 筆 GitHub Issue API 結果（排除 PR）、各來源成功時間與故障狀態。這些是近期窗口，並非完整歷史或全專案統計。
-- `GET /api/items/:id`：近期窗口內的原文投影；窗口外 404，歷史原文仍可從原有 AI read 指令查詢。
-- `GET /auth/login`、`GET /auth/callback`；`POST /auth/logout` 要求同源 Origin。
-- 每個 API 都重新查有效 Discord link／member 與伺服器指定 group。忽略 client 的 group 選擇；每組部署一個實例／資料設定，不提供跨組瀏覽。
-- `fetch_topic`（上游既有工具，F-01b schema）是非消費式讀取。既有 notification cursor、agent inbox/read state 完全不變。
-- GitHub REST 讀取固定 repo，30 秒快取，8 秒逾時；Mail 使用既有 client 逾時。來源出錯保留舊資料與原成功時間。快取只在記憶體，重啟後重新讀取。
-- session 最長 4 小時，隨機 256-bit ID，server 只保留雜湊；HttpOnly/Secure/SameSite=Lax。重啟登出。OAuth state 一次性 5 分鐘；最多 500 個進行中 flow 與 session，額滿 429。Discord access token 不送瀏覽器、不持久化。
-- 沒有寫入 API、LLM 摘要、CI 自動驗證或即時檔案監控。所有測試結果固定標「AI 回報」；commit/PR 連結只代表有連結，不代表內容已核對或測試已通過。
+## 看圖方式
 
-## 架構維護
+- L0：你、Mac、Windows、VPS、Discord、GitHub。點一下看用途，點「進入內部」或雙擊下鑽。
+- L1：入口／驗證／記憶門禁、Mail／HubClock／Bot／Bridge／web／token applier、記憶與資料庫、維運工具。這是邏輯服務，不把 Caddy／主機工具錯當 Docker 容器；詳情另列 Compose 設定證據。資料表可點選。
+- L2：交接、動作確認、記憶索引三條流程可播放／暫停／前後步進。編號箭頭是**教學先後**；真正的發出呼叫方向在下方全部串接目錄，可點閱協議與來源。Windows 主動讀 Mail，並非 Mail 推送。訊息種類另有來源目錄。
+- L3：按服務切換真實模組；圖上顯示最多 12 個，完整模組目錄可捲動。JavaScript import 僅代表靜態依賴。
+- L4：選來源模組或搜尋函式，中央顯示受保護的真實程式碼、原檔行號與 SHA-256。完整函式索引可展開。未提供上游原碼的外部映像不捏造函式。
 
-編輯 `architecture.json` 的 `nodes / edges / reviewedRevision / ref`。元件以相對路徑前綴匹配，並允許 AI 明確指定 component ID。未知元件不猜測。元件與連線皆可鍵盤 Enter／Space 操作；手機另提供可點元件與串接清單。`deployment` 為人工核對資訊，不能由 source tree 推論 VPS 已部署。
+畫布可拖曳、Ctrl／Cmd＋滾輪縮放、按鈕縮放／重設，鍵盤方向鍵平移，Tab／Enter 操作零件與連線。手機單欄保持字體可讀，點選後捲到說明並可返回架構圖；程式碼區可水平捲動。`prefers-reduced-motion` 關閉移動與虛線動畫。URL hash 保存層級、服務、模組與函式；點中的圖上連線尚不保存 hash。
 
-初始資料標「規劃中／待操作者核對」，部署前由 PM 核對正式環境；`reviewedRevision` 是資料來源版本，不是服務健康探測。GitHub 路徑連結使用 `ref`，目前設 master。
+## 架構模型與來源限制
 
-## AI 工作標註（向後相容）
+`npm run build --prefix web` 產生被 Git 忽略的 `web/.generated/architecture.json`。`atlas` 包含 services、modules、connections、tables、messages、containers、entrypoints、imports、calls、inventory、coverage；`symbols` 包含來源快照。交付時另保存 metadata-only 的 [`F-12-architecture-model.json`](../docs/research/F-12-architecture-model.json)，以其中 revision 為準。
 
-沿用既有 `send`／`checkpoint`，加選填 `workContext`。開工、阻塞、checkpoint、交接完成時附在原有紀錄，不新增遠端動手請求。收件者沿用實際專案設定；不要照抄不存在的 agent。
+掃描七個根目錄：client、ops、server、bot、web、deploy、supabase，包含 lifecycle／bank-proxy／memory-bridge／token_applier／validator。checkout 使用 `git ls-files`，所以新增來源必須先加入版本管理；沒有 .git 的 Docker image 使用排除私密檔與 symlink 的 filesystem fallback。測試、fixtures、private、.env、key、token、password、node_modules、generated 不納入原始碼 API。
 
-```json
-{
-  "summary": "修復 Windows 訊息接收",
-  "text": "已定位到收件與確認的接縫，下一步做實機驗證。",
-  "unfinished": ["實體 Windows 驗證"],
-  "workContext": {
-    "issue": "https://github.com/example-org/dont-be-a-meat-proxy/issues/1",
-    "components": ["client", "gateway", "mail"],
-    "paths": ["client/hub-hook.mjs"],
-    "stage": "in_progress",
-    "test_result": "本機測試通過，尚未實機驗證"
-  }
-}
-```
+JS 用 Acorn AST、Python 用標準 ast、Go 用註解／字串遮罩與括號計數（**不是 Go AST／型別分析**）；SQL／Compose／Caddy 是語法擷取。Compose 不展開秘密環境變數、不合併 override；資料表不是 VPS live schema。匿名 callback 不獨立建節點，本地呼叫只是靜態候選。跨服務關係及白話解釋人工核對；部分細部函式說明沿用模組上下文，完整行為仍須讀來源。
 
-`stage`：`in_progress / blocked / handoff / completed`，全部是作者回報。client 驗證欄位／長度／相對路徑並檢查密鑰；wire 欄位是 `work_context`。舊 client 不帶欄位仍有效。UI 把內容當文字，來源連結僅允許設定 repo 的 HTTPS GitHub URL。
+修改白話說明與跨服務連線：`scripts/architecture-notes.mjs`；擷取：`scripts/scan-architecture.mjs`、`scripts/python-symbols.py`。來源 anchor 缺失、核心 17 個符號漂移或解析失敗會讓建置失敗。每項帶來源路徑與行號。行號對應本機快照，能解析到函式的證據直接打開本機讀取器；「GitHub 參考」明示可能與本機不同。
 
-目前無逐次編輯 hook；未回報不會自動亮起「正在處理」。要讓任務有精準定位，需要 agent 在原有交接帶上標註。
+## 正式 API 與隔離
 
-正式部署及 PM 驗收見 `docs/ops/runbook-UI-guide.md`。
+- `GET /api/me`：有效成員名稱。
+- `GET /api/architecture`：版本化模型及符號 metadata，排除 code。
+- `GET /api/code/:symbolId`：建置白名單的函式原始碼；沒有任意 path／URL 讀取。
+- `GET /api/overview`：最近 100 筆 Mail 工作回報、最近 GitHub Issues 結果與來源狀態。
+- `GET /api/items/:id`：近期窗口中的交接原文。
+- Discord `GET /auth/login`、`GET /auth/callback`；同源 `POST /auth/logout`。
 
-## 參考與重用
+每個 API 都重新查有效 Discord link／member 與 server 固定 group，不接受瀏覽器指定組別。session 4 小時，HttpOnly/Secure/SameSite=Lax；OAuth state 單次使用 5 分鐘。Mail fetch_topic 不消耗原有 inbox／通知游標。來源失敗保留原成功時間；不偽造新鮮零筆資料。未更動現有 OAuth／DB schema／client wire contract。
 
-- 重用本專案 `client/mail-client.mjs` 的 MCP transport（本分支基線 5bcb3ce），上游 Agent Mail image 版本沿原 Compose 固定 digest，不改上游。
-- Discord 官方 OAuth2：https://docs.discord.com/developers/topics/oauth2 （查詢 2026-11-17）。只使用 code grant / identify / state；未複製第三方 OAuth 範例程式。
-- PostgreSQL driver 沿現有 bot 的 pg 8.23.1；Node 22。沒有另加前端 framework、圖形套件、圖資料庫或模型 API。
-- UI、固定 SVG layout、唯讀投影與 OAuth 接縫為本專案膠水程式。Node 容器基底沿 node:22-alpine，正式 release 若要求不可變基底，需由操作者鎖實際平台 digest。
+workContext 保留 components、paths、symbols、stage、test_result 等選填標註。AI 回報完成、commit 連結、測試結果分開呈現；不宣稱 CI 自動核對。網站不派工、不批准、不執行動作，也不呼叫 LLM。
 
-## 架構工作台（第二版）
+Docker：`docker build -f web/Dockerfile -t hub-guide:atlas-v3 .`，image 內帶全部來源根目錄並重建快照；秘密由 Docker ignore 排除。`SOURCE_REVISION` 可作 build arg。來源快照與教學動畫都不能證明已部署或已執行。
 
-登入後首頁為架構畫布，五層：系統 → 服務 → 介面 → 模組 → 函式。四條核心流程提供完整下鑽入口：傳送訊息、接收訊息、工作交接、動作確認。其他服務明示本批可查證的深度。這是版本化設計與程式碼導覽，並非 runtime trace。
+## 交付與參考
 
-- 畫布：拖曳／滾輪／雙指縮放、＋／−／適合畫面、小地圖、麵包屑與搜尋；點節點看 overview，再「進入內部」。手機可切清單。鍵盤 Tab/Enter 操作；畫布方向鍵移動、＋／− 縮放。
-- 中央通訊卡：HTTP method/path、MCP operation、協議；點「查看契約」查看驗證、輸入輸出與錯誤。函式間連線只列人工核對的本地呼叫，不推測動態呼叫。
-- 程式碼：Acorn 8.15.0 在建置時依白名單擷取 3 個來源模組中的 17 個具名函式。快照含 revision、工作目錄未提交旗標、檔案與快照 SHA-256、行號與參數。白名單函式改名／缺失、語法錯誤會讓建置失敗。建置器不掃描 secrets 目錄，不提供任意檔案讀取 API。
-- `GET /api/architecture` 回傳符號中繼資料，不含 code；`GET /api/code/:symbolId` 在同樣的成員／固定 group 驗證後讀快照。symbolId URL-encode，例如 `client/mail-client.mjs#createMailClient.sendItem`。不存在或路徑穿越要求 404。
-- 工作標註可選 `symbols` 陣列（最多 40 筆），wire 仍為 `work_context`。若有精準 symbol 標註，函式只對應相同 ID；否則退回元件範圍，不推測變更函式。
-- URL hash 保存 scope／selected／flow；分享後仍需登入。麵包屑返回會還原該層相機位置。
-
-先 `npm ci --prefix web --ignore-scripts`；`npm run build --prefix web` 產生被 Git 忽略的 `.generated/architecture.json`。`npm run demo`／`npm start` 已加入 pre script。直接 `node src/main.mjs` 前也必須建置。
-
-Dockerfile 在 image build 內重新產生快照，不使用宿主舊 artifact。可傳 `--build-arg SOURCE_REVISION=<完整 commit>`；容器內無 .git，因此保守標記來源尚未核對提交狀態，檔案雜湊仍精準對應快照。正式發布由 PM 核對 revision 與工作目錄，不能拿 source hash 當成 VPS 部署證明。
-
-加入白名單函式請編輯 `scripts/build-architecture.mjs` definitions 與 `public/explorer.js` 的對應介面／說明。這份導覽明確針對 Hub 核心流程；接入其他 repo 需重新審查白名單與架構設定，不能只換 repo 名稱。
+[第三版交付與逐層截圖](../docs/11-architecture-atlas.md)、[掃描限制](../docs/research/F-12-scan.md)、[方案比較](../docs/research/F-12-architecture-viz.md)。借 C4／Structurizr 分層與 Dynamic 教學順序、Backstage 分類、React Flow 互動模式；沒有複製上游程式、導入整套平台或另加畫布依賴。正式部署沿用 [`runbook-UI-guide.md`](../docs/ops/runbook-UI-guide.md)，真實 OAuth、VPS/TLS、完整 stack 壓測與新手理解度仍需 PM/維護者 驗收。
