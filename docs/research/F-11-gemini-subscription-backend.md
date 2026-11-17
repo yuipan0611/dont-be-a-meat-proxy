@@ -196,7 +196,7 @@ bot 離線時沒有 Discord 通知保證：維護者 需監看 gateway `/readyz`
 
 ### 現行決定與查證範圍（F-11b）
 
-**查證日期：2026-11-18（Asia/Taipei）**。維護者 於 11/17 決定用既有 Groq API 的 gpt-oss，無 Google 訂閱／Anthropic 入口。本次沿用 codex-F11，先 fast-forward merge 當時 master `7e7fb55`。只讀公開官方頁面，未登入 Groq Console、未讀本機 `~/.config/hub-llm/groq.key`、未呼叫真模型、未登入 VPS。
+**查證日期：2026-11-18（Asia/Taipei）**。維護者 於 11/17 決定用既有 Groq API 的 gpt-oss，無 Google 訂閱／Anthropic 入口。本次沿用 codex-F11，先 fast-forward merge 當時 master `7e7fb55`，交付前再 merge 最新 `53a38d9`（本分支 merge commit `95d1786`）。只讀公開官方頁面，未登入 Groq Console、未讀本機 `~/.config/hub-llm/groq.key`、未呼叫真模型、未登入 VPS。
 
 ### 模型與價格
 

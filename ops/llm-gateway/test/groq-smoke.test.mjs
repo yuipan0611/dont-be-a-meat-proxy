@@ -37,3 +37,12 @@ test('Hindsight failure still cleans up; HTTP errors do not disclose bodies or r
   } }), (e) => e.message === 'sync retain: HTTP 500');
   assert.deepEqual(calls, ['POST', 'POST', 'PUT', 'POST', 'DELETE']);
 });
+
+test('malformed smoke tool arguments are reported without echoing model content', async () => {
+  let calls = 0;
+  await assert.rejects(runSmoke({ gatewayUrl: 'http://gateway', gatewayKey: 'FAKE', hindsightUrl: 'http://hindsight', hindsightKey: 'FAKE', log: () => {}, fetchImpl: async () => {
+    calls++;
+    return Response.json({ choices: [{ message: calls === 1 ? { content: '測試成功。' } : { tool_calls: [{ function: { name: 'read_status', arguments: 'PRIVATE invalid JSON' } }] } }] });
+  } }), (e) => e.message === 'tool smoke: invalid function arguments');
+  assert.equal(calls, 2, 'failed tool stage does not write a Hindsight bank or retry');
+});

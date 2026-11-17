@@ -44,7 +44,9 @@ export async function runSmoke({ gatewayUrl, gatewayKey, hindsightUrl, hindsight
     tools: [{ type: 'function', function: { name: 'read_status', description: 'Return read-only test status', parameters: { type: 'object', properties: {}, additionalProperties: false } } }],
     tool_choice: { type: 'function', function: { name: 'read_status' } }, parallel_tool_calls: false });
   const calls = tool.choices?.[0]?.message?.tool_calls;
-  if (calls?.length !== 1 || calls[0].function?.name !== 'read_status' || JSON.stringify(JSON.parse(calls[0].function.arguments)) !== '{}') throw new Error('tool smoke: incorrect function call');
+  let args;
+  try { args = JSON.parse(calls?.[0]?.function?.arguments); } catch { throw new Error('tool smoke: invalid function arguments'); }
+  if (calls?.length !== 1 || calls[0].function?.name !== 'read_status' || JSON.stringify(args) !== '{}') throw new Error('tool smoke: incorrect function call');
   log(`PASS native function call (${Date.now() - started} ms); no tool executed`);
   started = Date.now();
   let cleanupNeeded = false;
