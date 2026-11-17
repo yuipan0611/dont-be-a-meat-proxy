@@ -1,0 +1,194 @@
+{
+  "version": 1,
+  "project": "don't be a meat proxy",
+  "description": "讓不同電腦上的 AI 交換訊息、留下交接，讓你知道工作接下來怎麼走。",
+  "repo": "example-org/dont-be-a-meat-proxy",
+  "reviewedRevision": "5bcb3ce (架構草稿；部署狀態須由操作者核對)",
+  "nodes": [
+    {
+      "id": "client",
+      "name": "你的 AI 工作站",
+      "technical": "Claude Code · Mac / Windows",
+      "description": "接收訊息、請你確認動作，並留下工作交接。",
+      "paths": [
+        "client/"
+      ],
+      "phase": "MVP",
+      "deployment": "待操作者核對",
+      "x": 30,
+      "y": 30
+    },
+    {
+      "id": "gateway",
+      "name": "安全入口",
+      "technical": "Caddy + 驗證代理",
+      "description": "確認連線憑證，讓訊息經過 HTTPS 安全進入。",
+      "paths": [
+        "deploy/caddy/",
+        "server/validator/"
+      ],
+      "phase": "MVP",
+      "deployment": "待操作者核對",
+      "x": 330,
+      "y": 30
+    },
+    {
+      "id": "mail",
+      "name": "訊息與交接",
+      "technical": "Agent Mail Rust",
+      "description": "保存原始訊息與交接；電腦關機後仍能接續。",
+      "paths": [
+        "client/mail-client.mjs",
+        "deploy/compose.yaml"
+      ],
+      "phase": "MVP",
+      "deployment": "待操作者核對",
+      "x": 630,
+      "y": 30
+    },
+    {
+      "id": "clock",
+      "name": "確認與逾時",
+      "technical": "HubClock",
+      "description": "記錄動作是否同意，以及確認請求何時到期。",
+      "paths": [
+        "ops/lifecycle/"
+      ],
+      "phase": "MVP",
+      "deployment": "待操作者核對",
+      "x": 630,
+      "y": 210
+    },
+    {
+      "id": "memory",
+      "name": "專案記憶",
+      "technical": "Hindsight · bank proxy · Postgres",
+      "description": "搜尋過去的交接與決策，回答時回指原始紀錄。",
+      "paths": [
+        "ops/bank-proxy/",
+        "deploy/memory/",
+        "supabase/"
+      ],
+      "phase": "11-30",
+      "deployment": "規劃中",
+      "x": 330,
+      "y": 390
+    },
+    {
+      "id": "discord",
+      "name": "手機查詢與通知",
+      "technical": "Discord bot",
+      "description": "通知你有新項目，並提供進度查詢與連線入口。",
+      "paths": [
+        "bot/"
+      ],
+      "phase": "11-30",
+      "deployment": "規劃中",
+      "x": 30,
+      "y": 390
+    },
+    {
+      "id": "github",
+      "name": "正式任務",
+      "technical": "GitHub Issues",
+      "description": "保存任務的編號、負責人與開啟或關閉狀態。",
+      "paths": [
+        "bot/src/github.mjs",
+        "bot/src/task.mjs"
+      ],
+      "phase": "11-30",
+      "deployment": "規劃中",
+      "x": 30,
+      "y": 210
+    },
+    {
+      "id": "guide",
+      "name": "你正在看的導覽",
+      "technical": "Project Guide",
+      "description": "把架構、工作回報和證據放在一起；只查詢，不派工。",
+      "paths": [
+        "web/",
+        "deploy/web/"
+      ],
+      "phase": "11-30",
+      "deployment": "開發中",
+      "x": 330,
+      "y": 210
+    }
+  ],
+  "edges": [
+    {
+      "id": "client-gateway",
+      "from": "client",
+      "to": "gateway",
+      "label": "傳送與接收",
+      "description": "工作站以裝置 token 呼叫 HTTPS MCP。",
+      "paths": [
+        "client/mail-client.mjs",
+        "deploy/caddy/"
+      ]
+    },
+    {
+      "id": "gateway-mail",
+      "from": "gateway",
+      "to": "mail",
+      "label": "驗證後轉送",
+      "description": "入口驗證 token，代理檢查內容後轉入該組 Mail。",
+      "paths": [
+        "server/validator/",
+        "deploy/"
+      ]
+    },
+    {
+      "id": "mail-clock",
+      "from": "mail",
+      "to": "clock",
+      "label": "追蹤確認",
+      "description": "HubClock 讀取控制事件並留下確認與逾時結果。",
+      "paths": [
+        "ops/lifecycle/"
+      ]
+    },
+    {
+      "id": "mail-memory",
+      "from": "mail",
+      "to": "memory",
+      "label": "建立記憶索引",
+      "description": "以交接與決策建立搜尋索引；原文仍在 Mail。",
+      "paths": [
+        "ops/bank-proxy/"
+      ]
+    },
+    {
+      "id": "mail-discord",
+      "from": "mail",
+      "to": "discord",
+      "label": "通知成員",
+      "description": "bot 預覽已保存訊息，不影響 AI 的未讀狀態。",
+      "paths": [
+        "bot/src/bridge.mjs"
+      ]
+    },
+    {
+      "id": "discord-github",
+      "from": "discord",
+      "to": "github",
+      "label": "建立正式任務",
+      "description": "先成功建立 GitHub Issue，再回報任務編號。",
+      "paths": [
+        "bot/src/task.mjs"
+      ]
+    },
+    {
+      "id": "guide-mail",
+      "from": "guide",
+      "to": "mail",
+      "label": "唯讀紀錄",
+      "description": "導覽讀取交接與訊息，不標記已讀。",
+      "paths": [
+        "web/src/data.mjs"
+      ]
+    }
+  ],
+  "ref": "master"
+}

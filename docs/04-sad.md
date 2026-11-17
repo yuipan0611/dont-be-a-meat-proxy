@@ -150,3 +150,11 @@ MVP 只有前 3 列＋512 預留＝**1,920 MiB**。每服務用 Compose `mem_lim
 | 任務／L | [官方 GitHub MCP](https://github.com/github/github-mcp-server)，託管服務不自架；版本由服務商管理 | deterministic Issue 指令＋Discord actor／interaction ID 對照；不另做任務系統 |
 
 新增膠水清單：`ops/render-caddy`／`revoke`／`lifecycle`／`backup-restore`／到期 purge（M；L token 由 host 的窄 `TokenApplier` 處理 bot 請求，bot 不拿 Docker socket）、`client/hub-hook.mjs`、`client/mail-client.mjs`、`server/bank-proxy`／S2 Mail ingress identity adapter、bot 的 `connect`／`bridge`／`decisions`／`issues`／`budget` adapter。這些是**待開票路徑，不是本次已實作檔案**；不重寫 MCP server、mailbox、向量庫或聊天引擎。表中補查網路來源均查詢於 2026-11-16；F-01～06 的既有證據與限制仍有效。
+
+## 2026-11-17 補充：新手唯讀導覽（UI-01～05，11-30）
+
+新增獨立 web 容器（128 MiB 上限），Caddy 同網域 path 分流，Discord OAuth session 驗證網頁，MCP 仍走原 bearer。Web 沿既有 Mail client、hub 成員資料及 GitHub Issues 做唯讀投影，不建立另一套任務系統，不使用 LLM。架構圖以 repo 版本化設定維護；資料／部署狀態人工核對。每組一個固定資料設定實例；跨組 API 預設拒絕。完整契約見 `web/README.md`，部署與撤回見 `docs/ops/runbook-UI-guide.md`。VPS 8 GB 整體峰值待實測，不以容器 limit 宣稱足夠。
+
+### 架構工作台第二版
+
+首頁以分層架構為主，沿系統／服務／協議 API／模組／函式深入。建置時白名單產生 source snapshot，執行時不讀任意路徑、不解析整個 repo；code API 沿用每請求成員與組別驗證。四條核心流程深挖，其餘部件提供已核對 overview。詳見 docs/10-architecture-workbench.md。

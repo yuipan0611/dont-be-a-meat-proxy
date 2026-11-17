@@ -1,0 +1,20 @@
+{
+  "name": "hub-project-guide",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/main.mjs",
+    "demo": "node src/demo.mjs",
+    "test": "node --test test/*.test.mjs",
+    "build": "node scripts/build-architecture.mjs",
+    "prestart": "npm run build",
+    "predemo": "npm run build"
+  },
+  "dependencies": {
+    "acorn": "8.15.0",
+    "pg": "8.23.1"
+  }
+}

@@ -364,3 +364,13 @@ Hindsight 生成 `HINDSIGHT_API_LLM_PROVIDER=anthropic`、`HINDSIGHT_API_LLM_MOD
 上述由 PM 彙整給 維護者；API key、VPS IP、DNS A 生效、SDK／容器版本與硬上限測試屬 operator／工程前置。所有入口 validation、在線文案、loopback 字面與 SR-AUTO-03 時間邊界由 PM 先對齊需求，若改變產品承諾再交 維護者；**網域、token 粒度、`/status`、auto 批次、現況來源、Haiku／每日 0.50 USD 不再待決**。
 
 契約變更同步 T5／T6／T8；本版納入 SRS §4.4 與最新 維護者 定案，不反寫上游。無既有產品資料需遷移；ops／glue schema 用版本化 migration，Mail／Hindsight 先備份、鎖 digest，不混任意 latest。可開 M 部署／MCP smoke／hook spike／lifecycle／備份票；以上工程缺口按對應 Gate 收斂，不能以設計草稿代替驗收。
+
+## 2026-11-17 補充：UI 唯讀契約
+
+網頁 GET `/api/me`、`/api/architecture`、`/api/overview`、`/api/items/:id` 均重新驗證 Discord link、active member 與固定組別；session 4 小時、重啟登出；OAuth state 一次性 5 分鐘。POST 僅同源 logout。Mail 讀 fetch_topic，不更新未讀、通知游標。GitHub 只讀設定 repo；30 秒快取、來源故障保留原成功時間。
+
+v1 訊息新增選填 `work_context`（client 輸入 `workContext`）：issue、components、paths、stage、test_result；stage 僅 in_progress/blocked/handoff/completed。這是作者回報而非命令、即時監控或驗證。缺欄位相容舊格式；未知元件標未對應。所有測試回報顯示 AI 回報；commit/PR 與 Issue closed 不當成測試通過。Web 不提供批准、派工與 token 操作。精確限制及 API 見 `web/README.md`。
+
+### 分層架構與原始碼快照
+
+GET /api/architecture 增加 symbols metadata、codeSnapshot；不含 code。GET /api/code/:symbolId 限該組部署白名單快照，未登入／移除成員 401，未知 ID 404；不接受 path/URL。work_context.symbols 為選填陣列，與既有欄位同樣長度及密鑰檢查。建置器 Acorn 8.15.0 精準擷取範圍、參數與 SHA-256，符號缺失／語法錯誤中止建置。快照只表示來源內容，不表示部署或 runtime 行為。導覽 hash 不含憑證。

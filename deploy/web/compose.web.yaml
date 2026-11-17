@@ -1,0 +1,40 @@
+# Add after deploy/compose.yaml; one configured group per web instance.
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: web/Dockerfile
+    environment:
+      WEB_ORIGIN: ${HUB_WEB_ORIGIN:-https://hub.example.invalid}
+      WEB_GROUP_ID: group-a
+      HUB_PG_HOST: db
+      HUB_PG_USER: hub_app
+      HUB_PG_PASSWORD_FILE: /run/web/hub-app.password
+      MAIL_URL: http://mail-a:8765/mcp/
+      MAIL_PROJECT_KEY: /data/projects/group-a
+      MAIL_TOKEN_FILE: /run/web/mail-a.env
+      DISCORD_GUILD_ID: ${HUB_DISCORD_GUILD_ID:?set HUB_DISCORD_GUILD_ID}
+      DISCORD_APPLICATION_ID: ${HUB_DISCORD_APPLICATION_ID:?set HUB_DISCORD_APPLICATION_ID}
+      DISCORD_CLIENT_SECRET_FILE: /run/web/discord-client.secret
+      GITHUB_TOKEN_FILE: /run/web/github.token
+    volumes:
+      - ${HUB_WEB_SECRET_DIR:-/var/lib/neighbor-hub/private/web}:/run/web:ro
+      - ${HUB_WEB_MAP_FILE:?set absolute HUB_WEB_MAP_FILE}:/app/web/architecture.json:ro
+    ports: ["127.0.0.1:8780:8080"]
+    networks: [mail_a_net, hub_db_net, web_egress]
+    user: "${HUB_WEB_UID:?set HUB_WEB_UID}:${HUB_WEB_GID:?set HUB_WEB_GID}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:rw,nosuid,noexec,size=8m]
+    mem_limit: 128m
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "2"}
+networks:
+  hub_db_net:
+    external: true
+    name: neighbor-hub-db_hub-db-net
+  web_egress:
+    driver: bridge
