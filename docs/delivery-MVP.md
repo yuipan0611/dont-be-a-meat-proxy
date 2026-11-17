@@ -26,7 +26,7 @@ client 45、hub-hook 36、hub-hook 整合 5（TC-02／04／13、session.closed�
 | TC-02 | G-02 非同步交接 Mac→Windows，再反向 | 人工 | ⬜ | |
 | TC-03 | 交接原文逐字取回 | 自動 | ⬜ | |
 | TC-04 | 沒未讀／Hub 連不上時的開工畫面 | 人工 | ⬜ | |
-| TC-05 | 重啟後持久 | runbook-H02 §6 | ⬜ | |
+| TC-05 | 重啟後持久 | runbook-H02 §6 | ✅ | StartedAt 01:04:03Z→01:32:22Z，同 ID 同 sha256 |
 | TC-06 | question 60 秒內自動回答 | 人工 | ⬜ | 判準見下 |
 | TC-07 | action 先同意才執行 | 人工 | ⬜ | |
 | TC-08 | action 拒絕；混合請求當 action | 人工 | ⬜ | |
