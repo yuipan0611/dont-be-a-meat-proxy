@@ -8,7 +8,7 @@
 
 | 項目 | 狀態 | 證據 |
 |---|---|---|
-| H-02 VPS 部署（mail-a＋hub Caddy 片段＋HubClock） | ✅ mail-a＋Caddy（HubClock 待啟動） | docs/ops/vps-inventory.md「H-02 實機部署紀錄」 |
+| H-02 VPS 部署（mail-a＋hub Caddy 片段＋HubClock） | ✅ mail-a＋Caddy＋HubClock（SandyThrush） | docs/ops/vps-inventory.md「H-02 實機部署紀錄」 |
 | office.example.invalid 部署前後都正常 | ✅ | before 200 → after 200 |
 | Mac 接入（onboarding-S1） | ⬜ | |
 | Windows 接入，≤15 分鐘 | ⬜ | 實際分鐘： |
