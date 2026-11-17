@@ -1,107 +1,132 @@
 ---
-name: Hub 系統圖譜
-description: 讓新手沿著零件、方向與來源，理解一條交接怎麼跨電腦。
+name: Hub 系統圖譜 v4
+description: 每個零件都是一頁，沿著目錄與無限白板逐步讀懂協作系統。
 colors:
   ink: "#183c32"
   muted: "#536d63"
-  line: "#dce5df"
   accent: "#136a4d"
-  paper: "#f3f5f1"
   white: "#fff"
+  paper: "#f3f5f1"
+  line: "#dce5df"
   soft: "#eaf3ec"
-  amber: "#845612"
-  focus: "#bb730b"
-  canvas: "#f8faf6"
-  canvas-dot: "#d8e1d5"
-  boundary: "#edf3e9"
+  sidebar: "#f5f6f2"
+  tree-current: "#e1eadd"
+  tree-current-ink: "#184b34"
+  tree-hover: "#e9ede4"
+  canvas: "#fafbf7"
+  canvas-dot: "#dce4d9"
+  card-line: "#cad8c9"
+  card-hover: "#fafff8"
+  card-hover-line: "#83a88b"
+  card-selected: "#f0f8ed"
+  card-summary: "#4b6855"
+  card-label: "#5a7462"
+  boundary: "#eaf1e650"
   boundary-line: "#b9cbb8"
-  card-line: "#c6d6c8"
-  card-hover: "#f0f6ed"
-  card-hover-line: "#659a71"
-  card-selected: "#edf7ed"
-  card-selected-line: "#176948"
-  edge: "#789984"
-  flow: "#14734d"
-  primary-hover: "#0b5038"
+  edge: "#779384"
+  edge-label: "#385b49"
+  selection: "#6d9b801c"
+  mode-selected: "#e3eee1"
+  minimap: "#f8faf5"
+  minimap-selected: "#a3c6ac"
+  focus: "#bb730b"
+  amber: "#845612"
+  error: "#8e3327"
+  error-background: "#fff1ed"
   code-background: "#142b23"
   code-text: "#deebdf"
   code-line-number: "#9ab8a6"
 typography:
   headline:
     fontFamily: 'system-ui,-apple-system,BlinkMacSystemFont,"Noto Sans TC",sans-serif'
-    fontSize: "27px"
+    fontSize: "25px"
     fontWeight: 650
     lineHeight: 1.3
-    letterSpacing: "-.025em"
-  title:
-    fontFamily: 'system-ui,-apple-system,BlinkMacSystemFont,"Noto Sans TC",sans-serif'
+    letterSpacing: "-.02em"
+  headline-medium:
+    fontSize: "23px"
+  headline-mobile:
+    fontSize: "20px"
+  source-title:
+    fontSize: "22px"
+  source-title-mobile:
+    fontSize: "19px"
+  inspector-title:
     fontSize: "21px"
-    lineHeight: 1.3
+    lineHeight: 1.4
+  card-title:
+    fontSize: "17px"
+    fontWeight: 600
+    lineHeight: 1.35
     letterSpacing: "-.015em"
+  card-title-mobile:
+    fontSize: "18px"
   body:
     fontFamily: 'system-ui,-apple-system,BlinkMacSystemFont,"Noto Sans TC",sans-serif'
     fontSize: "14px"
-    fontWeight: 400
     lineHeight: 1.6
-  diagram-title:
-    fontFamily: 'system-ui,-apple-system,BlinkMacSystemFont,"Noto Sans TC",sans-serif'
-    fontSize: "17px"
-    fontWeight: 600
-    lineHeight: 1.3
+  reading:
+    fontSize: "13px"
+    lineHeight: 1.9
+  card-summary:
+    fontSize: "12px"
+    lineHeight: 1.65
+  label:
+    fontSize: "11px"
+    lineHeight: 1.4
+  metadata:
+    fontSize: "10px"
+  compact-metadata:
+    fontSize: "9px"
   source:
     fontFamily: "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
     fontSize: "13px"
     lineHeight: 1.8
 rounded:
+  selection: "4px"
   tag: "5px"
-  chip: "6px"
-  control: "7px"
-  action: "8px"
+  tree-row: "6px"
+  field: "7px"
+  control: "8px"
+  player: "9px"
   inset: "10px"
   card: "12px"
   surface: "14px"
-  login: "16px"
+  boundary: "16px"
 spacing:
   compact: "8px"
   control: "12px"
   section: "16px"
   panel: "20px"
-  workbench: "24px"
-  page: "32px"
+  heading: "22px"
 components:
   button-primary:
     backgroundColor: "{colors.accent}"
     textColor: "{colors.white}"
-    rounded: "{rounded.action}"
+    rounded: "{rounded.control}"
     padding: "12px 18px"
   button-secondary:
     backgroundColor: "{colors.white}"
     textColor: "{colors.ink}"
-    rounded: "{rounded.control}"
+    rounded: "{rounded.field}"
     padding: "7px 12px"
-  button-secondary-hover:
-    backgroundColor: "{colors.soft}"
-  button-play:
-    backgroundColor: "{colors.accent}"
-    textColor: "{colors.white}"
-    rounded: "{rounded.control}"
-    padding: "8px 12px"
-  button-play-hover:
-    backgroundColor: "{colors.primary-hover}"
-  diagram-card:
+  page-card:
     backgroundColor: "{colors.white}"
     textColor: "{colors.ink}"
     rounded: "{rounded.card}"
-    padding: "13px 15px"
-  diagram-card-selected:
+    padding: "15px 17px"
+  page-card-selected:
     backgroundColor: "{colors.card-selected}"
     rounded: "{rounded.card}"
-    padding: "12px 14px"
+    padding: "14px 16px"
+  page-tree-current:
+    backgroundColor: "{colors.tree-current}"
+    textColor: "{colors.tree-current-ink}"
+    rounded: "{rounded.tree-row}"
   inspector:
     backgroundColor: "{colors.white}"
     textColor: "{colors.ink}"
-    rounded: "{rounded.surface}"
-    padding: "22px 20px"
+    padding: "20px"
   source-reader:
     backgroundColor: "{colors.code-background}"
     textColor: "{colors.code-text}"
@@ -112,162 +137,127 @@ components:
 
 ## Overview
 
-範圍：`web/public`。模式：Read + Operate。這是 2026-11-17 對目前實作的文件化，依據 `public/style.css`、`public/index.html`、`public/explorer.js` 與 `PRODUCT.md`；未以瀏覽器重新驗收。上方 token 對應現有 CSS；尺寸依下文的響應式與狀態覆寫套用，不將現況推定為已部署或已通過新手驗收。
+目前權威是 v4「頁面目錄＋無限白板」；本文依 2026-11-18 的 `public/style.css` 最後覆寫、`public/board.css`、`public/board.jsx`、`public/explorer.js`、`public/pages.js` 與 `package.json` 記錄實作。白板使用 React Flow（`@xyflow/react` 13.0.2）與 React／React DOM 19.3.1。舊 v3 原生 SVG、五層 rail 與手機單欄圖的描述只屬歷史，不能用來指導目前介面。
 
-### 原始方向契約（保留）
-
-範圍：web/public。模式：Read + Operate。依 2026-11-17 新手多層架構圖的明確任務重做。
-
-THESIS：讓新手沿著零件、方向與來源，理解一條交接怎麼跨電腦。
-OWN-WORLD：淺色閱讀用的系統地圖；墨綠文字、紙白表面、淡綠責任邊界，主動作只有深綠。系統字體適應繁中閱讀；monospace 僅用於原始碼與資料。
-STORY：先定位使用者／工作站／VPS，再拆解服務、播放訊息旅程、看來源檔與函式。
-FIRST VIEWPORT：明確五層導覽、流程播放、已填滿的系統全貌與說明欄同時可見，無空白 demo 卡。
-FORM：C4 的語意與 Structurizr Dynamic 的編號序列；以現有原生 SVG/HTML 實作互動，未導入第三方畫布程式碼。幾何架構圖本身就是主視覺，不使用插畫模擬實物。
-
-色彩來源：--ink #183c32、--muted #536d63、--accent #136a4d、--paper #f3f5f1、--line #dce5df。圓角 12–14px，無裝飾陰影。桌面左側固定層級、中間架構畫布、右側用途與證據；手機層級置頂，圖與說明依序閱讀，單欄零件保持可讀字級。
-
-方向可選、連線可點，流程循序高亮並沿線移動圓點，prefers-reduced-motion 停止移動。資料表／訊息種類與來源模組使用目錄清單。詳細資料以為什麼、輸入輸出、故障、連接、來源的固定閱讀順序呈現。
-
-### 實作定位
-
-「淺色閱讀用的系統地圖」是既有方向用語，並無另行批准的視覺稿或 seed。清楚、有層次的卡片用來解釋架構，架構圖本身就是主視覺。幾何、線條、原生 SVG 圖示和文字承擔資訊，沒有另行創作的攝影、插畫或外部品牌素材。
-
-Read + Operate 的操作是搜尋、切換層級、選取零件、播放教學、縮放、導向來源與更新工作回報。工作台保留唯讀範圍，動作確認在 AI 工作站進行；Discord OAuth、組別隔離與白名單程式碼 API 是產品限制，不因新增介面而放寬。
+沿用紙白、墨綠與淡綠責任邊界；畫布上的卡片既是可整理的零件，也是通往內部頁面的入口。左側像文件工作空間的頁面樹保留方向感，中央給白板最大的探索面積，右側說明可收合。這是對既有實作的記錄，沒有新增命名視覺概念或聲稱取得額外視覺稿核准。
 
 **Key Characteristics:**
 
-- 紙白底、墨綠文字、淡綠責任邊界與深綠主動作。
-- 從白話問題走向來源行號；桌面同看架構與解說，手機依序閱讀。
-- 教學順序、來源核對的連線、實際部署與即時流量維持清楚標示。
+- 可搜尋、展開與收合的頁面目錄，配合麵包屑逐頁深入。
+- 可平移、縮放、框選與拖動卡片的無限白板，保留小地圖和可讀文字。
+- 用途、教學順序與來源快照各有清楚標示；程式碼維持受保護唯讀入口。
+
+本文更新不等於部署或使用者驗收。先前 `/tmp/hub-board-detector.json` 對舊 DESIGN.md 報告 64 個 advisory；本次刻意記錄新增的白板／目錄色彩、緊湊字級與圓角角色，未重跑 detector，不能宣稱警告已清除。frontmatter 是重用視覺值的摘要；完整 selector、狀態與響應式覆寫仍以 CSS 為準。
 
 ## Colors
 
-全頁使用低彩度綠色與紙白層次。frontmatter 收錄主要重用色與圖譜狀態，精確 selector 與其餘局部色值仍以 `public/style.css` 為準。
+低彩度綠與暖白將導覽、白板及來源閱讀分成清楚的面；主動作維持單一深綠。
 
 ### Primary
 
-- `accent` 用於主動作、連結、播放按鈕與方向線 hover；播放 hover 使用 `primary-hover`。
-- `card-selected-line` 與 `card-selected` 同時標示已選零件及目前教學步驟；邊框亦由 1px 變為 2px。
-- `flow` 用於教學線與移動圓點，沒有健康度或實際流量含義。
+- **深綠 `accent`**：主按鈕、已選卡片邊框、選取連線與框選外框。選取另以邊框粗細和文字標示補強。
+- **琥珀 `focus`**：鍵盤焦點；與深綠選取狀態分開。
 
 ### Neutral
 
-- `paper` 是頁面底，`white` 是標頭、工具與解說面，`soft` 是輕量互動底。
-- `ink` 是主要文字，`muted` 是次要文字，`line` 是面板及區塊分隔。
-- `canvas` 加 `canvas-dot` 的 18px 點陣定位架構；責任區使用 `boundary`、65% 填色與 `boundary-line` 虛線。
-- 程式碼使用 `code-background`、`code-text` 和 `code-line-number`，為目前主要的深色閱讀區。
+- **墨綠 `ink`／灰綠 `muted`**：繁中主要閱讀與次要說明。
+- **紙白 `paper`、白色 `white`、目錄底 `sidebar`**：工作台、卡片與頁面樹的層次；目前白板工作台覆寫為白底。
+- **畫布 `canvas`／點陣 `canvas-dot`**：白板定位；點陣間距為 24px。
+- **卡片 `card-line`、`card-hover`、`card-hover-line`、`card-selected`**：靜止、hover 與已選／目前教學步驟。
+- **目錄 `tree-current`、`tree-current-ink`、`tree-hover`**：目前頁與指向狀態。
+- **邊界 `boundary`／`boundary-line`**：半透明責任區；`edge`／`edge-label` 是關係線與標籤。
+- **框選 `selection`、模式 `mode-selected`、小地圖 `minimap`／`minimap-selected`**：白板操作回饋，沒有健康度含義。
+- **來源 `code-background`／`code-text`／`code-line-number`**：深底程式碼和真實行號。
 
-### State colors
-
-- 鍵盤焦點是 `focus` 的 3px outline，offset 4px。
-- 阻塞標籤是 `#fff0d8` 底與 `amber` 文字；故障解說文字是 `#825121`。
-- 錯誤訊息是 `#fff1ed` 底與 `#8e3327` 文字。保留既有工作／錯誤語意，不添加未存在的狀態。
+阻塞沿用 `amber`，錯誤沿用 `error`／`error-background`；不將教學高亮當成即時流量或服務健康狀態。
 
 ## Typography
 
-**Body / heading font:** `system-ui,-apple-system,BlinkMacSystemFont,"Noto Sans TC",sans-serif`。沒有載入自訂 webfont。原始碼使用 `ui-monospace,SFMono-Regular,Menlo,Consolas,monospace`；資料表名稱也使用 monospace。
+**Body / heading font:** `system-ui,-apple-system,BlinkMacSystemFont,"Noto Sans TC",sans-serif`，沒有自訂 webfont。**Source font:** `ui-monospace,SFMono-Regular,Menlo,Consolas,monospace`。
 
-繁中白話解說採系統無襯線字，路徑與來源有換行規則。實作沒有固定的 `ch` 閱讀寬度，不另定不存在的字體比例。
+白板卡片標題與摘要優先可讀；目錄、路徑及操作提示較緊湊。frontmatter 的 9–14px、17–23px 與 25px 是實際使用的角色值，不是單一比例尺；9–10px 用於次要提示和手機工具，不作主要卡片內文。
 
-| 角色 | 現行規格與用途 |
+| 角色 | 使用方式 |
 | --- | --- |
-| 頁面標題 | `.heading h1` 27px、650、1.3、字距 -.025em；1100px 以下 25px、760px 以下 23px。通用 h1 為 30px。 |
-| 區段標題 | h2 21px、1.3、字距 -.015em；未另設字重，沿用瀏覽器 bold。手機工具列 h2 20px。 |
-| 零件名稱 | 17px、600、1.3，單行省略，完整內容由解說欄提供。 |
-| 零件摘要 | 12px、1.5，最多兩行。 |
-| 內文 | body 14px / 1.6；解說 lead 13px / 1.9，手機 14px；解說欄位內文 12px / 1.9，手機 13px。 |
-| 來源與目錄 | 來源連結及目錄列最終覆寫為 12px；欄位標題 12px、600。 |
-| 細節標記 | 工具／圖例多為 10–12px；手機層級名稱最終覆寫為 11px，L 編號 10px。 |
-| 原始碼主閱讀區 | 最終覆寫為 13px / 1.8，手機 12px；保留空白、橫向捲動與真實行號。 |
+| 頁面標題 | `headline`；1100px 以下採 `headline-medium`，760px 以下採 `headline-mobile`。單行省略。 |
+| 卡片標題 | `card-title`；手機採 `card-title-mobile`，摘要由 12px 增至 13px。標題單行、摘要最多兩行。 |
+| 頁面樹 | 桌面 12px，手機 13px；目前頁字重 600。搜尋框桌面 11px、手機 13px。 |
+| 說明欄 | `inspector-title`，lead 為 `reading`；欄位內文 12px / 1.9。 |
+| 來源頁 | `source-title`，手機 `source-title-mobile`；程式碼 `source`，手機 12px，保留空白與橫向捲動。 |
+| 輔助文字 | `label`、`metadata`、`compact-metadata` 依工具、狀態列及手機覆寫使用。 |
+
+頁面摘要最多一行、最大 90ch；這是頁面標頭的限制，非所有內文的統一閱讀寬度。
 
 ## Layout
 
-### Read + Operate 工作台
+工作台填滿視窗。桌面標頭 54px，主區高 `calc(100dvh - 54px)`，取消舊的 1680px 最大寬與外層 padding；主分頁保留。探索區為左 252px 頁面樹＋彈性白板，沒有欄間空隙。目錄可收合為 0。白板內依序是麵包屑工具列、頁名、教學播放器（僅流程頁）、白板／來源頁、底部狀態列。
 
-全頁容器最大寬 1680px，桌面水平 padding 32px、垂直 24px。白色標頭高 76px。頁面標題後接「探索架構／工作總覽／交接與紀錄」分頁，預設探索架構。登入、工作台與錯誤區依狀態顯示；本機預覽 notice 明示架構是 repo 快照、工作紀錄為合成範例。
+說明欄開啟時在白板右側占 294px，可獨立捲動；關閉後白板取回空間。左目錄亦獨立捲動。頁面目錄不是舊 L0–L4 固定 rail：系統首頁 → Hub VPS → 服務 → 模組 → 函式白板 → 原始碼頁；工作站與外部情境另有入口，流程教學也是樹中的頁面。
 
-桌面工作台先分為 174px 左側層級 rail 與彈性主區，gap 24px。主區依序是標題與搜尋、麵包屑、服務／模組選擇、教學播放器、架構畫布與解說欄。畫布和右側解說欄使用 `minmax(0,1fr) 292px`、gap 18px。rail sticky top 24px；解說欄 sticky top 20px、max-height 940px、內部捲動。原契約的「固定層級」在實作是 sticky 導覽。
-
-| 尺寸條件 | 實際變化 |
+| 條件 | 目前行為 |
 | --- | --- |
-| ≥1500px | 解說欄 320px，padding 25px。 |
-| ≤1100px | 頁面 padding 20px；rail 140px、gap 16px；解說欄 250px、gap 12px；搜尋寬 200px。 |
-| ≤760px | 標頭 64px；頁面 padding 16px 12px；rail 成為頂部五等分格；工具列、搜尋、畫布、解說欄單欄依序排列。解說欄取消 sticky 與高度上限。 |
+| ≤1100px | 左目錄 220px、說明欄 254px，縮小標頭與工具間距。 |
+| ≤760px | 標頭 50px；目錄變左側覆蓋層，寬 `min(310px,90%)`；說明欄變右側覆蓋層，寬 `min(342px,94%)`。開頁後兩者收起；點卡片可打開說明。 |
+| 首次開啟白板 | 桌面對前六個節點適合畫面，縮放限 .72–1；手機對第一卡片定位、zoom .9，先能閱讀再平移探索，並非縮小塞入全部節點。 |
 
-圖譜桌面 viewBox 寬 1000，手機 400。L1–L4 一般節點採桌面三欄、手機一欄；節點高 116、列距 150、左右 pad 32、欄 gap 22。L0 有獨立上下文座標，手機六個角色亦為單欄。手機節點點擊後捲到解說欄，L4 函式點擊後捲到來源閱讀區；解說欄提供「回到架構圖」。捲動目標 scroll-margin-top 15px。
+一般卡片初始三欄排列、座標間隔 370×205，設定寬 290px；白板元件至少寬 260px、高 180px。使用者可拖動整理，責任區框保持固定。白板縮放範圍 .12–2.5，非有限寬 SVG 或垂直堆疊長圖。
 
-### 五層閱讀路徑
-
-| 層級 | 導覽名稱與白話問題 | 主要內容 |
-| --- | --- | --- |
-| L0 | 系統全貌／誰在使用？ | 使用者、Mac、Windows、VPS、Discord、GitHub 與使用關係。 |
-| L1 | VPS 服務／裡面有哪些零件？ | 安全入口、協作與連接、記憶與資料、主機維運責任區；資料表目錄。 |
-| L2 | 串接與協議／訊息怎麼走？ | 教學編號序列、完整服務串接目錄、訊息種類。 |
-| L3 | 程式模組／程式放在哪裡？ | 服務選擇、來源檔、靜態 import；完整來源模組目錄。 |
-| L4 | 函式與原始碼／這段程式做什麼？ | 模組與函式索引、完整選取函式的來源快照與行號。 |
-
-這是 C4 衍生的專案閱讀層級，L2 是額外的通訊契約層，不宣稱五層是 C4 原始標準。L3／L4 圖面最多顯示 12 個模組／函式，完整集合由目錄提供。來源閱讀區提供完整 API 回傳的選取函式，不是任意檔案瀏覽器。
-
-工作總覽統計是三欄卡片，內容為 1.5fr / 1fr；交接與紀錄為等寬雙欄。手機將內容區改為單欄，統計仍保留三欄縮排。一般目錄最高 440px、手機 360px，超出時內部捲動。
+每頁卡片位置和 viewport 存在本次掛載的瀏覽器記憶體 Map；換頁再回來可還原，重新整理後重設，沒有 localStorage、伺服器或跨裝置保存。URL hash 的 `page` 記錄導覽頁面，重新整理仍可返回該頁；它不保存座標或縮放。
 
 ## Elevation & Depth
 
-目前沒有 box-shadow 或裝飾陰影。層次由紙白頁底、白色面板、淡綠責任區、1px 邊框和 selected 的 2px 邊框建立。畫布點陣與虛線責任邊界表示結構；解說以留白和分隔線建立閱讀順序，程式碼深底區分內容。
+桌面面板、卡片、白板控制和小地圖維持平面：白色／淡綠表面、1px 分隔與 2px 選取邊框建立層次。v4 有少量結構陰影，不能再描述為全站無陰影：白板提示使用 `0 2px 8px #203b2910`；手機目錄為 `12px 0 36px #1f38252b`，手機說明欄為 `-10px 0 30px #233d2624`，用來辨識覆蓋面板。
 
-節點 hover 對背景與邊框做 `.15s` transition，沒有位移。教學線有 `1.8s linear infinite` 虛線動畫，圓點沿路徑移動 1.8s，教學自動步進間隔 2400ms。`prefers-reduced-motion: reduce` 取消 CSS 動畫與 transition，程式亦不建立移動圓點；教學文字／步驟仍可繼續更新。點擊捲動目前由 JS 指定 smooth，不能僅憑 CSS 規則宣稱所有程式捲動皆停止平滑效果。
+頁名與來源區有 .22s、5px 上移進場；換頁白板有 230ms、6px 上移／淡入；viewport 導覽與縮放使用 280ms。`prefers-reduced-motion: reduce` 關閉頁面動畫和流程虛線動畫，viewport duration 為 0，換頁不呼叫 Web Animations；頁面樹自動定位也明確改用 instant，平常才用 smooth。教學步驟仍按 2400ms 更新，動畫不承擔唯一資訊。
 
 ## Shapes
 
-主面板 14px，節點、播放器與一般卡片 12px。解說內原始碼 inset 10px；主來源閱讀區採直角 code block，沿用畫布外層裁切。按鈕依變體使用 6–8px，標籤 5px，登入面板 16px。圓形用於步驟編號、圖示與教學圓點。
+卡片採 `card`，責任框採 `boundary`；目錄列、提示、控制／小地圖與教學面板依 frontmatter 的 `tree-row`、`control`、`player` 分工。新增 `selection` 是框選矩形的輕微圓角。舊登入、工作總覽與程式碼 inset 的 `surface`／`inset` 仍保留各自用途。
 
-責任邊界 1px 虛線；連線使用箭頭、1.6px 線和 20px 透明點擊軌道，使用關係採 `5 4` 虛線。SVG 圖示為內嵌 24×24、1.5px currentColor 筆畫，不需額外圖示套件。Hub 標記是 HTML 內嵌 SVG。
+卡片與面板用細邊框，責任區用虛線，選取卡片邊框增至 2px 並扣除 1px padding 保持內容位置。箭頭標示連線方向，內嵌 SVG 線條圖示用於頁面、來源與動作；白板由 React Flow 管理，沒有用裝飾插圖替代結構。
 
 ## Components
 
-### Buttons and fields
+### Page tree and breadcrumbs
 
-- 主動作為深綠底白字。通用登入按鈕 padding 12px 18px、8px 圓角；解說欄主動作滿寬、padding 10px、12px 字；播放按鈕 padding 8px 12px、7px 圓角，hover 深綠。
-- 次要按鈕白底、1px `line` 邊框，hover 淡綠底及 `#8ab6a0` 邊框。禁用按鈕 opacity .6、cursor wait，這是現行共用樣式。
-- 搜尋欄為白色 8px 圓角容器，桌面 padding 8px 11px、12px 字；手機全寬、padding 10px，input 最終 13px。結果是服務／模組／函式清單，最多 18 筆。
-- select 白底、1px 邊框、7px 圓角、padding 7px、12px 字；沒有額外的自訂選單系統。
-- 按鈕、連結、欄位、summary 與 tabindex 目標保留可見焦點。頁首 skip link 以鍵盤焦點顯示。
+目錄是可捲動的文件頁面樹，12px 深度縮排，分開的展開鈕與開頁鈕；搜尋比對名稱、說明及來源路徑，最多 60 筆結果並顯示祖先路徑。樹支援方向鍵、Home、End，有 `treeitem`、`aria-expanded` 與目前頁標示。麵包屑可回任意祖先；URL 支援頁面深連結及舊層級 hash 的轉換。
 
-### Navigation
+### Infinite canvas and page cards
 
-主分頁以 2px 綠色底線、文字加重標示 `aria-current=page`。層級按鈕含 L 編號、名稱、白話問題與線條圖示；active 使用淡綠底，手機 active 改白底，隱藏圖示與副說明。麵包屑提供返回路徑；URL hash 記錄層級、服務、模組、選取項與流程。
+拖曳空白平移，滾輪／捏合縮放；Shift 拖曳或切換「框選」模式可部分交疊框選，並顯示已選零件數。卡片可拖動；單擊選取並更新說明，雙擊或卡片底部「打開白板」進入內頁。卡片內按鈕排除拖曳與平移。白板不提供刪除、建立連線或重新接線。
 
-### Diagram cards and inspector
+左下提供縮放和適合畫面，右下小地圖可平移／縮放；右上是平移／框選模式。手機縮小小地圖並將模式控制下移，避免與左上提示重疊。主要鍵盤焦點沿用琥珀 outline，卡片與連線另有明確 focus 處理。
 
-節點白底、1px `card-line` 邊框、padding 13px 15px、12px 圓角。selected／current-step 是 2px 綠邊與淡綠底，padding 減為 12px 14px 保持內容位置。點擊選取；雙擊或解說欄的主動作進入內部。
+### Inspector and directory
 
-解說欄先呈現種類、名稱與用途，再按內容提供為什麼需要、輸入／輸出、故障影響、連接、來源與相關回報。連線另顯示誰送給誰與協議；教學步驟另顯示教學順序及實際方向。函式顯示簽名與快照 SHA-256。缺少欄位時保留核對來源的提示，不虛構資料。
+說明按用途、需要原因、輸入輸出、故障影響、連接與來源排列；有關閉鈕、來源行號與快照版本。底部「本頁零件與資料目錄」可展開，提供所有本頁零件的文字入口；服務與流程另列真正呼叫方向、資料表或訊息種類。沒有函式的設定模組採「設定來源」類型葉節點，開啟真實來源與用途說明，不補假函式或假程式碼。
 
 ### Tutorial player and connections
 
-播放器為白色 12px 面板，含播放／暫停、流程 select、教學模式文字；L2 有上一步／下一步。步驟 chips 橫向捲動，active 同時改底、邊框與編號圓形；caption 用 `aria-live=polite` 更新說明。既有流程為 Mac 交接給 Windows、動作確認與逾時、交接變成可搜尋記憶。
+流程教學頁保留播放／暫停、流程選擇、上一步／下一步與步驟 chips，caption 使用 polite live region。React Flow 的 smoothstep 線、箭頭與可選標籤呈現關係；播放中高亮／虛線表示教學當前步驟。Windows 主動輪詢 Mail，教學 Mail → Windows 並非服務推送；import／靜態呼叫候選也不證明執行順序。
 
-L2 編號箭頭表示教學步驟先後，真正服務呼叫方向由下方完整串接目錄與解說呈現。Windows 主動輪詢 Mail，教學上的 Mail → Windows 步驟不代表 Mail 推送。L3 import 線也不代表執行時呼叫順序。手機隱藏 SVG 連線文字，保留可點的線與目錄；L0 合作關係目錄在手機預設展開。
+### Source reader and controls
 
-### Source reader and provenance
+函式先進入自己的白板，再開獨立原始碼頁；來源頁取代畫布和小地圖，麵包屑及頁面樹保留。沿用受保護的 `/api/code/:symbolId`，讀取完整選取函式與真實行號，顯示 SHA-256、讀取中、失敗與重試狀態。Discord OAuth、組別隔離及白名單邊界未因換畫布而變更。
 
-選取 L4 函式時，主畫布切換為滿畫布欄寬的來源閱讀區，隱藏 SVG 與縮放控制；右側解說仍保留。閱讀區標示語言、名稱、檔案與起迄行號；白色標頭 padding 20px，深底 code block 可捲動，最高 600px、最小 220px，手機最高 500px。行號欄至少 50px 寬；程式碼不裁成摘要。
-
-讀取中有文字提示，失敗有重試按鈕；資料經受保護的 `/api/code/:symbolId` 取得。能對到函式的來源按鈕開本機快照；其餘 GitHub 連結另開視窗並說明可能與本機版本不同。provenance 明示建置快照、盤點數與動態行為仍需實測。空模組或外部映像採文字與來源入口，不補虛構節點。
+共用主按鈕深綠白字；次要控制白底細框、淡綠 hover，白板工具依場景縮小 padding。搜尋、按鈕及來源連結保留鍵盤焦點；GitHub 來源參考另開視窗並提醒版本可能不同。
 
 ## Do's and Don'ts
 
 ### Do
 
-- **Do** 延續紙白、墨綠、無裝飾陰影的卡片層次，以責任邊界幫助新手閱讀。
-- **Do** 維持 L0–L4 名稱、白話問題、來源行號與完整目錄的對應。
-- **Do** 在手機保留單欄可讀節點、點擊捲到詳情與返回圖面的入口。
-- **Do** 明示教學、靜態關係、本機快照、合成工作紀錄和來源版本差異。
-- **Do** 保留鍵盤焦點、可操作的方向線與 reduced-motion 的既有處理。
+- **Do** 以頁面樹、麵包屑和可點入卡片保持層級方向；以拖動與縮放探索空間。
+- **Do** 維持手機第一卡片可讀的初始視角與覆蓋式導覽，讓使用者再平移探索。
+- **Do** 將位置記憶描述為本次瀏覽器執行期間，將 URL 描述為頁面導覽。
+- **Do** 使用文件化的白板、目錄狀態色、字級和圓角，保留焦點與 reduced-motion 處理。
+- **Do** 保留真實來源行號、受保護程式碼 API、設定葉節點和資料不足提示。
 
 ### Don't
 
-- **Don't** 把教學編號或動畫當作真實呼叫方向、即時流量或部署健康度。
-- **Don't** 用插畫取代架構主視覺，或聲稱已有未存在的批准視覺稿與素材。
-- **Don't** 將唯讀原始碼入口擴為任意檔案讀取，或將播放器做成實際傳訊／批准操作。
-- **Don't** 以 GitHub 分支連結證明本機快照已推送，或以來源盤點證明服務已部署。
-- **Don't** 將目前 CSS／程式碼記錄描述成已完成瀏覽器、新手理解、真 Discord callback 或 VPS/TLS 驗收。
+- **Don't** 依照 v3 的原生 SVG、固定五層 rail 或手機單欄圖規格新增目前畫面。
+- **Don't** 把卡片位置整理宣稱為可永久保存、共享協作或已寫入伺服器。
+- **Don't** 將教學高亮、靜態 import、來源快照或本機合成工作資料當作即時流量與已部署證據。
+- **Don't** 為無函式的設定來源捏造程式碼，或把受保護來源入口擴為任意檔案瀏覽。
+- **Don't** 以本文件更新聲稱 detector、瀏覽器、Discord callback 或 VPS/TLS 驗收已通過。
+
+第四版獨立審查補正：卡片最小高度 180px，段落固定保留兩完整行（3.3em），標題／頁面種類／按鈕不可被 flex 壓縮，避免繁中字形垂直裁切。

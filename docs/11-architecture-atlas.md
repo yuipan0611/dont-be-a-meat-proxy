@@ -65,3 +65,7 @@ Dockerfile 新增 Python 3 及七個來源根目錄，image 建置時重新產�
 3. 後續 evidence commit：本報告、13 張截圖、可審查 metadata 模型、測試輸出及設計文件。
 
 剩餘驗收：PM 整合分支、維護者 真 Discord callback／有效組員與撤銷、VPS/TLS、真 Mail/GitHub 資料、完整 8 GB stack／128 MiB web 負載，以及三位新手能否指出流程方向、各零件責任與來源位置。本次沒有登入 VPS，來源快照與本機測試不計為這些項目已通過。
+
+## 第四版接續（2026-11-18）
+
+維護者 要求改為 Notion 形式的無限白板＋巢狀頁面＋左側目錄樹。現行介面以 [第四版交付](12-infinite-architecture-board.md) 為準；本文件與 atlas-* 截圖保留為第三版歷史證據。第四版實際導入 React Flow，不再只是參考其互動模式。
