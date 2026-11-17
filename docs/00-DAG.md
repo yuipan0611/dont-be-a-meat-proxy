@@ -159,4 +159,4 @@ flowchart TD
 註：Codex worker 沒有 Hostinger MCP 工具（escalation <ORCA_ID>）→ DNS／防火牆改由 PM 端 Hostinger MCP 處理，Codex 只寫 runbook＋hPanel 手動備案。
 | P-1 上線前閘門：全測試＋Go 重跑＋L-09 對 Groq 再演練 | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-P1） | 11-18 | 🔄 97db946：全套 0 fail（Go 13/13 Docker）、L09 STEP1～7 exit 0；Postgres integration 2/8 紅燈 → 續派 P-1b |
 | P-2 TC-16～21 VPS 驗收腳本＋checklist | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-P2） | 11-18 | ✅ 56dbcd6 併入 master（c9c4c87）：ops/acceptance/ tc-14、16～21 腳本＋7 份 checklist（🟡 標 維護者 步驟）；PM 重跑 acceptance＋bot 65 0 fail；delivery-S1 改 Groq |
-| P-3 上線前安全審查（交叉審查） | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-P3） | 11-18 | 🔄 派工中 |
+| P-3 上線前安全審查（交叉審查） | <ORCA_ID> | <ORCA_ID> → P-3b <ORCA_ID> | codex（worktree codex-P3） | 11-18 | ✅ 10 項發現，5 項阻擋全數本地修復（91b6959、1afbba2、68d901e、R-04 f105c33、R-05 7396bb6）；併入 master 704aa1f（safety config 兩邊保留）；PM 重跑 bot 72、client＋gateway＋acceptance 161 pass/13 skip、Python ops OK 0 fail。部署需先套第 9 份 migration＋bot canonical sender 私有副本（見 L09 runbook） |

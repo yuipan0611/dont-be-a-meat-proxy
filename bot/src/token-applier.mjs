@@ -51,7 +51,15 @@ export function createSpoolApplier({ dir, groupId = 'group-a', timeoutMs = 30_00
   }
 
   return {
-    issue: ({ requestId, groupId, tokenId, token }) => submit({ op: 'issue', request_id: requestId, group_id: groupId, token_id: tokenId }, token),
+    async cancelIssue({ requestId, groupId: requestedGroup, tokenId }) {
+      const rid = `${requestId}-cancel`;
+      if (requestedGroup !== groupId || !/^[A-Za-z0-9_-]{1,80}$/.test(rid) || !/^tok_[a-z0-9]{8,32}$/.test(tokenId)) throw new Error('bad cancellation request');
+      await mkdir(sub('requests'), { recursive: true, mode: 0o700 });
+      await atomic(join(sub('requests'), `${rid}.json`), JSON.stringify({ v: 1, op: 'cancel_issue',
+        request_id: rid, group_id: groupId, token_id: tokenId, created_at: now() }));
+    },
+    issue: ({ requestId, groupId, tokenId, token }) => submit({ op: 'issue', request_id: requestId,
+      group_id: groupId, token_id: tokenId, expires_at: Date.now() + timeoutMs }, token),
     revoke: ({ requestId, groupId, tokenId }) => submit({ op: 'revoke', request_id: requestId, group_id: groupId, token_id: tokenId }),
   };
 }

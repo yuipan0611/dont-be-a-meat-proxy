@@ -75,7 +75,7 @@ systemctl list-units --all 'hub-token-applier*' --no-pager
 
 失敗回復：不執行 migration；保留備份與原始碼副本。若 restore DB 留下，先確認名字與沒有 app 連線，再刪 **hub_l09_restore**，不可 drop hub。writer 已停者維持停，決定取消此次部署時才恢復先前實際啟用的 unit（不得無條件全 enable）；Mail／clock／PG／office 都不需重建。
 
-## 2｜schema 5～8、正式 owner/link、隔離秘密與 Hindsight DB
+## 2｜schema 5～9、正式 owner/link、隔離秘密與 Hindsight DB
 
 前置：步驟 1 PASS／可還原備份。執行 `ops/deploy-l09.sh --step 2`。
 
@@ -87,12 +87,13 @@ systemctl list-units --all 'hub-token-applier*' --no-pager
 | 6 | 20261120000000_l05_decisions.sql |
 | 7 | 20261121000000_l08_group_boundaries.sql |
 | 8 | 20261122000000_l08_l05_decision_groups.sql |
+| 9 | 20261123000000_decision_mail_delivery.sql（R-05 持久化 Mail action／receipt） |
 
-再次 migrate 必須全 SKIP、ledger=8。checksum 漂移會拒絕，業務 migration batch 有 transaction/advisory lock；不要編輯已套檔。
+再次 migrate 必須全 SKIP、ledger=9。checksum 漂移會拒絕，業務 migration batch 有 transaction/advisory lock；不要編輯已套檔。R-05 bot 版本依賴第 9 檔，必須先 migrate 再啟動。
 
 建立/核對 group-a、維護者 active owner、唯一 active Discord link，設 bank_id=group-a；不 seed 測試成員。建立專用秘密與 state 目錄（不同 container 只 mount 自己必要檔案），空 validator policy 不覆寫既有 維護者 allowlist。`ops/postgres hindsight-init` 在同一 L-01 cluster 建 hindsight database／hindsight_app、vector，保留密碼，驗 `hindsight_app→hub`、`hub_app→hindsight`、PUBLIC→hindsight 的 CONNECT 都是 false。
 
-預期：各 APPLY/SKIP、`migrations_total=8`、`secrets_and_db=...cross DB CONNECT denied`、三個原容器不變、STEP 2 PASS。
+預期：各 APPLY/SKIP、`migrations_total=9`、`secrets_and_db=...cross DB CONNECT denied`、三個原容器不變、STEP 2 PASS。
 
 失敗回復：留 schema、audit、秘密與 volume，先修正前置後重跑此段；不要把 pending/revoked 裝置改 active。migration 失敗先查 checksum／SQL，優先 forward migration；若確需資料回復，停止本輪新 DB consumers，走 [L-01 §5](runbook-L01-postgres.md) 隔離 restore／改名程序，重新核對所有已撤銷 token，絕不直接 pg_restore --clean 正式 hub。
 
@@ -191,3 +192,13 @@ PM 接著記 `free -h`、`docker stats --no-stream`，在 retain 與 web 十人�
 實際 owning runbook：[L-01](runbook-L01-postgres.md)、[L-02](runbook-L02-memory.md)、[L-02b](L02b-memory-bridge.md)、[L-03/L-03b](runbook-L03-discord.md)、[L-04](L04-task-github.md)、[L-07](L07-validator.md)、[L-08](L08-group-isolation.md)、[UI](runbook-UI-guide.md)、[架構工作台](../10-architecture-workbench.md)。本文件是這一輪的唯一順序，舊文的 schema=5、web port=8780、各自 reload 與 legacy render-caddy 指令不適用本輪。
 
 本機重現：`bash ops/test/l09-dry-run.sh`；最新收據見 [L09-rehearsal-2.md](evidence/L09-rehearsal-2.md)，F-11 前的歷史收據保留於 [L09-launch-dry-run.txt](evidence/L09-launch-dry-run.txt)。假的僅是 VPS 的 systemd adapter、Discord provider 及 Hindsight provider fixture（不花 LLM 費用）；gateway 使用真正 `groq-api` adapter 與合成 key，未呼叫 Groq。真 Docker Compose／PG migrations+restore／Caddy validate+reload／Mail／validator／bank-proxy／web 與 Linux owner/mode 確實執行。validator、bank-proxy、web 先在外層 Docker 從本次 source 建置再載入假 VPS（避開巢狀 Go/npm/apk 網路問題），不是替身實作；gateway 演練用 Dockerfile.test 省略歷史 CLI 安裝，Groq adapter 仍為正式來源，不能當成正式 gateway image 建置驗收。正式 VPS 的 build/download 可用性仍待 PM。fixture 範圍與未驗項必須與輸出一起保存，不可宣稱真服務驗收。
+
+## P-3 後續安全修正的部署契約
+
+本機修正不代表 VPS 已更新。開放 token／決策前，先套第 9 份 migration、重建 bot image，再按步驟 3 執行 bootstrap：它新增私有 `hubbot.sender.json`（Mail 產生的 canonical 名稱與 sender token，來源 0600），以 0400、bot UID/GID 的副本放進 `private/bot/hubbot.sender.json`。既有身份都保留；不把 bot 改名成硬編碼 HubBot，不輪替舊 token。決策 writer 固定走 `MAIL_WRITER_URL=http://validator:8766/mcp/`，reader 路徑與 provider key 權限不變。
+
+若既有 journal 已 PASS，不可重跑部署 step 或刪 journal；由 operator 在維護窗按原實際 flags 先 migrate，執行 `ops/bootstrap --state-dir /var/lib/neighbor-hub/private --url http://127.0.0.1:8765/mcp/`，用安全檔案操作建立上述 bot 專用副本，再只重建／啟動 bot，記錄額外變更與驗收。不要為修正重建 Mail／clock／PG，不要重放舊 Caddy allowlist。
+
+TokenApplier 需要持續運作的 5 秒 group timer：每輪會對帳 pending token，私有 `.revoke` 記號與原 credential 在得到 reload＋401 前不得清除；發放請求附期限，過期或取消的請求不能再啟用。新 bot 在發放失敗時先持久化 `cancel_issue` spool 請求，再更新 DB，即使 DB 暫時斷線也有補償依據。helper 重啟或未知成功窗口會保守撤銷未確認的發放，必要時重新 /connect；不宣稱無法連線／reload 的 Caddy 可即時撤銷。升級前先凍結舊 writer，確認舊版無期限 issue request 已清空或逐一撤銷，不將它們留待新版重新發放。
+
+決策在 Mail 收據與 DB transaction 都完成前維持 draft，Discord 回報寫回失敗並保留按鈕。用同一按鈕或 recall 重試；已記錄的 action／timestamp／idempotency key 不變，另一個 confirm／reject 意圖不能覆蓋待同步 action。若舊版本已有 confirmed/rejected 但無 Mail 收據的歷史列，交由 operator 逐筆核對；不要自動重送或回滾既有決策。GitHub token 仍依本次 L09 gate 保持缺省，/task 成功路徑及其 Mail writer 同步另行驗收。

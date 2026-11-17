@@ -251,6 +251,8 @@ def handle_issue(cfg, db, req):
     if not dev or dev['group_id'] != getattr(cfg, 'group_id', 'group-a') or req.get('group_id') != dev['group_id'] or dev['status'] != 'active':
         cred.unlink(missing_ok=True)
         return {'status': 'failed', 'error': 'device is not active in the registry'}
+    if (cfg.token_dir / (tid + '.revoke')).exists():
+        return {'status': 'failed', 'error': 'issuance cancelled or previously unconfirmed'}
     try:
         token = read_owned_secret(cred, owner_uid=cfg.spool.stat().st_uid if os.geteuid() == 0 else None)
     except ApplyError as e:
@@ -263,17 +265,21 @@ def handle_issue(cfg, db, req):
         return {'status': 'failed', 'error': 'credential does not match the registry hash'}
     target = cfg.token_dir / tid
     atomic_write(target, token + '\n')
+    # If the process/DB fails after reload, a later run must cancel this unknown issuance rather
+    # than trusting the still-active DB row. Remove only after its applied receipt is durable.
+    atomic_write(cfg.token_dir / (tid + '.revoke'), rid + '\n')
     cred.unlink(missing_ok=True)
     try:
+        if req.get('expires_at') is not None and time.time() * 1000 >= req['expires_at']:
+            raise ApplyError('issue deadline expired; revocation pending')
         revision, applied, _ = apply(cfg, db, expect_ok=[token])
-    except ApplyError as e:
+        if req.get('expires_at') is not None and time.time() * 1000 >= req['expires_at']:
+            raise ApplyError('issue deadline expired after apply; revocation pending')
+    except (ApplyError, RuntimeError, OSError) as e:
         db.fail_issue(tid, rid, 'apply_failed')
-        target.unlink(missing_ok=True)
-        try:
-            settle(cfg, db, {})
-        except ApplyError:
-            pass  # previous snippet is still live; the pending row is excluded on the next successful run
-        return {'status': 'failed', 'error': str(e)}
+        # Keep the credential as a durable compensation record, including when the desired set is
+        # empty. process() retries the revocation until reload + a probe prove this token is denied.
+        return {'status': 'failed', 'error': str(e) if isinstance(e, ApplyError) else 'apply or probe unconfirmed; revocation pending'}
     db.mark_applied(tid, revision, rid)
     settle(cfg, db, applied)
     return {'status': 'applied', 'config_revision': revision}
@@ -297,23 +303,70 @@ def handle_revoke(cfg, db, req):
         return {'status': 'failed', 'probe': codes[0], 'error': 'old token still accepted'}
     db.complete_revocation(tid, revision, rid)
     secret.unlink(missing_ok=True)
+    (cfg.spool / 'credentials' / tid).unlink(missing_ok=True)
     return {'status': 'applied', 'config_revision': revision, 'probe': 401}
 
 
 def parse_request(path):
     req = json.loads(path.read_text())
-    if (req.get('v') != 1 or req.get('op') not in {'issue', 'revoke'}
+    if (req.get('v') != 1 or req.get('op') not in {'issue', 'revoke', 'cancel_issue'}
             or not isinstance(req.get('request_id'), str) or not REQUEST_ID.fullmatch(req['request_id'])
             or req['request_id'] != path.stem
+            or ('expires_at' in req and (type(req['expires_at']) is not int or req['expires_at'] < 0))
             or not isinstance(req.get('token_id'), str) or not TOKEN_ID.fullmatch(req['token_id'])):
         raise ValueError('malformed request')
     return req
+
+
+def handle_cancel_issue(cfg, db, req):
+    tid = req['token_id']
+    if req.get('group_id') != getattr(cfg, 'group_id', 'group-a'):
+        return {'status': 'failed', 'error': 'group boundary'}
+    atomic_write(cfg.token_dir / (tid + '.revoke'), req['request_id'] + '\n')
+    # Cancellation can arrive before the original issue was handled. Preserve its probe secret.
+    target, cred = cfg.token_dir / tid, cfg.spool / 'credentials' / tid
+    if not target.exists() and cred.exists():
+        value = read_owned_secret(cred, owner_uid=cfg.spool.stat().st_uid if os.geteuid() == 0 else None)
+        atomic_write(target, value + '\n')
+    return {'status': 'pending'}
+
+
+def reconcile_revocations(cfg, db, *, markers_only=False):
+    """DB authority can change after the last issue receipt (bot timeout/crash).
+
+    A private credential remains until its removal from the running allowlist is proved by 401.
+    Scan even with an empty spool, so a failed compensation is retried by the next timer run.
+    """
+    results = []
+    tids = {p.name.removesuffix('.revoke') for p in cfg.token_dir.iterdir()}
+    for tid in sorted(t for t in tids if TOKEN_ID.fullmatch(t)):
+        rid = 'reconcile_' + tid
+        marker = cfg.token_dir / (tid + '.revoke')
+        if markers_only and not marker.exists():
+            continue
+        try:
+            dev = db.device(tid)
+            if not dev or dev['group_id'] != getattr(cfg, 'group_id', 'group-a'):
+                continue
+            if marker.exists() and dev['status'] == 'active':
+                db.fail_issue(tid, rid, 'unconfirmed_issue')
+                dev = db.device(tid)
+            if dev['status'] == 'active':
+                continue
+            result = handle_revoke(cfg, db, {'token_id': tid, 'request_id': rid, 'group_id': dev['group_id']})
+            if result['status'] == 'applied':
+                marker.unlink(missing_ok=True)
+            results.append((rid, 'reconciled' if result['status'] == 'applied' else 'revocation_pending'))
+        except (ApplyError, OSError, RuntimeError):
+            results.append((rid, 'revocation_pending'))
+    return results
 
 
 def process(cfg, db):
     """Handle every pending request once. Returns a list of (request_id, status) for logging."""
     done = []
     with applier_lock(cfg.state):
+        done.extend(reconcile_revocations(cfg, db, markers_only=True))
         requests = sorted((cfg.spool / 'requests').glob('*.json'), key=lambda p: (p.stat().st_mtime, p.name))
         for path in requests:
             rid = path.stem
@@ -334,14 +387,18 @@ def process(cfg, db):
                 done.append((rid, 'malformed'))
                 continue
             try:
-                receipt = handle_issue(cfg, db, req) if req['op'] == 'issue' else handle_revoke(cfg, db, req)
+                handler = {'issue': handle_issue, 'revoke': handle_revoke, 'cancel_issue': handle_cancel_issue}[req['op']]
+                receipt = handler(cfg, db, req)
             except ApplyError as e:
                 # DB unreachable etc.: answer so the bot does not wait; issue rows stay whatever the DB says
                 # (the bot already treats no-confirm as fail closed).
                 receipt = {'status': 'failed', 'error': str(e)}
             write_receipt(cfg, rid, receipt)
+            if req['op'] == 'issue' and receipt['status'] == 'applied':
+                (cfg.token_dir / (req['token_id'] + '.revoke')).unlink(missing_ok=True)
             path.rename(archive / path.name)
             done.append((rid, receipt['status']))
+        done.extend(reconcile_revocations(cfg, db))
     return done
 
 

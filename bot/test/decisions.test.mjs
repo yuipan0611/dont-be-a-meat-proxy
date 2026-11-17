@@ -26,6 +26,60 @@ function setup({ now = '2026-11-20T02:00:00.000Z' } = {}) {
   return { clock, store, mail, discord, mailReader, decisions, bridge, delivery, router };
 }
 
+test('R-05: failed Mail confirmation stays draft and retries the same durable action after manager restart', async () => {
+  const s = setup();
+  await s.store.recordDecisionDraft({ groupId: 'group-a', draftMailId: 1, authorAgent: 'BlueLake' });
+  const attempts = [];
+  s.mail.callTool = async (name, args) => {
+    attempts.push(structuredClone(args));
+    if (attempts.length === 1) throw new Error('synthetic outage');
+    return { message_id: 9001 };
+  };
+  const first = fakeButtonInteraction('decision:confirm:1');
+  await s.decisions.handleButton(first);
+  assert.equal((await s.store.getDecisionByMailId(1)).status, 'draft');
+  assert.match(first.log.find(x => x.type === 'edit').content, /失敗.*重試/);
+  assert.ok(!first.log.some(x => x.type === 'message.edit'), 'retry buttons remain available');
+  s.clock.advance(60_000);
+  const restarted = createDecisionsManager({ store: s.store, discord: s.discord, mailClient: s.mail, clock: s.clock, defaultGuildId: GUILD });
+  const retry = fakeButtonInteraction('decision:confirm:1');
+  await restarted.handleButton(retry);
+  assert.equal((await s.store.getDecisionByMailId(1)).status, 'confirmed');
+  assert.deepEqual(attempts[1], attempts[0], 'retry uses identical identity, body, timestamp and idempotency key');
+  assert.match(attempts[0].idempotency_key, /^[0-9a-f-]{36}$/);
+  assert.notEqual(attempts[0].thread_id, '1', 'Mail thread identifiers must not be bare numeric IDs');
+});
+
+test('R-05: unknown Mail result can retry without a duplicate stored message', async () => {
+  const s = setup();
+  await s.store.recordDecisionDraft({ groupId: 'group-a', draftMailId: 2, authorAgent: 'BlueLake' });
+  const saved = new Map();
+  let calls = 0;
+  s.mail.callTool = async (name, args) => {
+    calls++;
+    assert.match(args.idempotency_key, /^[0-9a-f-]{36}$/);
+    if (!saved.has(args.idempotency_key)) saved.set(args.idempotency_key, 9002);
+    if (calls === 1) throw new Error('response lost after save');
+    return { message_id: saved.get(args.idempotency_key), idempotent_replay: true };
+  };
+  await s.decisions.handleButton(fakeButtonInteraction('decision:reject:2'));
+  assert.equal((await s.store.getDecisionByMailId(2)).status, 'draft');
+  await s.decisions.handleButton(fakeButtonInteraction('decision:reject:2'));
+  assert.equal((await s.store.getDecisionByMailId(2)).status, 'rejected');
+  assert.equal(saved.size, 1);
+  assert.equal(calls, 2);
+});
+
+test('R-05: a missing Mail writer never confirms a decision', async () => {
+  const s = setup();
+  await s.store.recordDecisionDraft({ groupId: 'group-a', draftMailId: 3, authorAgent: 'BlueLake' });
+  const manager = createDecisionsManager({ store: s.store, discord: s.discord, clock: s.clock, defaultGuildId: GUILD });
+  const ix = fakeButtonInteraction('decision:confirm:3');
+  await manager.handleButton(ix);
+  assert.equal((await s.store.getDecisionByMailId(3)).status, 'draft');
+  assert.match(ix.log.find(x => x.type === 'edit').content, /失敗.*重試/);
+});
+
 test('SR-DEC-01 / TC-20: agent writes decision -> stored as draft in DB -> Discord notification has buttons', async () => {
   const s = setup();
   await s.bridge.tick(); // start at tail

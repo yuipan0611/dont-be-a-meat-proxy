@@ -252,13 +252,13 @@ if [[ -n "$TARGET_CLOCK_DIR" && -d "$STAGING_DIR/hubclock" ]]; then
   if [[ -f "$RESTORED_STATE_FILE" ]]; then
     RESTORED_CLOCK_HASH="$(sha256_file "$RESTORED_STATE_FILE")"
     if command -v node >/dev/null 2>&1; then
-      eval "$(node -e '
+      RESTORED_CLOCK_CURSOR="$(node -e '
         const fs = require("node:fs");
         try {
           const s = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-          console.log(`RESTORED_CLOCK_CURSOR=${JSON.stringify(s.cursor ?? null)}`);
+          console.log(Number.isSafeInteger(s.cursor) && s.cursor >= 0 ? s.cursor : "null");
         } catch (e) {
-          console.log("RESTORED_CLOCK_CURSOR=corrupted");
+          console.log("corrupted");
         }
       ' "$RESTORED_STATE_FILE" 2>/dev/null || true)"
     fi
