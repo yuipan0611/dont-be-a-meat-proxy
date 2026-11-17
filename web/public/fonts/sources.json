@@ -1,0 +1,18 @@
+[
+  {
+    "name": "inter",
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource-variable/inter/-/inter-5.3.0.tgz",
+    "file": "inter-latin.woff2",
+    "sha256": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62",
+    "bytes": 48256
+  },
+  {
+    "name": "geist-mono",
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/@fontsource-variable/geist-mono/-/geist-mono-5.3.0.tgz",
+    "file": "geist-mono-latin.woff2",
+    "sha256": "684ad5b531f81d43c1e8c7038262d5db7cdc1f68006e04d6c7769efa8d33c8cc",
+    "bytes": 23128
+  }
+]
