@@ -24,7 +24,7 @@ client 45、hub-hook 36、hub-hook 整合 5（TC-02／04／13、session.closed�
 | TC | 內容 | 方式 | 結果 | 證據 |
 |---|---|---|---|---|
 | TC-01 | 無／錯 token 一律 401 | Mac 跑 runbook-H02 §6 | ✅ | 20 次 401（9 路徑 GET＋MCP POST） |
-| TC-02 | G-02 非同步交接 Mac→Windows，再反向 | 人工 | 🟡 進行中 | Mac→Windows：Mac 真 session 寫交接 #37（11:57），兩邊 session 都已關閉，等 ≥10 分鐘後 Windows 開新 session |
+| TC-02 | G-02 非同步交接 Mac→Windows，再反向 | 人工 | 🟡 一半 ✅ | Mac→Windows ✅：Mac 真 session 寫交接 #37（11:57:40）後 `/exit`（session.closed #38），兩邊都關閉 ≥10 分鐘；Windows 新 session 只輸入「開始」，第一個回覆即列出 #37（維護者 目視確認，2026-11-17）。Windows→Mac：進行中 |
 | TC-03 | 交接原文逐字取回 | 自動 | ✅ | `verify-h02.mjs mcp` 對正式 Hub 送讀繁中／換行／emoji，sha256 一致（message 1、2）；TC-06 回覆 #5 原文逐字顯示 |
 | TC-04 | 沒未讀／Hub 連不上時的開工畫面 | 人工 | ✅ | Hub 連不上：start 輸出「⚠ 無法取得交接與專案現況：未送達：無法連線 Hub（network）。這不代表沒有新項目。」；沒未讀：Mac 首次開工 `unread:0, syncError:null`（hook.log 09:56） |
 | TC-05 | 重啟後持久 | runbook-H02 §6 | ✅ | StartedAt 01:04:03Z→01:32:22Z，同 ID 同 sha256 |
