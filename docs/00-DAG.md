@@ -144,7 +144,7 @@ flowchart TD
 | L-03 Discord bot | <ORCA_ID> | <ORCA_ID> | swe-Tom | 11-27 | ✅ 程式 21bb2ad 併入 master（f892509），PM 重跑 bot 44/44；未部署：需 維護者 建 Discord application；**L-03b TokenApplier ✅** 1082a08 併入 master，PM 重跑 token_applier 15/15、hub_ops 7 OK（1 skip）；VPS 部署（含 import-mvp、Caddy reload）與 bot 一起做 |
 | L-04 Discord 建 GitHub Issue | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-2 | 11-28 | ✅ 33a5143 併入 master，PM 重跑 bot 56/56；未部署：需 GitHub token（維護者）＋ register-commands |
 | L-05 決策草稿→正式 | <ORCA_ID> | <ORCA_ID> → <ORCA_ID> | agy-junior-swe-1 | 11-28 | ✅ 8832b89 併入 master（agy-1 解 bot 衝突，PM 解 client 測試衝突）；PM 重跑 bot 64/64、client 118（105 pass／13 skip）0 fail；未部署 |
-| L-08 跨組隔離 | <ORCA_ID> | <ORCA_ID>（原 <ORCA_ID> 因 worktree 有他人未提交 UI 工作改派） | codex（worktree codex-L08） | 11-29 | 🔄 派工中 |
+| L-08 跨組隔離 | <ORCA_ID> | <ORCA_ID> → 解衝突 <ORCA_ID>（原 <ORCA_ID> 因 worktree 有他人未提交 UI 工作改派） | codex（worktree codex-L08） | 11-29 | ✅ 1bb4aa6 併入 master：TC-14 本機 grp-test／grp-test2 全過（96 次跨組 401、附件 marker 無外洩、Hindsight／DB／決策隔離、TokenApplier）；PM 重跑 bot 64、client 105（13 skip）、bank-proxy＋bridge 42、python ops 0 fail；未部署 |
 | EVAL-01 question／action 分類評測 | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-2 | 11-29 | ✅ 30 則 fixtures＋runner 併入 master，PM 重跑單元 10/10；真模型 claude CLI 第 1 次 30/30 正確（action→question 0、question→action 0%），收據 docs/ops/evidence/EVAL01-claude-cli-run1.md |
 | EVAL-01 收件端判斷 question／action | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-2 | 11-28 | ✅ 資料集 fixtures/eval-classify-v1.jsonl（30 則，10 Q/10 A/10 mixed）、評測 runner ops/eval/eval-classify.mjs、單元測試 10/10 PASS |
 
