@@ -28,18 +28,28 @@ client 45、hub-hook 36、hub-hook 整合 5（TC-02／04／13、session.closed�
 | TC-03 | 交接原文逐字取回 | 自動 | ⬜ | |
 | TC-04 | 沒未讀／Hub 連不上時的開工畫面 | 人工 | ⬜ | |
 | TC-05 | 重啟後持久 | runbook-H02 §6 | ✅ | StartedAt 01:04:03Z→01:32:22Z，同 ID 同 sha256 |
-| TC-06 | question 60 秒內自動回答 | 人工 | ⬜ | 判準見下 |
-| TC-07 | action 先同意才執行 | 人工 | ⬜ | |
-| TC-08 | action 拒絕；混合請求當 action | 人工 | ⬜ | |
+| TC-06 | question 60 秒內自動回答 | 人工 | ✅（Mac 真 session＋模擬 RedStone） | #4 問 → #5 答，**18 秒**，答案正確（列出 8 個項目）；HubClock `question:answered`。真 Windows 發問待 Windows 接入 |
+| TC-07 | action 先同意才執行 | 人工 | ✅ | #11：卡片先顯示（presented #12）、檔案未建；維護者 同意 → HubClock approved（#14，02:42:58Z）→ 10:43:06 才建立 tc07.txt（approved-ok） |
+| TC-08 | action 拒絕；混合請求當 action | 人工 | ✅ 拒絕部分 | #16：維護者 拒絕 → HubClock rejected（#19），tc08.txt 未建立。混合請求：envelope 未帶 intent 時預設 action（程式行為，見下方已知問題） |
 | TC-09 | 確認逾時 30 分鐘＝拒絕 | 人工（要等 30 分鐘） | ⬜ | |
 | TC-10 | 撤銷 Windows，Mac 不受影響 | runbook-H02 §6 | ✅ | 同 session 下一請求 401、Mac 正常；Mail／Caddy 未重啟 |
 | TC-11 | 收件者不存在不保存 | 自動 | ✅ | E-RCPT，delivery tail 不變 |
-| TC-12 | 收件者離線時 action 只保存不執行 | 人工 | ⬜ | |
+| TC-12 | 收件者離線時 action 只保存不執行 | 人工 | 🟡 前半 ✅ | #22 送給沒有 session 的 RedStone：已保存、無執行。待 Windows 開工時確認以卡片呈現、不自動執行 |
 | TC-13 | 延遲（每方向 n≥5，≤60 秒） | 自動＋人工 | ⬜ | |
 
 Mac 雙真 session 預驗（Ben，2026-11-17）：TC-02 4/4、TC-06 5/5（24～36 秒）、權限提示中訊息排隊、回答後 2.5 秒處理；見 `docs/ops/H04-validation.md`。
 
 TC-06／13 判準（**維護者 2026-11-17 同意**）：閒置 ≤60 秒；AI 忙時「目前這一步結束後立即收到」。另外補記：等待權限提示時的實際行為（H-04a／H-04 未測）。
+
+## 額外驗證
+
+- **session.closed → 待確認失效（SR-CFM-08）** ✅：TC-07 第一次送出（#7）時卡片已顯示，維護者 關閉 cmux 的 session → SessionEnd 送 session.closed（#9）→ HubClock `action:invalidated`，並通知 RedStone（#10）。
+- **正式環境喚醒**：#3 送出 09:56:59 → Mac watcher 09:57:02 偵測。
+
+## 已知問題（不影響驗收）
+
+- 回覆訊息沿用 envelope 預設 intent，顯示成 `help/action`／`task/action`，實際內容會註明「同一串裡的回覆，不是新的請求」，不會被當成新請求（HubClock 只記到 1 個 answered）。屬顯示問題，上線批次修。
+- HubClock 通知的標籤顯示 `action/undefined`，同屬顯示問題。
 
 ## 未過項目與處理
 
