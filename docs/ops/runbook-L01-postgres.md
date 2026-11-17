@@ -1,6 +1,6 @@
 # L-01：pgvector Postgres 與 Hub 資料庫
 
-2026-11-17。**本機驗證完成；VPS 尚未部署，待 PM 審閱本 runbook 後由 PM／維護者 操作**。L-01 的 VPS 驗收仍未完成。
+2026-11-17。本機驗證完成；**VPS 已部署並驗收（PM，2026-11-17 08:10～08:12 UTC，master 85c6a7f）**：§2～§5 全部照做，結果記於 `docs/00-DAG.md` L-01 列。部署前程式目錄備份於 VPS `/root/neighbor-hub.pre-L01`。
 
 依據：`docs/08-data-layer-supabase.md`、SRS §4.4～4.5、`docs/ops/vps-inventory.md`。本票只部署資料庫，不切換既有 Caddy allowlist、HubClock Store、Mail SQLite，也不匯入正式成員與 token。既有 `deploy/compose.yaml` 與 office 系統 Caddy 不需變更。
 
