@@ -1,0 +1,7 @@
+# Add only when using deploy/hubclock/compose.hubclock.yaml.
+services:
+  hubclock:
+    environment:
+      HUBCLOCK_MAIL_URL: http://validator:8766/mcp/
+    depends_on:
+      validator: { condition: service_healthy }

@@ -44,7 +44,7 @@ cd .. && HUB_PG_PLATFORM=linux/arm64 node --test ops/test/postgres.integration.t
 
 整合測試沒有 Docker 或 Mail binary 時會 **skip**，不會假裝通過。替身測試涵蓋：TC-16 只給本人／非成員拒絕／撤銷後重發／applier 失敗作廢；TC-17 引用 ID＋時間、草稿標示、編造 ID 被擋、額度 0 不呼叫 LLM、20 個並行預留不超額、台北跨日；TC-18 Mac→Windows 一則 DM、未保存不通知、離線彙總、失敗不逐則重送、Hub 斷線不漏。
 
-**沒驗的**：真 Discord（沒有 bot token）、真 Haiku 5.5 呼叫與 EVAL-02、VPS 上的容器網路、TokenApplier host 端（不存在，見 §6）。
+**沒驗的**：真 Discord（沒有 bot token）、真 Haiku 5.5 呼叫與 EVAL-02、VPS 上的容器網路與 systemd 實際觸發。TokenApplier host 端見 §4b（L-03b）。
 
 ## 3. Discord application（維護者 建立；**不要**把 token 貼到聊天）
 
@@ -66,6 +66,22 @@ bot 沒有 Docker socket、沒有 Caddy admin。它只寫 spool（host `/var/lib
 | `receipts/<request_id>.json` | helper | `{request_id, status:"applied"\|"failed", config_revision?, probe?, error?}`；revoke 需 `probe:401`（舊 token 實測被拒） |
 
 helper 依 docs/08 §5：讀 `caddy_allowlist_export`＋私密檔 → 驗 hash → `caddy validate` → 原子替換 → reload → 寫 receipt。30 秒沒有 receipt，bot 視為 `unknown`：issue 作廢、revoke 維持待撤銷。
+
+## 4b. TokenApplier host 端（L-03b，`ops/token-applier`）
+
+root 執行的 oneshot，由 systemd path unit（requests 目錄非空就觸發）＋每分鐘 timer 備援叫起；單一 flock，一次處理一個申請。
+
+| 申請 | 檢查 | 成功 | 失敗 |
+|---|---|---|---|
+| issue | DB 列 `active`；credential 是一般檔、600、spool 擁有者；`sha256 == token_hash` | 原值搬到 `/var/lib/neighbor-hub/private/tokens-db/<token_id>`（root 600）→ 產生 allowlist → `caddy validate` → `systemctl reload caddy`（系統 Caddy 的 ExecReload＝`caddy reload --force`）→ probe：無 token 401、新 token 200 → `devices.config_revision`＋audit `device.config.applied` → receipt `applied` | **validate 失敗絕不 reload**；validate／reload 失敗都還原舊 snippet；列改 `revocation_pending`＋audit `device.issue.failed`；刪 credential；receipt `failed` |
+| revoke | DB 列 `revocation_pending`（bot 已設） | 產生不含它的 allowlist → validate → reload → 舊 token probe 401 → `revoked`＋audit `device.revoke.applied` → 刪私密原值 → receipt `applied, probe:401` | 維持 `revocation_pending`；receipt `failed`（bot 回「還沒確認完成」） |
+
+- **產生規則**（docs/08 §5）：`caddy_allowlist_export` 每列都要有私密原值且 hash 相符，**任一列缺／不符就整批不套用**。MVP `tokens.json` 的 Mac／Windows 若還沒匯入 DB，照舊放行；同一 hash 在 DB 或 tokens.json **任一邊不是 active 就排除**。upstream header 沿用 `tokens.json` 的 upstream。輸出格式與 `ops/render-caddy` 相同（共用 `hub_ops.render`），寫 `/etc/caddy/hub-private/auth.caddy`，owner caddy、600。
+- **只動 hub 的 private snippet**：不寫 `/etc/caddy/Caddyfile`、不碰 office 站；systemd `ReadWritePaths` 只有 `/etc/caddy/hub-private`、spool、private 目錄。Caddy 的錯誤輸出一律不印（可能含 token）。
+- **冪等**：同一 request ID 已有 receipt 就不再套用，只把申請移到 `done/`。
+- **競態**：bot 30 秒逾時把列改 pending 時，applier 套用後會再比對 DB，必要時立刻再 render 一次，Caddy 不會留下 DB 已不允許的 token。
+- **DB 連不上**：回 receipt `failed`（bot 不用等到逾時），不動 Caddy。
+- **第一次套用後**，`private/db-authority` 標記存在：舊的 `ops/render-caddy`／`ops/revoke`／`ops/issue` 會拒絕執行（否則只依 tokens.json 重產會把 /connect 發的裝置全部切掉）。之後撤銷一律用 Discord `/revoke` 或 `ops/token-applier render`。
 
 ## 5. 部署（PM／operator，在 VPS root shell）
 
@@ -94,8 +110,9 @@ insert into discord_links (member_id, guild_id, discord_user_id)
   select id, :guild, :duser from members where group_id='group-a' and display_name='維護者';
 SQL
 #    通知要知道「哪個 agent 屬於 維護者」：在 維護者 的裝置列上設 allowed_agents（例 {BlueLake}、{RedStone}）。
-#    MVP 的 Mac／Windows token 目前在 Caddy 檔、不在 DB；要讓 bridge 監看，需 operator 以 hash 補入 devices
-#    （由私密 token 檔計算 sha256，不輸出原值），或等 /connect 發的新裝置列再 update allowed_agents。
+#    MVP 的 Mac／Windows token 由第 5 步 `ops/token-applier import-mvp` 以 hash 匯入（allowed_agents 取 tokens.json 的 agent）；
+#    /connect 發的新裝置列要另外 update allowed_agents（agent 名稱 register 後才知道）。
+#    私密原值放 private/tokens-db/，隨既有每日備份（private 目錄）一起備份。
 
 # 4) 啟動
 export HUB_DISCORD_GUILD_ID=<GUILD_ID> HUB_DISCORD_APPLICATION_ID=<APP_ID> HUB_BOT_UID=$BOT_UID HUB_BOT_GID=$BOT_GID
@@ -105,6 +122,16 @@ $DC build bot
 $DC run --rm --no-deps bot check-config        # {"ev":"config.ok",...}
 $DC run --rm --no-deps bot register-commands   # {"ev":"commands.registered","names":["connect","revoke","status"]}
 $DC up -d bot
+
+# 5) host TokenApplier（L-03b）
+install -m 644 ops/templates/hub-token-applier.service ops/templates/hub-token-applier.path ops/templates/hub-token-applier.timer /etc/systemd/system/
+systemctl daemon-reload
+/opt/neighbor-hub/ops/token-applier import-mvp   # 把 MVP Mac／Windows token 以 hash 匯入 DB（需 §3 的 維護者 owner 列），套一次：validate→reload→probe
+#   預期：Imported under DB authority: tok_mvpmac01, tok_mvpwindows01；Mac／Windows 原設定仍可用
+#   之後依 tokens.json 的 agent 設 allowed_agents（import 已帶入 BlueLake／RedStone），bridge 會開始監看
+systemctl enable --now hub-token-applier.path hub-token-applier.timer
+systemctl list-timers hub-token-applier.timer --no-pager
+journalctl -u hub-token-applier.service -n 20 --no-pager   # 每筆申請一行 {"request_id":…,"status":…}，不含 token
 $DC logs --tail 20 bot                          # 一行 ready，之後每 15 秒一行 tick
 ```
 
@@ -112,7 +139,7 @@ $DC logs --tail 20 bot                          # 一行 ready，之後每 15 �
 
 ## 6. 驗收（手機 Discord，證據放 `docs/evidence/S1/TC-16..18/`，不放 token）
 
-- **TC-16**：維護者 `/connect platform:Windows` → 只有自己看到、有一行設定與保存／刪除告知。測試小帳號 `/connect` → 「你不是這個專案的成員」。`/revoke <token_id>` → 「已撤銷…實測 401」；再 `/connect` 拿到新的；舊的 curl 仍 401。**依賴 TokenApplier host helper（未實作）**；沒有它時 `/connect` 會回「發放失敗」——這是預期的 fail-closed，不算通過。
+- **TC-16**：維護者 `/connect platform:Windows` → 只有自己看到、有一行設定與保存／刪除告知。測試小帳號 `/connect` → 「你不是這個專案的成員」。`/revoke <token_id>` → 「已撤銷…實測 401」；再 `/connect` 拿到新的；舊的 curl 仍 401；另一台裝置照常 200。每一步在 `journalctl -u hub-token-applier` 有一行 applied，`audit_log` 有 `device.config.applied`／`device.revoke.applied`。office.example.invalid 前後都 200。故障演練（可選）：暫時讓 validate 失敗（例如在測試 VPS 改壞 Caddyfile 再改回），`/connect` 應回「發放失敗」、Caddy 沒有 reload、舊設定照常。
 - **TC-17**：先有兩筆交接 → `/status 現在做到哪` → 回覆有「依據：#ID（時間）」、只有自己看得到；問記憶沒有的事 → 「記憶中沒有這項資訊」；`BOT_DAILY_CAP_USD=0` 重啟 bot 再問 → 「今日查詢額度已用完」且 Anthropic 用量沒增加；兩台電腦關機再問一次。
 - **TC-18**：Mac 交接給 Windows → 15 秒內 DM（類型、寄件者、摘要、Mail #ID）；送給不存在的收件者 → 沒有 DM。
 
@@ -124,12 +151,12 @@ $DC logs --tail 20 bot                          # 一行 ready，之後每 15 �
 
 | 項目 | 狀態 | 誰 |
 |---|---|---|
-| TokenApplier **host helper**（DB→Caddy render、validate、reload、401 probe、寫 receipt） | **未實作**；bot 端協定與測試已完成。沒有它 `/connect`／`/revoke` 在 VPS 上一律 fail-closed | PM 派工（docs/08 §8 列給 H-02 owner：Codex） |
+| TokenApplier host helper | **L-03b 已實作**（§4b）：本機假 Caddy／假 spool＋真 Postgres＋真 Caddy 2.11.9 validate 通過；VPS systemd 觸發與真 reload 未驗 | PM 部署（§5-5） |
 | 真 Discord bot token／Application／guild ID | 等 維護者 依 §3 建立 | 維護者 |
 | 是否開 Presence＋Server Members（privileged）以做「成員離線→彙總」 | 預設不開；不開時只對 bot／Discord 停機積壓做彙總 | 維護者／PM |
 | Hindsight recall 唯讀工具 | L-02 完成後加到 `createReadOnlyTools`（同樣 `readOnly:true`） | Tom（L-02 後） |
 | 決策「已確認」狀態 | L-05 前一律標草稿 | L-05 |
 | EVAL-02、真 Haiku 5.5 回答品質 | 未跑（沒有 key、跑會花錢） | 上線驗收 |
-| MVP 既有 Mac／Windows token 補進 `devices` 以便監看 | runbook §5-3 說明，未做 | operator |
-| L-01 runbook 的「4 個 SKIP／本版 4／9」 | 加本票 migration 後應為 5／13 | PM 更新 L-01 runbook 時一併 |
+| MVP 既有 Mac／Windows token 補進 `devices` 以便監看 | `ops/token-applier import-mvp`（§5-5） | operator |
+| L-01 runbook 的 migration／RLS 表數 | L-03b 已改為 5／13 | — |
 | `/status` 的資料來源只含 bot 開始監看後的項目 | 監看前的歷史不進索引（第一次從 tail 開始） | 接受（Hindsight 上線後補） |

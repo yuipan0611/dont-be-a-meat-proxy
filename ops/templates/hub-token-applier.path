@@ -1,0 +1,10 @@
+# Starts the TokenApplier as soon as the bot drops a request (bot waits 30 s for a receipt).
+[Unit]
+Description=Hub TokenApplier request watcher
+
+[Path]
+DirectoryNotEmpty=/var/lib/neighbor-hub/token-spool/requests
+Unit=hub-token-applier.service
+
+[Install]
+WantedBy=multi-user.target

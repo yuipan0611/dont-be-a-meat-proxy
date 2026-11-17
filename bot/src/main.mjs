@@ -11,6 +11,8 @@ import { createBudget } from './budget.mjs';
 import { createAssistant, createReadOnlyTools, MODEL } from './assistant.mjs';
 import { createConnect } from './connect.mjs';
 import { createDecisionsManager } from './decisions.mjs';
+import { createGitHubClient } from './github.mjs';
+import { createTaskService } from './task.mjs';
 import { createRouter } from './router.mjs';
 import { createSpoolApplier } from './token-applier.mjs';
 import { createDiscordClient, createDmSender, wireEvents, registerCommands } from './discord.mjs';
@@ -38,6 +40,11 @@ export async function loadConfig() {
     capUsd,
     presence: env('BOT_PRESENCE_DIGEST', '0') === '1',
     tickMs: Number(env('BOT_TICK_MS', '15000')),
+    github: {
+      tokenFile: process.env.GITHUB_TOKEN_FILE || null,
+      token: process.env.GITHUB_TOKEN || process.env.GITHUB_PAT || null,
+      defaultRepo: process.env.GITHUB_DEFAULT_REPO || 'example-org/dont-be-a-meat-proxy',
+    },
   };
 }
 
@@ -54,11 +61,11 @@ async function build(cfg) {
   const mailClient = createMailClient({ url: cfg.mail.url, token: mailToken(await readFile(cfg.mail.tokenFile, 'utf8')), projectKey: cfg.mail.projectKey, agentName: cfg.mail.agentName });
   const mail = createMailReader({ client: mailClient, projectKey: cfg.mail.projectKey });
   const clock = { nowMs: () => Date.now() };
-  return { pool, store, mail, clock };
+  return { pool, store, mailClient, mail, clock };
 }
 
 async function run(cfg, { once = false } = {}) {
-  const { pool, store, mail, clock } = await build(cfg);
+  const { pool, store, mailClient, mail, clock } = await build(cfg);
   const discordToken = await secret('DISCORD_TOKEN_FILE');
   const client = createDiscordClient({ presence: cfg.presence });
   const dm = createDmSender(client);
@@ -74,7 +81,19 @@ async function run(cfg, { once = false } = {}) {
   const assistant = createAssistant({ llm: { create: (p) => llm.messages.create(p) }, tools: createReadOnlyTools({ store, mail }), budget, log });
   const connect = createConnect({ store, applier: createSpoolApplier({ dir: cfg.spoolDir }), hubUrl: cfg.hubUrl, log });
   const decisions = createDecisionsManager({ store, discord: dm, mailClient, clock, defaultGuildId: cfg.guildId, log });
-  const router = createRouter({ store, connect, assistant, decisions, log });
+  const github = createGitHubClient({
+    token: cfg.github?.token,
+    tokenFile: cfg.github?.tokenFile,
+    defaultRepo: cfg.github?.defaultRepo,
+  });
+  const taskService = createTaskService({
+    store,
+    github,
+    mailClient,
+    defaultRepo: cfg.github?.defaultRepo,
+    log,
+  });
+  const router = createRouter({ store, connect, assistant, decisions, taskService, log });
   const bridge = createBridge({ mail, store, clock, log });
   const delivery = createDelivery({ store, discord: dm, clock, presenceEnabled: cfg.presence, log });
   wireEvents({ client, guildId: cfg.guildId, router, store, presence: cfg.presence, log });

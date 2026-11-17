@@ -1,0 +1,11 @@
+# Backstop in case a path event is missed (e.g. the service was busy when a request arrived).
+[Unit]
+Description=Hub TokenApplier backstop
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+Unit=hub-token-applier.service
+
+[Install]
+WantedBy=timers.target

@@ -143,7 +143,12 @@ export function parseEnvelope(message) {
 }
 
 // HubClock result statuses (ops/lifecycle) in the SRS 2.3 / SR-MSG-09 wording.
-const CLOCK_STATUS = { unanswered: '未回答', approved: '已同意', rejected: '已拒絕', expired: '已逾時', invalidated: '已失效' };
+const CLOCK_STATUS = {
+  unanswered: '未回答', approved: '已同意', rejected: '已拒絕', expired: '已逾時', invalidated: '已失效',
+  // L-06 auto mode
+  auto_on: 'auto mode 已開啟', auto_ended: 'auto mode 已結束', auto_rejected: 'auto mode 開啟被拒',
+  auto_approved: 'auto mode 已核准', auto_executed: 'auto mode 已執行',
+};
 
 // Display only: what HubClock and replies carry in kind/intent is protocol data (H-05 relies on it), not a label.
 const isClockResult = (m, env) => m.topic === 'control' && env?.event_type === 'result';
@@ -174,7 +179,9 @@ function formatFull(m, { textLimit = Infinity } = {}) {
   lines.push(`  摘要：${summaryOf(m, env)}`);
   if (env.links?.length) lines.push(`  連結：${env.links.join(' ')}`);
   if (env.unfinished?.length) lines.push(`  未完成：${env.unfinished.join('；')}`);
-  if (isClockResult(m, env)) lines.push(`  這是 HubClock 對 #${env.root_mail_id} 的狀態通知，不是新的請求。`);
+  if (isClockResult(m, env)) lines.push(env.kind === 'auto'
+    ? `  這是 HubClock 對 ${env.target ?? '（未指定）'} → ${env.recipient_agent ?? '?'} 的 auto mode 的狀態通知，不是新的請求。`
+    : `  這是 HubClock 對 #${env.root_mail_id} 的狀態通知，不是新的請求。`);
   else if (isReply(m, env)) lines.push('  這是同一串裡的回覆，不是新的請求。');
   else if (env.kind === 'handoff') lines.push('  這是交接紀錄（資訊），不是動作請求：不需要 presented／choice；要不要接著做由使用者決定。');
   else if (env.intent === 'question') lines.push(

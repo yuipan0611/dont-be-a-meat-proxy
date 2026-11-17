@@ -11,7 +11,7 @@
 - `512 MiB` hard limit（禁止額外 swap）、shared_buffers 128 MB、work_mem 2 MB、maintenance_work_mem 32 MB、max_connections 30。應用程式 pool 各自 ≤5，所有服務連線合計需預留維運連線；512 MiB 包含將來 Hindsight 共用負載，L-02 必須實測。盤點既有用量 1.6 GiB 是當時數字，部署前重查。
 - **沒有 host port**，兩個 project-scoped internal bridge：`neighbor-hub-db_hub-db-net`、`neighbor-hub-db_hindsight-db-net`。ops 走 Docker exec；未掛 Docker socket 入容器。Mail 不加入 DB 網。L-02 只接 hindsight-db-net；bot／bank-proxy 接 hub-db-net。網路不提供資料庫身分授權。
 - PG18 volume 掛在 `/var/lib/postgresql`，實際 PGDATA 是 `/var/lib/postgresql/18/docker`。保留 `neighbor-hub-db_pg_data`，不可沿用 PG17 data directory。
-- `hub` 單獨 database；`postgres`、`template1`、`hub` 均撤回 PUBLIC CONNECT。hub_app 是 NOINHERIT login，預設切 service_role（具 BYPASSRLS，限伺服器使用），只授予 hub CONNECT。anon／authenticated NOLOGIN，所有 9 張業務表開 RLS、無成員直連權限。**service_role 不隔離組別**；S2/S3 的應用層隔離由 L-08 驗收。
+- `hub` 單獨 database；`postgres`、`template1`、`hub` 均撤回 PUBLIC CONNECT。hub_app 是 NOINHERIT login，預設切 service_role（具 BYPASSRLS，限伺服器使用），只授予 hub CONNECT。anon／authenticated NOLOGIN，所有業務表開 RLS（L-01 時 9 張；L-03 migration 後 13 張）、無成員直連權限。**service_role 不隔離組別**；S2/S3 的應用層隔離由 L-08 驗收。
 - L-02 在同一叢集新建 `hindsight` database 與專用 login 時，必須 `REVOKE CONNECT ON DATABASE hindsight FROM PUBLIC`，只 grant 該 login；反向測試該 login 不能連 hub。此票保留網路，不建立 Hindsight 表或密碼。
 - migrations 原樣保留，依檔名排序；psql ON_ERROR_STOP＋單一交易＋advisory lock。私有 `_hub_ops.migrations` 記 filename／SHA256，重跑跳過已套檔、已套檔內容變更會拒絕。此 ledger 是純 PG 維運資料，不冒充 Supabase CLI history；以後搬雲端時依 §08 的流程另行對齊。
 - bootstrap 建 DB／撤 CONNECT 是交易前的叢集操作；後續 migration 失敗會保留空 hub，但不會留下半套業務 schema／ledger。角色初始化也在同一 migration 交易內。沒有自動 seed。
@@ -59,7 +59,7 @@ pgc config --quiet
 pgc pull db
 pgc up -d --wait --wait-timeout 90 db
 /opt/neighbor-hub/ops/postgres migrate
-/opt/neighbor-hub/ops/postgres migrate  # 4 個 SKIP，驗冪等
+/opt/neighbor-hub/ops/postgres migrate  # 全部 SKIP，驗冪等（L-03 後共 5 個 migration）
 /opt/neighbor-hub/ops/postgres psql -Atqc 'select filename from _hub_ops.migrations order by filename'
 /opt/neighbor-hub/ops/postgres psql -Atqc 'select count(*) from public.devices' # 0；正式 DB 不跑 seed
 /opt/neighbor-hub/ops/postgres psql -Atqc "select '[1,2,3]'::extensions.vector OPERATOR(extensions.<->) '[1,2,3]'::extensions.vector" # 0
@@ -93,7 +93,7 @@ curl --silent --output /dev/null --write-out 'hub_after=%{http_code}\n' https://
 
 核對 office 200、Hub 無 token 401、既有 mail-a／hubclock StartedAt 不變。另按 H-02 原本的方法測合法 Hub token，不在命令列或記錄中輸出。記錄 Postgres idle／migrations／RLS 後記憶體；L-02 接 Hindsight 後要補尖峰、OOM 與連線池測試。
 
-本機重現命令：`node --test ops/test/postgres.integration.test.mjs`。它建立唯一測試 project／暫存秘密，只清理自己建立的容器與 volume；涵蓋不發布 port、512 MiB、4 migrations 重跑、SQL 失敗全批回滾、checksum drift 拒絕、14 RLS 斷言、真實 login／跨 DB 拒絕、重啟持久化、每日備份還原與 DB 離線時備份失敗。
+本機重現命令：`node --test ops/test/postgres.integration.test.mjs`。它建立唯一測試 project／暫存秘密，只清理自己建立的容器與 volume；涵蓋不發布 port、512 MiB、5 migrations 重跑（含 L-03）、SQL 失敗全批回滾、checksum drift 拒絕、14 RLS 斷言、真實 login／跨 DB 拒絕、重啟持久化、每日備份還原與 DB 離線時備份失敗。
 
 ## 4. 納入既有每日備份
 
@@ -139,8 +139,8 @@ PY
 /opt/neighbor-hub/ops/postgres psql -c 'create database hub_restore'
 /opt/neighbor-hub/ops/postgres psql -c 'revoke connect on database hub_restore from public'
 pgc exec -T db pg_restore -U postgres -d hub_restore --no-owner --exit-on-error < "$L01_RESTORE_DIR/postgres/hub.dump"
-/opt/neighbor-hub/ops/postgres psql -d hub_restore -Atqc 'select count(*) from _hub_ops.migrations' # 本版 4
-/opt/neighbor-hub/ops/postgres psql -d hub_restore -Atqc "select count(*) from pg_class where relnamespace='public'::regnamespace and relkind='r' and relrowsecurity" # 本版 9
+/opt/neighbor-hub/ops/postgres psql -d hub_restore -Atqc 'select count(*) from _hub_ops.migrations' # 本版 5（L-01 時 4，L-03 加 1）
+/opt/neighbor-hub/ops/postgres psql -d hub_restore -Atqc "select count(*) from pg_class where relnamespace='public'::regnamespace and relkind='r' and relrowsecurity" # 本版 13（L-01 時 9，L-03 加 4）
 /opt/neighbor-hub/ops/postgres psql -d hub_restore -Atqc "select has_table_privilege('anon','devices','SELECT'),has_table_privilege('service_role','audit_log','UPDATE')" # f|f
 # 與來源備份時的業務筆數／原文 hash 核對，再刪演練 DB 與含秘密的暫存目錄。
 /opt/neighbor-hub/ops/postgres psql -c 'drop database hub_restore'

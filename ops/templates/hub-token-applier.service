@@ -1,0 +1,17 @@
+# L-03b host TokenApplier: answers the bot's /connect and /revoke spool requests.
+# Writes ONLY the hub private snippet, the spool and its own private token dir; never the office site.
+[Unit]
+Description=Hub TokenApplier (DB registry -> hub Caddy allowlist)
+After=network.target docker.service caddy.service
+Requires=caddy.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/opt/neighbor-hub/ops/token-applier process
+TimeoutStartSec=300
+ProtectSystem=strict
+ReadWritePaths=/etc/caddy/hub-private /var/lib/neighbor-hub/token-spool /var/lib/neighbor-hub/private
+NoNewPrivileges=true
+PrivateTmp=true

@@ -64,6 +64,27 @@ class OperatorTests(unittest.TestCase):
         data = json.loads((self.state / 'tokens.json').read_text())
         self.assertTrue(all(d['token'] not in result.stdout + result.stderr for d in data['devices'].values()))
 
+    def test_l02_memory_route_keeps_the_device_bearer_and_strips_the_prefix(self):
+        self.assertEqual(self.run_op('init-secrets').returncode, 0)
+        output = self.dir / 'caddy-private' / 'auth.caddy'
+        mvp = self.run_op('render-caddy', '--output', str(output), '--owner', 'self', '--prepare-only')
+        self.assertEqual(mvp.returncode, 0, mvp.stderr)
+        self.assertIn('Memory is not enabled in MVP', output.read_text())  # default unchanged
+        result = self.run_op('render-caddy', '--output', str(output), '--owner', 'self', '--prepare-only',
+                             '--memory-upstream', '127.0.0.1:8780')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        text = output.read_text()
+        block = text[text.index('handle @memory {'):text.index(' handle {', text.index('handle @memory {'))]
+        self.assertIn('uri strip_prefix /memory', block)
+        self.assertIn('reverse_proxy 127.0.0.1:8780', block)
+        self.assertNotIn('Authorization', block)  # bank-proxy needs the device's own bearer
+        self.assertNotIn('not enabled', block)
+        data = json.loads((self.state / 'tokens.json').read_text())
+        self.assertNotIn(data['upstream'], block)
+        bad = self.run_op('render-caddy', '--output', str(output), '--owner', 'self', '--prepare-only',
+                          '--memory-upstream', '10.0.0.5:8780')
+        self.assertNotEqual(bad.returncode, 0)
+
     def test_rerunning_init_keeps_credentials_and_refuses_a_modified_export(self):
         self.assertEqual(self.run_op('init-secrets').returncode, 0)
         before = (self.state / 'tokens.json').read_bytes()
