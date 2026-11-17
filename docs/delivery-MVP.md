@@ -48,8 +48,8 @@ TC-06／13 判準（**維護者 2026-11-17 同意**）：閒置 ≤60 秒；AI �
 
 ## 已知問題（不影響驗收）
 
-- 回覆訊息沿用 envelope 預設 intent，顯示成 `help/action`／`task/action`，實際內容會註明「同一串裡的回覆，不是新的請求」，不會被當成新請求（HubClock 只記到 1 個 answered）。屬顯示問題，上線批次修。
-- HubClock 通知的標籤顯示 `action/undefined`，同屬顯示問題。
+- ~~已修（L-00，fe3295b）~~ 回覆訊息沿用 envelope 預設 intent，顯示成 `help/action`／`task/action`，實際內容會註明「同一串裡的回覆，不是新的請求」，不會被當成新請求（HubClock 只記到 1 個 answered）。屬顯示問題，上線批次修。
+- ~~已修（L-00，fe3295b）~~ HubClock 通知的標籤顯示 `action/undefined`，同屬顯示問題。
 
 ## 未過項目與處理
 

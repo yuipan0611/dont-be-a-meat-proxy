@@ -137,7 +137,7 @@ flowchart TD
 | T15 Supabase 規格資料層（維護者 2026-11-17：照 Supabase 規格、先不跑整套；MVP 照舊） | <ORCA_ID> | <ORCA_ID> | swe-Tom | 11-18 | ✅ succeeded（d8d495a，已併入 master），PM 用 postgres:17 獨立重跑 11/11 PASS；待對齊項見 docs/08 §8 |
 
 | H-08 MVP 驗收 | — | TC-13 前置 <ORCA_ID>；TC-08 修正 <ORCA_ID> | PM＋維護者；codex-senior-swe；swe-Ben | 11-23 | ✅ 2026-11-17 TC-01～13 全過（見 docs/delivery-MVP.md）；TC-08 經 9a1f78f 修正後重測通過 |
-| L-00 MVP 顯示修正 | <ORCA_ID> | <ORCA_ID> | swe-Tom | 11-24 | 🔄 派工中（上線批次第一波） |
+| L-00 MVP 顯示修正 | <ORCA_ID> | <ORCA_ID> | swe-Tom | 11-24 | ✅ fe3295b 併入 master（0cdbf4b）；PM 重跑 client 105（92 pass／13 skip 需本機 Mail）、lifecycle 0 fail；Mac 實機 #44 顯示「回覆」、#72 顯示「HubClock 通知：已拒絕」；Windows 待下次換檔 |
 | L-01 Postgres＋Supabase migrations | <ORCA_ID> | <ORCA_ID> | codex-senior-swe | 11-25 | 🔄 派工中（先本機驗證，VPS 由 PM 審 runbook 後部署） |
 | L-06 auto mode | <ORCA_ID> | <ORCA_ID> | swe-Ben | 11-27 | 🔄 派工中 |
 
