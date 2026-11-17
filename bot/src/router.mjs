@@ -43,10 +43,15 @@ export const COMMANDS = Object.freeze([
   },
 ]);
 
-export function createRouter({ store, connect, assistant, taskService, log = () => {} }) {
+export function createRouter({ store, connect, assistant, decisions = null, taskService = null, log = () => {} }) {
   async function handleButton(ix) {
     const customId = String(ix.customId ?? '');
     const userId = String(ix.user.id);
+
+    if (customId.startsWith('decision:')) {
+      if (decisions) return decisions.handleButton(ix);
+      return;
+    }
 
     if (customId.startsWith(TASK_CANCEL_PREFIX)) {
       const actionId = customId.slice(TASK_CANCEL_PREFIX.length);
@@ -79,10 +84,12 @@ export function createRouter({ store, connect, assistant, taskService, log = () 
       else if (ix.update) await ix.update({ content: res.message, components: [], allowedMentions: NO_MENTIONS });
       return;
     }
+
+    if (decisions) return decisions.handleButton(ix);
   }
 
   async function handle(ix) {
-    if (ix.isButton?.() || (typeof ix.customId === 'string' && (ix.customId.startsWith(TASK_CONFIRM_PREFIX) || ix.customId.startsWith(TASK_CANCEL_PREFIX)))) {
+    if (ix.isButton?.() || (typeof ix.customId === 'string' && (ix.customId.startsWith(TASK_CONFIRM_PREFIX) || ix.customId.startsWith(TASK_CANCEL_PREFIX) || ix.customId.startsWith('decision:')))) {
       return handleButton(ix);
     }
     if (!['connect', 'revoke', 'status', 'task'].includes(ix.commandName)) return;
@@ -140,6 +147,5 @@ export function createRouter({ store, connect, assistant, taskService, log = () 
       return reply('處理失敗，請稍後再試；持續失敗請找 operator。');
     }
   }
-
-  return { handle };
+  return { handle, handleButton };
 }

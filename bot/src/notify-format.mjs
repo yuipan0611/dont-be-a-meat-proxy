@@ -56,10 +56,10 @@ export function classifyMessage(message) {
   if (isReply) label = '回覆';
   else if (env.kind === 'handoff') label = '交接';
   else label = `${KIND[env.kind] ?? env.kind}／${INTENT[env.intent] ?? env.intent ?? ''}`.replace(/／$/, '');
-  return build(message, label, env.summary || env.text || '', false);
+  return build(message, label, env.summary || env.text || '', false, env.text, env.kind === 'decision' || message.topic === 'decision');
 }
 
-function build(message, label, rawSummary, isClockResult) {
+function build(message, label, rawSummary, isClockResult, fullText = null, isDecision = false) {
   // AC-09.1: no sensitive full text. If the summary looks like it carries a secret, hide it entirely.
   const hidden = detectSecrets(rawSummary, message.subject ?? '').length > 0;
   const summary = hidden ? '（摘要疑似含密鑰，已隱藏；請在 agent 收件匣查看）' : clip(oneLine(rawSummary), SUMMARY_MAX);
@@ -68,9 +68,11 @@ function build(message, label, rawSummary, isClockResult) {
     sender: String(message.from ?? '?'),
     subject: hidden ? '（已隱藏）' : clip(oneLine(message.subject), 120),
     summary,
+    text: fullText,
     mailId: message.id,
     createdTs: message.created_ts,
     isClockResult,
+    isDecision,
   };
 }
 
@@ -91,6 +93,39 @@ export function renderNotification(n) {
     `摘要：${escapeDiscord(n.summary)}`,
     `查看：Mail #${n.mail_id ?? n.mailId}（${taipeiTime(n.mail_created_at ?? n.createdTs)}），下次在該 agent 開工時會自動讀到；Discord 只通知，不能在這裡同意。`,
   ].filter(Boolean).join('\n');
+}
+
+/** Decision notification with Confirm / Reject buttons (SR-DEC-01～03, TC-20). */
+export function renderDecisionNotification(n) {
+  const content = [
+    `**決策草稿**｜來自 ${escapeDiscord(n.sender)} → ${escapeDiscord(n.recipient_agent ?? n.recipientAgent)}`,
+    n.subject ? `主旨：${escapeDiscord(n.subject)}` : null,
+    `摘要：${escapeDiscord(n.summary)}`,
+    `查看：Mail #${n.mail_id ?? n.mailId}（${taipeiTime(n.mail_created_at ?? n.createdTs)}）。`,
+    `請點擊下方按鈕確認或駁回此決策（S1 只有 維護者 可以確認，按鈕只能使用一次）：`,
+  ].filter(Boolean).join('\n');
+
+  const components = [
+    {
+      type: 1, // ActionRow
+      components: [
+        {
+          type: 2, // Button
+          style: 3, // Success
+          label: '確認',
+          custom_id: `decision:confirm:${n.mail_id ?? n.mailId}`,
+        },
+        {
+          type: 2, // Button
+          style: 4, // Danger
+          label: '駁回',
+          custom_id: `decision:reject:${n.mail_id ?? n.mailId}`,
+        },
+      ],
+    },
+  ];
+
+  return { content, components };
 }
 
 /** The single "while you were away" digest (§4.5 #9): count + a short list, not each item. */

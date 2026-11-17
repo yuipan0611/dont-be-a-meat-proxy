@@ -8,7 +8,7 @@
 //  - a send whose outcome is unknown (timeout) is recorded `unknown` and never resent.
 //  - DM failure never falls back to a public channel.
 
-import { renderNotification, renderDigest } from './notify-format.mjs';
+import { renderNotification, renderDigest, renderDecisionNotification } from './notify-format.mjs';
 
 export class DiscordSendError extends Error {
   constructor(message, { outcome = 'failed', code } = {}) {
@@ -56,7 +56,9 @@ export function createDelivery({ store, discord, clock, presenceEnabled = false,
       stats.digested += await sendDigest(memberId, discordUserId);
       for (const row of await store.listPending(memberId)) {
         try {
-          const { messageId } = await discord.sendDm(discordUserId, renderNotification(row));
+          const isDecision = row.label && row.label.startsWith('決策');
+          const payload = isDecision ? renderDecisionNotification(row) : renderNotification(row);
+          const { messageId } = await discord.sendDm(discordUserId, payload);
           await store.markNotification(row.id, 'sent', { discordMessageId: messageId });
           stats.sent++;
         } catch (e) {

@@ -891,3 +891,65 @@ test('L-02b: without memory_agent nothing changes (no CC, no error)', async () =
   const m = hub.messages.find((x) => x.topic === 'handoff');
   assert.deepEqual(m.cc ?? [], []);
 });
+
+test('L-05: agent writes a decision -> saved as draft', async () => {
+  const hub = createFakeHub();
+  const mac = machine(hub, { agent: 'BlueLake' });
+  const r = await mac.run('send', {
+    to: ['RedStone'],
+    subject: '決策：登入改用 OAuth',
+    kind: 'decision',
+    summary: '改用 Discord OAuth',
+    text: '決策全文：登入頁改用 Discord OAuth 驗證身分。',
+  });
+  assert.equal(r.exitCode, 0, r.stderr);
+  assert.match(r.stdout, /^已保存 #\d+（決策草稿給 RedStone）/);
+  const m = hub.messages.find((x) => x.topic === 'decision');
+  assert.ok(m, 'message stored under decision topic');
+  assert.equal(JSON.parse(m.body_md).kind, 'decision');
+});
+
+test('L-05 / SR-DEC-04: start displays drafts and confirmed decisions separately with status (AC-11.4)', async () => {
+  const hub = createFakeHub();
+  // 1. One draft decision
+  await hub.client('BlueLake').sendItem({
+    to: ['RedStone'],
+    subject: '決策：登入改用 OAuth',
+    kind: 'decision',
+    summary: '改用 Discord OAuth',
+    text: '決策全文：登入改用 Discord OAuth',
+    sourceSession: 's1',
+  });
+  // 2. One confirmed decision + its confirmation record
+  const dec2 = await hub.client('RedStone').sendItem({
+    to: ['BlueLake'],
+    subject: '決策：資料庫用 Postgres',
+    kind: 'decision',
+    summary: '採用 Postgres 向量庫',
+    text: '決策全文：採用 Postgres',
+    sourceSession: 's1',
+  });
+  await hub.client('HubBot').callTool('send_message', {
+    sender_name: 'HubBot',
+    to: ['RedStone'],
+    subject: `[決策已確認] #${dec2.messageId}`,
+    topic: 'decision',
+    thread_id: String(dec2.messageId),
+    body_md: JSON.stringify({
+      v: 1,
+      kind: 'decision_status',
+      draft_mail_id: dec2.messageId,
+      status: 'confirmed',
+      decided_by: '維護者',
+      decided_at: '2026-11-20T03:00:00.000Z',
+    }),
+  });
+
+  const win = machine(hub, { agent: 'RedStone' });
+  const c = ctx(await win.run('start'));
+  assert.match(c, /專案決策（已確認與草稿分開列）：/);
+  assert.match(c, /已確認決策（正式）：/);
+  assert.match(c, /#2.*決策：資料庫用 Postgres.*確認者：維護者/);
+  assert.match(c, /草稿決策（待確認）：/);
+  assert.match(c, /#1.*決策：登入改用 OAuth.*狀態：草稿，待確認/);
+});
