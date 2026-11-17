@@ -338,6 +338,12 @@ def main(command):
         if command in {'revoke', 'issue'}:
             parser.add_argument('--device', choices=['mac', 'windows'], required=True)
     args = parser.parse_args()
+    if command in {'render-caddy', 'revoke', 'issue'} and (args.state_dir / 'db-authority').exists():
+        # L-03b: once ops/token-applier has applied the DB registry, a tokens.json-only render would drop
+        # every /connect device. Refuse instead of silently cutting them off.
+        print('FAILED: the DB registry is now the token authority; use ops/token-applier '
+              '(render | import-mvp) or Discord /revoke instead', file=sys.stderr)
+        return 1
     try:
         if command == 'init-secrets':
             init_secrets(args.state_dir)
