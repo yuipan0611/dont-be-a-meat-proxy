@@ -1,0 +1,39 @@
+{
+  "operator": "維護者",
+  "runId": "s1-20261118-a",
+  "since": "2026-11-18T00:00:00Z",
+  "deploymentCommit": "REPLACE_WITH_DEPLOYED_GIT_REV_PARSE_HEAD",
+  "groupId": "grp-test",
+  "memberId": "REPLACE_WITH_NOTIFICATION_RECIPIENT_MEMBER_UUID",
+  "statusSourceMailIds": [],
+  "containers": {
+    "db": "neighbor-hub-db-db-1",
+    "bot": "neighbor-hub-bot-1",
+    "gateway": "neighbor-hub-memory-llm-gateway-1"
+  },
+  "mail": {
+    "url": "https://test-a.example.com/mcp/",
+    "tokenFile": "/private/acceptance/test-a.env",
+    "senderFile": "/private/acceptance/test-a.sender.json",
+    "to": ["RedStone"],
+    "cc": ["MemoryBridge"]
+  },
+  "memory": {
+    "url": "https://test-a.example.com/memory/mcp/grp-test/",
+    "tokenFile": "/private/acceptance/test-a.env"
+  },
+  "devices": {
+    "old": {"url": "https://test-a.example.com/mcp/", "tokenFile": "/private/acceptance/revoked.env", "tokenId": "tok_REPLACE_OLD"},
+    "other": {"url": "https://test-a.example.com/mcp/", "tokenFile": "/private/acceptance/other.env", "tokenId": "tok_REPLACE_OTHER"},
+    "fresh": {"url": "https://test-a.example.com/mcp/", "tokenFile": "/private/acceptance/fresh.env", "tokenId": "tok_REPLACE_FRESH"}
+  },
+  "receiptDir": "/var/lib/neighbor-hub/token-spool/receipts",
+  "bridgeStateFile": "/var/lib/neighbor-hub/memory-bridge/hubclock-state.json",
+  "memoryCompose": ["--env-file", "/private/acceptance/deploy.env", "-p", "neighbor-hub-memory", "-f", "deploy/memory/compose.yaml", "-f", "deploy/memory/compose.groq.yaml"],
+  "isolation": {
+    "otherGroup": "grp-test2",
+    "foreignMarkerPath": "/data/acceptance-marker.txt",
+    "a": {"url": "https://test-a.example.com", "tokenFile": "/private/acceptance/test-a.env", "mailContainer": "test-a-mail-1"},
+    "b": {"url": "https://test-b.example.com", "tokenFile": "/private/acceptance/test-b.env", "mailContainer": "test-b-mail-1"}
+  }
+}
