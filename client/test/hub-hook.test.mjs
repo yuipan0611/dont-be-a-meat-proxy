@@ -863,3 +863,31 @@ test('L-02 順手修: an auto-mode notice names the pair (target → recipient),
   assert.doesNotMatch(r2.stdout, /#null|null →/);
   assert.match(r2.stdout, /（未指定） → RedStone 的 auto mode/);
 });
+
+// ---- L-02b: handoff / decision are CC'd to the memory bridge (the only writer into Hindsight) ----
+test('L-02b: with memory_agent set, handoff, decision and checkpoint CC the bridge once; help/task/replies do not', async () => {
+  const hub = createFakeHub();
+  const win = machine(hub);
+  writeFileSync(join(win.projectDir, 'hub-client.json'), JSON.stringify({ ...CONFIG, memory_agent: 'AmberCove' }));
+  await win.run('start', { session_id: 's-1' });
+  const send = (o) => win.run('send', o);
+  assert.match((await send({ to: ['BlueLake'], subject: '交接', kind: 'handoff', summary: 's', text: '交接原文' })).stdout, /已保存/);
+  assert.match((await send({ to: ['BlueLake'], subject: '決策', kind: 'decision', intent: 'action', summary: 's', text: '決策原文' })).stdout, /已保存/);
+  await send({ to: ['BlueLake'], subject: '求助', kind: 'help', intent: 'question', summary: 's', text: '求助' });
+  await win.run('checkpoint', { summary: '進度', text: '交接 checkpoint 原文' });
+  const ccOf = (text) => hub.messages.find((m) => m.topic !== 'control' && JSON.parse(m.body_md).text === text)?.cc ?? null;
+  assert.deepEqual(ccOf('交接原文'), ['AmberCove']);
+  assert.deepEqual(ccOf('決策原文').sort(), ['AmberCove', 'JadeBluff'].sort()); // decision/action is also a HubClock request
+  assert.ok(!ccOf('求助').includes('AmberCove'));
+  assert.deepEqual(ccOf('交接 checkpoint 原文'), ['AmberCove']);
+  assert.equal(hub.messages.filter((m) => (m.cc ?? []).includes('AmberCove')).length, 3); // one message each: no second write
+});
+
+test('L-02b: without memory_agent nothing changes (no CC, no error)', async () => {
+  const hub = createFakeHub();
+  const win = machine(hub);
+  await win.run('start');
+  await win.run('send', { to: ['BlueLake'], subject: '交接', kind: 'handoff', summary: 's', text: '無 bridge' });
+  const m = hub.messages.find((x) => x.topic === 'handoff');
+  assert.deepEqual(m.cc ?? [], []);
+});
