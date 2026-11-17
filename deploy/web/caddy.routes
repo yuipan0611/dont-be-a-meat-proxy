@@ -1,6 +1,6 @@
 # Import inside a route block, before a fallback handle importing private auth.
 # Matched web requests terminate here. MCP/memory keep their existing bearer checks.
-@project_guide path / /app.js /explorer.js /style.css /auth/* /api/*
+@project_guide path / /app.js /explorer.js /pages.js /board.js /board.css /board-licenses.txt /style.css /auth/* /api/*
 handle @project_guide {
   reverse_proxy 127.0.0.1:8781
 }

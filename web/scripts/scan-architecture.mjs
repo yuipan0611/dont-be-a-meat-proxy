@@ -10,8 +10,8 @@ const sha=s=>createHash('sha256').update(s).digest('hex');
 const lineAt=(text,offset)=>text.slice(0,offset).split('\n').length;
 const isTest=path=>/(^|\/)(test|tests|fixtures)(\/|$)|(?:_test\.go|\.test\.mjs)$/.test(path);
 const isSensitive=path=>/(^|\/)(private|\.local|\.generated|node_modules|__pycache__)(\/|$)|(^|\/)\.env(?:\.|$)|\.(?:key|pem|token|password)$/.test(path);
-const isSource=path=>!isSensitive(path)&&(/\.(mjs|js|py|go|sql|sh|yaml|yml|caddy|routes|service|timer|path)$/.test(path)||/\/Dockerfile$/.test(path)||/^ops\/[^/.]+$/.test(path));
-const language=path=>({'.mjs':'javascript','.js':'javascript','.py':'python','.go':'go','.sql':'sql','.yaml':'compose','.yml':'compose','.caddy':'caddy','.routes':'caddy','.sh':'shell'})[extname(path)]??(/Dockerfile$/.test(path)?'dockerfile':'configuration');
+const isSource=path=>!isSensitive(path)&&(/\.(mjs|js|jsx|css|py|go|sql|sh|yaml|yml|caddy|routes|service|timer|path)$/.test(path)||/\/Dockerfile$/.test(path)||/^ops\/[^/.]+$/.test(path));
+const language=path=>({'.mjs':'javascript','.js':'javascript','.jsx':'jsx','.css':'css','.py':'python','.go':'go','.sql':'sql','.yaml':'compose','.yml':'compose','.caddy':'caddy','.routes':'caddy','.sh':'shell'})[extname(path)]??(/Dockerfile$/.test(path)?'dockerfile':'configuration');
 export function serviceFor(path){
  if(path.startsWith('client/'))return 'client';
  if(path.startsWith('server/validator/'))return 'validator';
@@ -123,7 +123,8 @@ export async function scanArchitecture(root){
   let extracted={};
   if(/\.(mjs|js)$/.test(path)){
    const js=extractJavaScript(text,path);extracted=js.symbols;imports.push(...js.imports);calls.push(...js.calls);row.extraction='acorn AST';
-  }else if(path.endsWith('.py')){
+  }else if(path.endsWith('.jsx')){row.extraction='JSX module inventory; compiled by esbuild, functions not extracted';}
+  else if(path.endsWith('.py')){
    const values=JSON.parse(execFileSync('python3',[resolve(root,'web/scripts/python-symbols.py')],{input:text,encoding:'utf8',maxBuffer:8*1024*1024}));
    for(const value of values){const id=`${path}#${value.name}`;extracted[id]={...value,id,path,fileHash:sha(text),language:'python',extraction:'Python ast (source inspected without execution)'};}row.extraction='Python ast';
   }else if(path.endsWith('.go')){extracted=extractGo(text,path);row.extraction='Go lexical declaration scanner';}
@@ -155,6 +156,7 @@ export async function scanArchitecture(root){
  }
  messages.push({id:'message:result',name:'result',title:messageInfo.result[0],description:messageInfo.result[1],why:'讓原工作站知道確認是否有效，不能只靠對話猜測。',input:'HubClock 確認狀態',output:'帶有 root_mail_id 的結果訊息',errors:'只有有效結果可以驅動動作；寄回失敗仍需重試。',sources:[source('ops/lifecycle/protocol.mjs',"export const RESULT_EVENT = 'result'")]});
  const resolvedImports=imports.map(item=>({...item,from:item.path,...(item.specifier.startsWith('.')?{to:posix.normalize(posix.join(posix.dirname(item.path),item.specifier)),target:posix.normalize(posix.join(posix.dirname(item.path),item.specifier))}:{external:true})}));
+ warnings.push('JSX／CSS 納入來源模組盤點；JSX 由 esbuild 編譯，不假裝已由 Acorn 擷取其函式。');
  warnings.push('JavaScript 使用 Acorn AST；僅對具名宣告、具名變數函式與具名方法建立符號；匿名 callback 不另建節點。');
  warnings.push('Python 使用標準 ast，只讀取語法，不匯入或執行被掃描程式。Go 使用註解／字串遮罩與括號計數，不宣稱 Go AST 或型別分析。');
  warnings.push('Compose 只擷取 services 區塊與明列屬性，不合併 override、不展開環境變數；容器條目可能重複代表同一服務。');

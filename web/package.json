@@ -9,12 +9,16 @@
     "start": "node src/main.mjs",
     "demo": "node src/demo.mjs",
     "test": "node --test test/*.test.mjs",
-    "build": "node scripts/build-architecture.mjs",
+    "build": "node scripts/build-architecture.mjs && node scripts/build-ui.mjs",
     "prestart": "npm run build",
     "predemo": "npm run build"
   },
   "dependencies": {
+    "@xyflow/react": "13.0.2",
     "acorn": "8.15.0",
-    "pg": "8.23.1"
+    "esbuild": "0.28.2",
+    "pg": "8.23.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   }
 }
