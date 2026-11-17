@@ -74,3 +74,30 @@ Backstage 的官方模型把軟體元件、元件間 API、執行所需 Resource
 3. 點連線後能讀懂方向、送出的資料、協議及失敗後果；播放器每一步有文字，不靠顏色猜方向。
 4. OAuth、撤銷、跨組隔離、唯讀與任意路徑拒絕沿既有 API 驗證；視覺層不另開繞過 API 的來源讀取。
 5. 本機 demo 的工作紀錄、教學播放、原始碼快照和真實部署狀態有清楚標示。自動測試通過後，仍應由新手實際指出某條流程的方向、責任與來源位置，才能確認教學效果。
+
+## 第四版補充：Notion 式巢狀頁與無限白板選型（2026-11-17）
+
+維護者 在第三版併入 master 後要求：「設計成無限白板那種 Notion 形式：可以點擊進去，旁邊當然還有目錄頁」。這次的選擇由「參考畫布模式」改為**實際採用 React Flow（`@xyflow/react`）作為白板引擎**；既有架構模型、來源 API、OAuth／組別隔離保持原有責任。以下以查詢當日官方文件與實際 LICENSE 為準，不把舊發布文章、GitHub 的自動授權標籤或商業雲端版功能直接套到 SDK。
+
+### 四個現成方案的比較
+
+| 方案 | 商用、MIT 與浮水印／署名 | 巢狀頁與目錄能力 | 效能與整合判斷 | 本次決定 |
+| --- | --- | --- | --- | --- |
+| **tldraw SDK** | **不是 MIT**，目前是 source-available SDK；預設授權僅供開發。正式環境須有效 trial／commercial／hobby key，商用使用 commercial 授權；hobby 為非商用且須保留「made with tldraw」浮水印。不可用舊 v3 發布文推論「商用只保留浮水印即可」 | 原生多頁 scene；每頁有自己的 camera、selection，切換可還原。官方 pages 預設上限 40，可配置；Notion 式任意父子頁樹與零件語意仍需本應用建立 | 已有完整相機、選取、頁面與大型圖的效能選項，白板體驗成熟；但本次不宜新增正式上線 license key／商務授權流程 | 不採用。授權條件不符合本次優先簡單商用可用套件的方向 |
+| **Excalidraw OSS SDK** | **MIT**，可商用、修改、散布，須保留 copyright／license notice；MIT 本身沒有要求畫面浮水印。OSS SDK 與 Excalidraw+ 的帳號／工作空間／商業功能須分開看 | SDK 提供 scene elements、app state、`initialData`、`updateScene` 等介面；可以由宿主應用切換 scenes，但這些 API 不是現成 Notion 頁面樹。Frame／group 也不等於遞迴頁面路由 | 適合自由繪圖與手繪元素。可嵌 React／bundler；本案主要是資料驅動 HTML 卡片、有向協議線與程式碼閱讀，若採它需把模型轉成繪圖元素並自行補頁樹／契約互動；未做效能跑分 | 不採用。繪圖優勢不是本次主要需求，宿主頁面與資料契約整合仍多 |
+| **React Flow／xyflow** | **MIT**，可商用，須保留授權及版權 notice。預設角落 attribution 連回 React Flow；官方明說 MIT 不能法律上要求保留該畫面署名，隱藏時請支持／訂閱。本次**保留預設 attribution**，不把付費 Pro 範例當作已取得 | 內建 `group`／`parentId` sub-flow，可把子節點相對父節點定位；**sub-flow 不是另一張獨立頁**。本案以獨立 page ID／parent ID、麵包屑、目錄樹及每頁 viewport 管理巢狀白板；MiniMap、pan／zoom、框選與可點 edge 使用現成元件／互動 | 適合資料驅動服務／模組／函式卡片，能保留現有白話詳情與原碼讀取器。官方針對大型圖建議穩定／memoized 元件與 callbacks、避免無關節點更新、收合大樹與簡化樣式；每頁僅掛載當頁子圖是本案控制成本的方法 | **採用**。直接重用圖形引擎，不再自行實作整套座標／選取／minimap |
+| **AFFiNE／Edgeless** | **不能把整庫簡稱 MIT**。當日 `canary/LICENSE` 把 backend 與 common/native 指向子授權，其餘指定內容 MIT；backend 子授權包含 EE production 訂閱條件，CE／client-side 部分另有 MPL-2.0 條款。商用／再散布必須依實際取用目錄與發行版核對，沒有從上述文件推定全套可無條件去品牌 | 官方每個 doc 有 Page Mode／Edgeless Mode，最接近「文件同時是一張白板」的產品模式，值得參考；但整套 workspace／doc／block 模型不是本專案目前的 atlas／source API | 完整知識工作台而非只換畫布元件；導入其儲存、同步、編輯與權限模型會大幅擴張範圍。未做本機跨方案效能測量，不能宣稱其比 React Flow 快或慢 | 不導入整套。只參考「左側文件目錄＋每頁空間畫布」的資訊架構 |
+
+授權證據：[tldraw 現行 license](https://tldraw.dev/community/license)、[tldraw FAQ](https://tldraw.dev/faq)、[Excalidraw LICENSE](https://github.com/excalidraw/excalidraw/blob/master/LICENSE)、[xyflow LICENSE](https://github.com/xyflow/xyflow/blob/main/LICENSE)、[React Flow attribution 說明](https://reactflow.dev/api-reference/types/pro-options)、[AFFiNE root LICENSE](https://github.com/toeverything/AFFiNE/blob/canary/LICENSE)、[AFFiNE backend/server LICENSE](https://github.com/toeverything/AFFiNE/blob/canary/packages/backend/server/LICENSE)、[AFFiNE LICENSE-MIT](https://github.com/toeverything/AFFiNE/blob/canary/LICENSE-MIT)。這是對官方授權文字的工程選型整理；本次沒有納入 tldraw、Excalidraw 或 AFFiNE 的程式。
+
+功能證據：[tldraw pages](https://tldraw.dev/sdk-features/pages)、[tldraw performance options](https://tldraw.dev/sdk-features/options)、[Excalidraw 整合](https://plus.excalidraw.com/docs/sdk/excalidraw/integration)、[Excalidraw initialData](https://plus.excalidraw.com/docs/sdk/excalidraw/api/props/initialdata)、[Excalidraw scene API](https://plus.excalidraw.com/docs/sdk/excalidraw/api/props/excalidraw-api)、[React Flow sub-flows](https://reactflow.dev/learn/layouting/sub-flows)、[MiniMap](https://reactflow.dev/api-reference/components/minimap)、[viewport pan/zoom](https://reactflow.dev/learn/concepts/the-viewport)、[React Flow performance](https://reactflow.dev/learn/advanced-use/performance)、[AFFiNE Page／Edgeless 概念](https://docs.affine.pro/core-concepts/elements-of-affine/page-mode)。
+
+### 實作對應：直接重用哪些部分
+
+1. **白板引擎**：採 React Flow 的 viewport、選取框、節點／群組、edge、Controls 與 MiniMap；使用專案自己的卡片與真實 atlas 資料。框選／拖曳只是瀏覽器中的選取與版面操作，不因此新增伺服器寫入或架構編輯權限。
+2. **巢狀頁**：本應用建立「系統 → 服務 → 模組 → 函式 → 原碼」頁面樹。卡片開啟相應 page，返回使用父頁關係，保存每頁 camera；左側目錄樹展開、收合、搜尋與目前位置高亮。這是宿主功能，不能宣稱 React Flow 的 sub-flow 自動提供 Notion 的頁面資料庫。
+3. **閱讀與來源**：白話說明、協議／輸入輸出、原檔行號與受保護 code API 繼續由現有資料層負責；播放器是教學先後，不是真實訊息執行。縮放／平移應是同一張畫布的 viewport 變化，不能用長網頁捲動冒充無限白板。
+4. **效能邊界**：只渲染目前頁的直接內容，目錄樹按需展開；節點與 edge renderer、callbacks 保持穩定，播放器不要重建整份樹。無限畫布指可平移的空間，不代表無限節點、記憶體或任意手機效能；本次以真實 atlas 的桌面／手機 Playwright 驗證為準，沒有跨套件 benchmark。
+5. **授權交付**：鎖定實際安裝版於 `web/package-lock.json`，保留套件 LICENSE／copyright notice 與預設畫面 attribution；不連外 CDN 載入畫布套件，不新增商業授權金鑰。若未來改為隱藏署名、使用 Pro 範例或換套件，依當時版本重新核對條件。
+
+第四版驗收除既有 OAuth／來源白名單回歸外，至少包含：白板平移／滾輪縮放／框選、卡片進入與返回、每頁視野還原、目錄樹展開與搜尋、連線詳情、教學流程及原碼閱讀；桌面與手機各保存總覽、深入一層、目錄展開、播放畫面。此章是選型依據，實際通過情形由第四版交付報告記錄。
