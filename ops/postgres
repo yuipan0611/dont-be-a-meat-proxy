@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Operator-only access to the standalone L-01 stack. No password in argv or output.
+set -euo pipefail
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PG_COMPOSE=(docker compose -p "${HUB_PG_PROJECT:-neighbor-hub-db}" -f "$REPO_ROOT/deploy/postgres/compose.yaml")
+case "${1:-}" in
+  migrate)
+    "${PG_COMPOSE[@]}" exec -T db bash /opt/hub-postgres/migrate.sh
+    ;;
+  psql)
+    shift
+    "${PG_COMPOSE[@]}" exec -T db psql -X -U postgres -d hub -v ON_ERROR_STOP=1 "$@"
+    ;;
+  dump)
+    "${PG_COMPOSE[@]}" exec -T db pg_dump -U postgres -d hub --format=custom --no-owner
+    ;;
+  verify-dump)
+    "${PG_COMPOSE[@]}" exec -T db pg_restore --list
+    ;;
+  *) echo 'Usage: ops/postgres migrate | psql [psql options] | dump | verify-dump' >&2; exit 2 ;;
+esac
