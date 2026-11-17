@@ -1,0 +1,166 @@
+{
+  "TC-14": {
+    "realTlsHostnames": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    }
+  },
+  "TC-16": {
+    "ephemeral": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "retentionNotice": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "nonMemberRefused": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "newConfig": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    }
+  },
+  "TC-17": {
+    "ephemeral": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "citationsAndTaipeiTime": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "draftConfirmedSeparate": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "readOnly": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "unknownRefused": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "bothComputersOff": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "quotaText": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    }
+  },
+  "TC-18": {
+    "dmTypeSenderSummary": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "oneDigest": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "noPublicFallback": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    }
+  },
+  "TC-19": {
+    "realDiscordGithubError": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "discordCancel": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "discordStranger": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "discordDoubleClick": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "discordEmptyTitle": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    }
+  },
+  "TC-20": {
+    "draftNotification": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "memberRefused": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "repeatRefused": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    }
+  },
+  "TC-21": {
+    "traditionalChineseResponse": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    },
+    "groqCostGate": {
+      "ok": null,
+      "actor": "維護者",
+      "utc": null,
+      "evidence": null
+    }
+  }
+}
