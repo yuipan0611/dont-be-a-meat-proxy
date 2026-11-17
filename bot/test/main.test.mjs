@@ -11,8 +11,10 @@ test('mailToken reads HTTP_BEARER_TOKEN from mail-a.env or a bare token, rejects
   assert.throws(() => mailToken('HTTP_BEARER_TOKEN=short\n'), /no valid upstream token/);
 });
 
-test('slash commands: exactly connect / revoke / status; no write-capable assistant command', () => {
-  assert.deepEqual(COMMANDS.map((c) => c.name), ['connect', 'revoke', 'status']);
+test('slash commands: exactly connect / revoke / status / task; no write-capable assistant command', () => {
+  assert.deepEqual(COMMANDS.map((c) => c.name), ['connect', 'revoke', 'status', 'task']);
   const status = COMMANDS.find((c) => c.name === 'status');
   assert.equal(status.options.find((o) => o.name === 'public').required, false);
+  const task = COMMANDS.find((c) => c.name === 'task');
+  assert.equal(task.options.find((o) => o.name === 'title').required, true);
 });

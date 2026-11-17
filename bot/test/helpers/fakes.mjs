@@ -58,6 +58,36 @@ export function createFakeMail() {
       if (!m) throw new Error('not found');
       return { raw: JSON.stringify(m), message: { ...m } };
     },
+    async sendItem(item) {
+      if (down) throw Object.assign(new Error('hub down'), { code: 'E-HUB' });
+      const id = nextMsg++;
+      const envelope = {
+        v: 1,
+        client_event_id: item.clientEventId ?? `e-${id}`,
+        kind: item.kind,
+        intent: item.intent ?? 'action',
+        summary: item.summary,
+        text: item.text,
+        links: item.links ?? [],
+        unfinished: item.unfinished ?? [],
+      };
+      const msg = {
+        id,
+        from: item.senderName ?? 'HubBot',
+        to: item.to,
+        cc: item.cc ?? [],
+        subject: item.subject,
+        topic: item.kind,
+        body_md: JSON.stringify(envelope),
+        created_ts: new Date().toISOString(),
+      };
+      messages.set(id, msg);
+      for (const a of [...item.to, ...(item.cc ?? [])]) {
+        if (!inbox.has(a)) inbox.set(a, []);
+        inbox.get(a).push({ cursor: ++seq, message_id: id });
+      }
+      return { status: 'saved', messageId: id, createdTs: msg.created_ts, threadId: envelope.client_event_id };
+    },
   };
 }
 
@@ -105,6 +135,43 @@ export function createFakeApplier({ issue = 'applied', revoke = 'applied', probe
   };
 }
 
+export function createFakeGitHub({ issues = [], failNext = null, defaultRepo = 'example-org/dont-be-a-meat-proxy' } = {}) {
+  const calls = [];
+  const issueList = [...issues];
+  let nextFail = failNext;
+  return {
+    calls,
+    issues: issueList,
+    failNext(err) { nextFail = err; },
+    async createIssue({ repo, title, body }) {
+      calls.push({ repo: repo || defaultRepo, title, body });
+      if (nextFail) {
+        const err = nextFail;
+        nextFail = null;
+        if (typeof err === 'string') {
+          throw Object.assign(new Error(err), { code: 'E-GITHUB' });
+        }
+        throw err;
+      }
+      const trimmed = String(title ?? '').trim();
+      if (!trimmed) {
+        throw Object.assign(new Error('標題必填'), { code: 'E-TITLE' });
+      }
+      const num = issueList.length + 1;
+      const targetRepo = repo || defaultRepo;
+      const issue = {
+        number: num,
+        url: `https://github.com/${targetRepo}/issues/${num}`,
+        title: trimmed,
+        body: body ?? '',
+        repo: targetRepo,
+      };
+      issueList.push(issue);
+      return { number: issue.number, url: issue.url, title: issue.title, repo: issue.repo };
+    },
+  };
+}
+
 let ixSeq = 1000;
 export function fakeInteraction(commandName, opts = {}, { userId = OWNER_DISCORD, guildId = GUILD } = {}) {
   const log = [];
@@ -118,8 +185,28 @@ export function fakeInteraction(commandName, opts = {}, { userId = OWNER_DISCORD
       getString: (k) => opts[k] ?? null,
       getBoolean: (k) => opts[k] ?? null,
     },
+    isButton: () => false,
+    isChatInputCommand: () => true,
     async deferReply(o) { log.push({ type: 'defer', ...o }); },
     async editReply(o) { log.push({ type: 'edit', ...o }); },
     async followUp(o) { log.push({ type: 'followUp', ...o }); },
+    async reply(o) { log.push({ type: 'reply', ...o }); },
+  };
+}
+
+export function fakeButtonInteraction(customId, { userId = OWNER_DISCORD, guildId = GUILD } = {}) {
+  const log = [];
+  return {
+    log,
+    id: String(ixSeq++),
+    customId,
+    guildId,
+    user: { id: userId },
+    isButton: () => true,
+    isChatInputCommand: () => false,
+    async deferUpdate(o) { log.push({ type: 'deferUpdate', ...o }); },
+    async update(o) { log.push({ type: 'update', ...o }); },
+    async editReply(o) { log.push({ type: 'edit', ...o }); },
+    async reply(o) { log.push({ type: 'reply', ...o }); },
   };
 }

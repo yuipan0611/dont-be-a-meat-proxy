@@ -32,6 +32,8 @@ services:
       BOT_DAILY_CAP_USD: "0.50"           # GAP-18 / SR-AST-04
       BOT_PRESENCE_DIGEST: ${HUB_BOT_PRESENCE_DIGEST:-0}   # 1 needs privileged Presence + Server Members intents
       BOT_TICK_MS: "15000"
+      GITHUB_TOKEN_FILE: ${HUB_GITHUB_TOKEN_FILE:-/run/bot/github.token}
+      GITHUB_DEFAULT_REPO: ${HUB_GITHUB_REPO:-example-org/dont-be-a-meat-proxy}
     # Owner of the bot-only secret copies (runbook §2); the container cannot read root-only files.
     user: "${HUB_BOT_UID:?set HUB_BOT_UID}:${HUB_BOT_GID:?set HUB_BOT_GID}"
     volumes:
