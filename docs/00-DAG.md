@@ -150,6 +150,7 @@ flowchart TD
 | Discord application | <ORCA_ID> | <ORCA_ID> | codex（computer use）＋維護者（建立、CAPTCHA、身分驗證） | — | ✅ App ID <APPLICATION_ID>；token 存 Mac ~/.config/hub-discord/bot.token（600，72 bytes，PM 驗格式未讀內容）；待 維護者 邀請進伺服器 |
 | F-11 Gemini 訂閱當 LLM 後端 | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-F11） | — | ✅（維護者 改選 Groq gpt-oss，續派 F-11b）7939a89 併入 master：`docs/research/F-11-gemini-subscription-backend.md`；gateway 可切 gemini-cli／antigravity-cli／gemini-api-free／gemini-api-paid，預設 disabled。結論：Gemini CLI 個人訂閱 2026-06-18 停用；Antigravity 條款第 6 點第三方存取有停權風險；免費 API 資料可被用於訓練；付費 3.1 Flash-Lite 約 US$3.15／月。**待 維護者 選** |
 | UI 第三版（維護者：第二版太簡陋不合格） | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-senior-swe） | 11-30 | ✅ 本機完成併入 master：五層＋流程播放＋原碼閱讀；13 服務／92 模組／541 函式／20 連線；PM 重跑 web 16/16、client 0 fail；截圖 docs/ui/atlas-*.png；待 維護者 驗收是否合格 |
+| F-11b Groq（gpt-oss）後端 | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-F11） | — | ✅ 3819428 併入 master：groq-api backend＋原生 tool call＋OpenAI／Messages shim＋共用日限；PM 重跑 gateway 35、bot 65 0 fail；真 key smoke（ops/llm-gateway/groq-smoke.mjs）待 維護者 存 key；待查 Groq Console 的 Spend Limits／Data Controls（ZDR） |
 | EVAL-01 question／action 分類評測 | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-2 | 11-29 | ✅ 30 則 fixtures＋runner 併入 master，PM 重跑單元 10/10；真模型 claude CLI 第 1 次 30/30 正確（action→question 0、question→action 0%），收據 docs/ops/evidence/EVAL01-claude-cli-run1.md |
 | EVAL-01 收件端判斷 question／action | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-2 | 11-28 | ✅ 資料集 fixtures/eval-classify-v1.jsonl（30 則，10 Q/10 A/10 mixed）、評測 runner ops/eval/eval-classify.mjs、單元測試 10/10 PASS |
 
