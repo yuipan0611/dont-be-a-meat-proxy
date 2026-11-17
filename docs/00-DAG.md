@@ -139,8 +139,10 @@ flowchart TD
 | H-08 MVP 驗收 | — | TC-13 前置 <ORCA_ID>；TC-08 修正 <ORCA_ID> | PM＋維護者；codex-senior-swe；swe-Ben | 11-23 | ✅ 2026-11-17 TC-01～13 全過（見 docs/delivery-MVP.md）；TC-08 經 9a1f78f 修正後重測通過 |
 | L-00 MVP 顯示修正 | <ORCA_ID> | <ORCA_ID> | swe-Tom | 11-24 | ✅ fe3295b 併入 master（0cdbf4b）；PM 重跑 client 105（92 pass／13 skip 需本機 Mail）、lifecycle 0 fail；Mac 實機 #44 顯示「回覆」、#72 顯示「HubClock 通知：已拒絕」；Windows 待下次換檔 |
 | L-01 Postgres＋Supabase migrations | <ORCA_ID> | <ORCA_ID> | codex-senior-swe | 11-25 | ✅ 68e9c3b 併入 master（85c6a7f），本機 155 測試 0 fail；**VPS 部署 ✅ 2026-11-17 08:10Z**（PM 照 runbook-L01）：4 migrations＋重跑冪等、RLS 14 PASS、hub_app 只能連 hub、無 5432 監聽、idle 50 MiB／512 MiB、office 200／hub 401、mail-a／hubclock 未重建；每日備份含 pg_dump（systemd 實跑 success）、還原演練 4 migrations／9 RLS 表／權限 f|f |
-| L-06 auto mode | <ORCA_ID> | <ORCA_ID> | swe-Ben | 11-27 | 🔄 程式完成併入 master（0bbc74b，與 L-00 測試衝突由 PM 保留兩邊）；PM 重跑 client 113（100 pass／13 skip）、lifecycle 46（36 pass）0 fail；**HubClock 已部署 VPS 08:15Z**（state 備份 /root/hubclock-state.pre-L06）；實機 TC-15：無對象 #73→#75 拒、300 分鐘 #74→#76 拒、無生效 grant ✅；其餘步驟待 Windows。已知顯示問題：auto 通知寫「對 #null」。PM 接受 §5 取捨（到達時判斷、只放行 intent=action、一次一個對象） |
+| L-06 auto mode | <ORCA_ID> | <ORCA_ID> | swe-Ben | 11-27 | 🔄 程式完成併入 master（0bbc74b，與 L-00 測試衝突由 PM 保留兩邊）；PM 重跑 client 113（100 pass／13 skip）、lifecycle 46（36 pass）0 fail；**HubClock 已部署 VPS 08:15Z**（state 備份 /root/hubclock-state.pre-L06）；實機 TC-15：無對象 #73→#75 拒、300 分鐘 #74→#76 拒、無生效 grant ✅；其餘步驟待 Windows。已知顯示問題：auto 通知寫「對 #null」。PM 接受 §5 取捨（到達時判斷、只放行 intent=action、一次一個對象）；同 dispatch 續派 L-02 |
 | L-07 伺服器端 validator | <ORCA_ID> | <ORCA_ID> | codex-senior-swe | 11-27 | 🔄 派工中（第二波） |
-| L-03 Discord bot | <ORCA_ID> | <ORCA_ID> | swe-Tom | 11-27 | 🔄 派工中（第二波；真 bot token 待 維護者 建 Discord application） |
+| L-03 Discord bot | <ORCA_ID> | <ORCA_ID> | swe-Tom | 11-27 | ✅ 程式 21bb2ad 併入 master（f892509），PM 重跑 bot 44/44；未部署：需 維護者 建 Discord application＋L-03b TokenApplier（同 dispatch 續派 Tom） |
+| L-04 Discord 建 GitHub Issue | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-2 | 11-28 | 🔄 派工中 |
+| L-05 決策草稿→正式 | <ORCA_ID> | <ORCA_ID> | agy-junior-swe-1 | 11-28 | 🔄 派工中 |
 
 註：Codex worker 沒有 Hostinger MCP 工具（escalation <ORCA_ID>）→ DNS／防火牆改由 PM 端 Hostinger MCP 處理，Codex 只寫 runbook＋hPanel 手動備案。
