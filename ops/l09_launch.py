@@ -126,13 +126,22 @@ def put_secret(path, value, uid=0, gid=0, mode=0o400):
         write(path, value + '\n', uid, gid, mode)
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def request(url, token=None):
     try:
         req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + token} if token else {})
-        with urllib.request.urlopen(req, timeout=15) as r:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+        with opener.open(req, timeout=15) as r:
             return r.status
     except urllib.error.HTTPError as e:
-        return e.code
+        try:
+            return e.code
+        finally:
+            e.close()
     except (OSError, ValueError):
         raise Stop('HTTP probe unreachable; details suppressed') from None
 
