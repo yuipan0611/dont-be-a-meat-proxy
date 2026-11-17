@@ -20,7 +20,7 @@ services:
         exec /app/start-all.sh
     environment:
       HINDSIGHT_ENABLE_CP: "false"
-      HINDSIGHT_API_WORKER_ID: hindsight-1   # stable: in-flight tasks are recovered after a container recreate
+      HINDSIGHT_API_WORKER_ID: hindsight-${HUB_GROUP_ID:?set HUB_GROUP_ID}   # stable: in-flight tasks are recovered after a container recreate
       HINDSIGHT_API_MCP_ENABLED_TOOLS: recall,list_memories,get_memory,get_document   # second wall behind bank-proxy
       HINDSIGHT_API_TENANT_EXTENSION: hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension
       HINDSIGHT_API_LLM_PROVIDER: ${HINDSIGHT_LLM_PROVIDER:-anthropic}
@@ -58,6 +58,7 @@ services:
     build: ../../ops/bank-proxy
     user: "${HUB_BANKPROXY_UID:-10002}:${HUB_BANKPROXY_GID:-10002}"
     environment:
+      HUB_GROUP_ID: ${HUB_GROUP_ID:?set HUB_GROUP_ID}
       HUB_DB_HOST: db
       HINDSIGHT_URL: http://hindsight:8888
       ANTHROPIC_URL: ${HUB_ANTHROPIC_URL:-https://api.anthropic.com}

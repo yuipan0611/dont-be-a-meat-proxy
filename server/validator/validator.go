@@ -42,6 +42,7 @@ type validator struct {
 	allowlistPath string
 	proxy         *httputil.ReverseProxy
 	slots         chan struct{}
+	groupID       string
 }
 
 func newValidator(upstream, allowlistPath string) (http.Handler, error) {
@@ -64,7 +65,7 @@ func newValidator(upstream, allowlistPath string) (http.Handler, error) {
 	}
 	p.FlushInterval = -1
 	p.Transport = &http.Transport{Proxy: nil, MaxIdleConns: 32, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second, ResponseHeaderTimeout: 10 * time.Second}
-	v := &validator{d, allowlistPath, p, make(chan struct{}, 16)}
+	v := &validator{d, allowlistPath, p, make(chan struct{}, 16), os.Getenv("HUB_GROUP_ID")}
 	if _, err = v.loadAllowlist(); err != nil {
 		return nil, errors.New("private validator allowlist unavailable or invalid")
 	}
@@ -205,6 +206,10 @@ func (v *validator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		args, okArgs := params["arguments"].(map[string]any)
 		if !ok || name == "" || !okArgs {
 			rpcError(w, 400, safeID, -32600, "Invalid tool arguments", nil)
+			return
+		}
+		if v.groupID != "" && !groupArguments(args, "/data/projects/"+v.groupID) {
+			rpcError(w, 200, safeID, -32009, "Group boundary: foreign project refused", nil)
 			return
 		}
 		for _, field := range []string{"attachment_paths", "attachments"} {
@@ -387,4 +392,33 @@ func collectText(value any, out *strings.Builder, depth int) error {
 		}
 	}
 	return nil
+}
+
+// Container isolation protects resources; explicit project arguments must also stay in this group.
+func groupArguments(value any, project string) bool {
+	switch x := value.(type) {
+	case map[string]any:
+		for k, v := range x {
+			switch k {
+			case "human_key", "project_key", "project_a", "project_b", "project":
+				if v != project {
+					return false
+				}
+			case "group_id":
+				if v != strings.TrimPrefix(project, "/data/projects/") {
+					return false
+				}
+			}
+			if !groupArguments(v, project) {
+				return false
+			}
+		}
+	case []any:
+		for _, v := range x {
+			if !groupArguments(v, project) {
+				return false
+			}
+		}
+	}
+	return true
 }

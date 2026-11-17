@@ -25,7 +25,7 @@ const freePort = () => new Promise((res, rej) => {
   s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
 });
 
-export async function startStack({ keep = false, llm = 'ollama' } = {}) {
+export async function startStack({ keep = false, llm = 'ollama', groupId = 'group-a' } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'l02-'));
   const id = `${process.pid}-${Date.now() % 100000}`;
   const dbProject = `l02db-${id}`;
@@ -52,7 +52,7 @@ export async function startStack({ keep = false, llm = 'ollama' } = {}) {
   const arch = process.arch === 'arm64' ? 'linux/arm64' : 'linux/amd64';
   const port = await freePort();
   const env = {
-    ...process.env, HUB_PG_PROJECT: dbProject, HUB_PRIVATE_DIR: priv, HUB_PG_SQL_DIR: join(dir, 'supabase'), HUB_PG_PLATFORM: arch,
+    ...process.env, HUB_GROUP_ID: groupId, HUB_PG_PROJECT: dbProject, HUB_PRIVATE_DIR: priv, HUB_PG_SQL_DIR: join(dir, 'supabase'), HUB_PG_PLATFORM: arch,
     HUB_HS_PLATFORM: arch, HUB_MEMORY_PRIVATE_DIR: mem, HUB_BANKPROXY_STATE_DIR: state, HUB_BANKPROXY_PORT: String(port),
     HUB_BANKPROXY_UID: String(process.getuid()), HUB_BANKPROXY_GID: String(process.getgid()), HUB_BANKPROXY_TAG: 'l02-test',
   };

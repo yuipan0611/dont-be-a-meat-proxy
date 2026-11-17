@@ -40,10 +40,12 @@ if (mode !== 'serve') {
   process.exit(2);
 }
 
+const groupId = env.HUB_GROUP_ID;
+if (!/^[a-z][a-z0-9-]{1,62}$/.test(groupId ?? '')) throw new Error('HUB_GROUP_ID required');
 const ledger = createLedger({ file: ledgerFile, capMicros, clock });
-const registry = createPgRegistry({ host: env.HUB_DB_HOST ?? 'db', password: secret('hub_app_password') });
+const registry = createPgRegistry({ groupId, host: env.HUB_DB_HOST ?? 'db', password: secret('hub_app_password') });
 const proxy = createBankProxy({
-  registry, upstreamUrl: env.HINDSIGHT_URL ?? 'http://hindsight:8888', upstreamKey: secret('hindsight_api_key'), log,
+  groupId, registry, upstreamUrl: env.HINDSIGHT_URL ?? 'http://hindsight:8888', upstreamKey: secret('hindsight_api_key'), log,
 });
 const gateway = createLlmGateway({
   ledger, upstreamUrl: env.ANTHROPIC_URL ?? 'https://api.anthropic.com', upstreamKey: secret('anthropic_api_key'),

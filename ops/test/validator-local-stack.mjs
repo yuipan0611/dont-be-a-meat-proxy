@@ -30,7 +30,7 @@ async function port() {
 const [backendPort, hubPort, officePort, adminPort] = await Promise.all([port(), port(), port(), port()]);
 const base = 'http://127.0.0.1:' + hubPort;
 const office = 'http://127.0.0.1:' + officePort;
-const env = { ...process.env, HUB_PRIVATE_DIR: privateDir, HUB_VALIDATOR_POLICY_DIR: policyDir,
+const env = { ...process.env, HUB_GROUP_ID: 'group-a', HUB_PRIVATE_DIR: privateDir, HUB_VALIDATOR_POLICY_DIR: policyDir,
  HUB_MAIL_PORT: String(backendPort), HUB_OPS_UID: String(process.getuid()), HUB_OPS_GID: String(process.getgid()),
  HUB_VALIDATOR_IMAGE: project + ':test', XDG_DATA_HOME: join(dir, 'caddy-data'), XDG_CONFIG_HOME: join(dir, 'caddy-config') };
 const baseArgs = ['compose', '-p', project, '-f', join(root, 'deploy/compose.yaml')];

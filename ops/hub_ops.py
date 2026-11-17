@@ -89,13 +89,17 @@ def save_state(state, data):
     atomic_write(state / 'tokens.json', json.dumps(data, indent=2) + '\n')
 
 
-def init_secrets(state):
+def init_secrets(state, group_id='group-a'):
+    if not re.fullmatch(r'[a-z][a-z0-9-]{1,62}', group_id):
+        raise RuntimeError('Invalid group_id')
     with state_lock(state):
         if (state / 'tokens.json').exists():
             data = load_state(state)
+            if data['group_id'] != group_id:
+                raise RuntimeError('Existing registry group mismatch')
         else:
             data = {
-                'version': 1, 'revision': 1, 'group_id': 'group-a',
+                'version': 1, 'revision': 1, 'group_id': group_id,
                 'upstream': secrets.token_urlsafe(32),
                 'devices': {
                     'mac': {'token': secrets.token_urlsafe(32), 'status': 'active', 'agent': 'BlueLake'},
@@ -157,7 +161,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 def probe(url, token=None):
     # Never forward credentials through an environment proxy or HTTP redirect.
     parsed = urlparse(url)
-    if not ((parsed.scheme == 'https' and parsed.netloc == 'hub.example.invalid') or
+    if not ((parsed.scheme == 'https' and parsed.hostname and not parsed.username and not parsed.password) or
             (parsed.scheme == 'http' and parsed.hostname == '127.0.0.1')):
         raise RuntimeError('Probe URL must be HTTPS Hub or loopback HTTP test service')
     headers = {'Authorization': 'Bearer ' + token} if token else {}
@@ -216,9 +220,9 @@ class BootstrapSession:
 
 
 def bootstrap(args):
-    project = '/data/projects/group-a'
     with state_lock(args.state_dir):
         data = load_state(args.state_dir)
+        project = '/data/projects/' + data['group_id']
         # memorybridge (L-02b): generated name like HubClock; existing registrations are retained.
         for device, expected in [('mac', 'BlueLake'), ('windows', 'RedStone'), ('hubclock', None), ('memorybridge', None)]:
             path = args.state_dir / (device + '.sender.json')
@@ -338,6 +342,8 @@ def issue(args):
 def main(command):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state-dir', type=Path, default=Path(DEFAULT_STATE))
+    if command == 'init-secrets':
+        parser.add_argument('--group-id', default='group-a')
     if command == 'bootstrap':
         parser.add_argument('--url', default='http://127.0.0.1:8765/mcp/')
     elif command != 'init-secrets':
@@ -363,7 +369,7 @@ def main(command):
         return 1
     try:
         if command == 'init-secrets':
-            init_secrets(args.state_dir)
+            init_secrets(args.state_dir, args.group_id)
         elif command == 'bootstrap':
             bootstrap(args)
         elif command == 'render-caddy':

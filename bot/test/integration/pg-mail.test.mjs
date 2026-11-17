@@ -127,3 +127,25 @@ test('TC-18 end-to-end: real Mail + real Postgres → one DM; unknown recipient 
   const inbox = await reader.fetchEvents({ agentName: 'RedStone', limit: 10 });
   assert.ok(inbox.events.some((e) => e.message_id === sent.messageId));
 });
+
+test('L08: service_role store isolates foreign members, notifications, cursors and budget', {skip:skipPg}, async()=>{
+ const {pool}=await freshStore();
+ const a=createPgStore({pool,groupId:'group-a'}), b=createPgStore({pool,groupId:'group-b'});
+ const member='00000000-0000-4000-8000-0000000000b1';
+ await pool.query(`insert into groups (id,display_name,project_key,mail_hostname,bank_id) values ('group-b','B','/data/projects/group-b','b.local','group-b');
+ insert into members (id,group_id,display_name,role) values ('${member}','group-b','B','owner');
+ insert into discord_links(member_id,guild_id,discord_user_id,last_interaction_id) values ('${member}','10000000\x30000000002','20000000\x30000000002','b');
+ insert into devices(member_id,group_id,label,platform,token_id,token_prefix,token_hash,allowed_agents) values ('${member}','group-b','B','linux','tok_groupb001','mph_test',repeat('b',64),'{RedStone}');`);
+ assert.equal(await a.findMemberByDiscord('10000000\x30000000002','20000000\x30000000002'),null);
+ await b.commitIngest({groupId:'group-b',agentName:'RedStone',cursor:99,rows:[{groupId:'group-b',memberId:member,mailId:9,recipientAgent:'RedStone',label:'x',sender:'x',subject:'private',summary:'private',mailCreatedAt:'2026-11-20T00:00:00Z',state:'pending'}]});
+ assert.deepEqual(await a.listPending(member),[]);assert.deepEqual(await a.membersWithWork(),[]);
+ assert.equal(await a.getCursor('RedStone'),null);
+ await a.commitIngest({groupId:'group-a',agentName:'RedStone',cursor:1,rows:[]});
+ assert.equal(await b.getCursor('RedStone'),99);
+ const foreign=(await b.listPending(member))[0];
+ await a.markNotification(foreign.id,'sent');assert.equal((await b.listPending(member)).length,1);
+ assert.equal(await a.requestRevocation({tokenId:'tok_groupb001',memberId:member,actorId:'test',reason:'test',requestId:'deny'}),false);
+ await assert.rejects(a.issueDevice({groupId:'group-b',memberId:member}),/group/i);
+ await assert.rejects(a.reserveBudget({groupId:'group-b',day:'2026-11-20',estimateUsd:0.1,capUsd:0.5}),/group/i);
+ assert.ok((await a.watchedAgents()).every(x=>x.groupId==='group-a'));
+});

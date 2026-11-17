@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shlex
 import stat
 import subprocess
 import sys
@@ -150,6 +151,34 @@ class TokenApplierTests(unittest.TestCase):
 
     # ------------------------------------------------------------------ tests
 
+    def test_registry_group_mismatch_cannot_import_before_apply(self):
+        self.cfg.group_id = 'group-b'
+        with self.assertRaises(ta.ApplyError):
+            ta.import_mvp(self.cfg, self.db)
+        self.assertEqual(self.db.devices, {}, 'registry mismatch must be detected before DB writes')
+
+    def test_foreign_export_excluded_and_foreign_request_cannot_mutate(self):
+        self.cfg.group_id = 'group-a'
+        foreign = self.bot_issue('foreign1', 'tok_foreign01')
+        self.db.devices['tok_foreign01']['group_id'] = 'group-b'
+        ta.atomic_write(self.cfg.token_dir / 'tok_foreign01', foreign + '\n')
+        _, allowed = ta.desired_tokens(self.cfg, self.db)
+        self.assertNotIn(foreign, allowed.values())
+        ta.process(self.cfg, self.db)
+        self.assertEqual(self.receipt('foreign1')['status'], 'failed')
+        self.assertEqual(self.db.devices['tok_foreign01']['status'], 'active')
+        self.assertEqual(self.calls(), [])
+
+    def test_request_group_mismatch_rejected_before_apply(self):
+        self.cfg.group_id = 'group-a'
+        self.bot_issue('foreign2', 'tok_foreign02')
+        path = self.cfg.spool / 'requests' / 'foreign2.json'
+        req = json.loads(path.read_text()); req['group_id'] = 'group-b'
+        path.write_text(json.dumps(req))
+        ta.process(self.cfg, self.db)
+        self.assertEqual(self.receipt('foreign2')['status'], 'failed')
+        self.assertEqual(self.calls(), [])
+
     def test_issue_success_validates_reloads_probes_and_records_revision(self):
         token = self.bot_issue('ix1', 'tok_aaaa1111')
         result = ta.process(self.cfg, self.db)
@@ -208,7 +237,7 @@ class TokenApplierTests(unittest.TestCase):
         res = subprocess.run([sys.executable, str(ROOT / 'ops' / 'token-applier'), 'process',
                               '--state', str(self.cfg.state), '--token-dir', str(self.cfg.token_dir), '--spool', str(self.cfg.spool),
                               '--output', str(self.output), '--config', str(self.caddyfile), '--owner', 'self',
-                              '--caddy-bin', self.cfg.caddy_bin, '--reload-cmd', self.cfg.reload_cmd[0], '--psql', 'false'],
+                              '--caddy-bin', self.cfg.caddy_bin, '--reload-cmd', shlex.quote(self.cfg.reload_cmd[0]), '--psql', 'false'],
                              capture_output=True, text=True)
         self.assertEqual(res.returncode, 0, res.stderr)  # the request is answered, not left hanging
         self.assertEqual(self.receipt('ix1'), {'request_id': 'ix1', 'status': 'failed', 'error': 'database unavailable or query failed'})

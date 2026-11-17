@@ -18,7 +18,7 @@ import { join } from 'node:path';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export function createSpoolApplier({ dir, timeoutMs = 30_000, pollMs = 250, now = () => new Date().toISOString() }) {
+export function createSpoolApplier({ dir, groupId = 'group-a', timeoutMs = 30_000, pollMs = 250, now = () => new Date().toISOString() }) {
   const sub = (n) => join(dir, n);
 
   async function atomic(path, data) {
@@ -28,6 +28,7 @@ export function createSpoolApplier({ dir, timeoutMs = 30_000, pollMs = 250, now 
   }
 
   async function submit(req, credential) {
+    if (req.group_id !== groupId) throw new Error('Group boundary');
     for (const n of ['credentials', 'requests', 'receipts']) await mkdir(sub(n), { recursive: true, mode: 0o700 });
     if (!/^[A-Za-z0-9_-]{1,80}$/.test(req.request_id) || !/^tok_[a-z0-9]{8,32}$/.test(req.token_id)) throw new Error('bad request id / token id');
     if (credential !== undefined) {

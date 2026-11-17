@@ -22,6 +22,7 @@ from pathlib import Path
 import pwd
 import re
 import shutil
+import shlex
 import stat
 import subprocess
 import sys
@@ -50,10 +51,14 @@ class PsqlDb:
     """Runs SQL through `ops/postgres psql` (docker exec, superuser, hub DB). Values go in as psql
     variables, never string-formatted SQL; IDs are regex-checked before they get here anyway."""
 
-    def __init__(self, command):
+    def __init__(self, command, group_id='group-a'):
         self.command = command
+        if not re.fullmatch(r'[a-z][a-z0-9-]{1,62}', group_id):
+            raise ApplyError('invalid group_id')
+        self.group_id = group_id
 
     def _sql(self, sql, **variables):
+        variables['gid'] = self.group_id
         args = [*self.command, '-Atq']
         for key, value in variables.items():
             args += ['-v', f'{key}={value}']
@@ -68,37 +73,37 @@ class PsqlDb:
 
     def export(self):
         return self._json("select coalesce(json_agg(json_build_object('token_id', token_id, 'token_hash', token_hash,"
-                          " 'group_id', group_id) order by token_id), '[]') from public.caddy_allowlist_export;")
+                          " 'group_id', group_id) order by token_id), '[]') from public.caddy_allowlist_export where group_id = :'gid';")
 
     def all_hashes(self):
-        return set(self._json("select coalesce(json_agg(token_hash), '[]') from public.devices;"))
+        return set(self._json("select coalesce(json_agg(token_hash), '[]') from public.devices where group_id = :'gid';"))
 
     def device(self, token_id):
         return self._json("select json_build_object('status', status, 'token_hash', token_hash, 'group_id', group_id)"
-                          " from public.devices where token_id = :'tid';", tid=token_id)
+                          " from public.devices where group_id = :'gid' and token_id = :'tid';", tid=token_id)
 
     def next_revision(self):
-        return int(self._sql('select coalesce(max(config_revision), 0) + 1 from public.devices;'))
+        return int(self._sql("select coalesce(max(config_revision), 0) + 1 from public.devices where group_id = :'gid';"))
 
     def _audit(self, action):
         return (f"insert into public.audit_log (group_id, actor_type, actor_id, action, target_table, target_id, request_id, details)"
                 f" select group_id, 'ops', 'TokenApplier', '{action}', 'devices', token_id, :'rid', json_build_object(%s)::jsonb"
-                f" from public.devices where token_id = :'tid'")
+                f" from public.devices where group_id = :'gid' and token_id = :'tid'")
 
     def mark_applied(self, token_id, revision, request_id):
-        self._sql("begin; update public.devices set config_revision = :rev where token_id = :'tid' and status = 'active';"
+        self._sql("begin; update public.devices set config_revision = :rev where group_id = :'gid' and token_id = :'tid' and status = 'active';"
                   + self._audit('device.config.applied') % "'config_revision', :rev" + "; commit;",
                   tid=token_id, rev=revision, rid=request_id)
 
     def fail_issue(self, token_id, request_id, reason):
         self._sql("begin; update public.devices set status = 'revocation_pending', revocation_requested_at = now(),"
-                  " revoked_by = 'TokenApplier', revoke_reason = :'why' where token_id = :'tid' and status = 'active';"
+                  " revoked_by = 'TokenApplier', revoke_reason = :'why' where group_id = :'gid' and token_id = :'tid' and status = 'active';"
                   + self._audit('device.issue.failed') % "'reason', :'why'" + "; commit;",
                   tid=token_id, rid=request_id, why=reason)
 
     def complete_revocation(self, token_id, revision, request_id):
         self._sql("begin; update public.devices set status = 'revoked', revoked_at = now(), config_revision = :rev"
-                  " where token_id = :'tid' and status = 'revocation_pending';"
+                  " where group_id = :'gid' and token_id = :'tid' and status = 'revocation_pending';"
                   + self._audit('device.revoke.applied') % "'config_revision', :rev" + "; commit;",
                   tid=token_id, rev=revision, rid=request_id)
 
@@ -106,7 +111,7 @@ class PsqlDb:
         """MVP token → DB row of the group's owner (idempotent on token_hash)."""
         self._sql("insert into public.devices (member_id, group_id, label, platform, token_id, token_prefix, token_hash, allowed_agents)"
                   " select m.id, m.group_id, :'label', :'plat', :'tid', 'mvp_' || left(:'tid', 8), :'hash', array[:'agent']"
-                  " from public.members m where m.group_id = 'group-a' and m.role = 'owner' and m.status = 'active'"
+                  " from public.members m where m.group_id = :'gid' and m.role = 'owner' and m.status = 'active'"
                   " order by m.created_at limit 1 on conflict do nothing;",
                   tid=token_id, hash=token_hash, label=label, plat=platform, agent=agent)
         return self.device(token_id)
@@ -149,18 +154,24 @@ def applier_lock(state):
 
 def mvp_registry(cfg):
     path = cfg.state / 'tokens.json'
-    return json.loads(private_read(path))
+    registry = json.loads(private_read(path))
+    if registry['group_id'] != getattr(cfg, 'group_id', registry['group_id']):
+        raise ApplyError('registry group does not match configured group')
+    return registry
 
 
 def desired_tokens(cfg, db):
     """{token_id: token} that Caddy should accept. DB export wins; MVP tokens.json devices that were never
     imported stay allowed while active there. Anything non-active on EITHER side is excluded (fail closed)."""
     registry = mvp_registry(cfg)
+    group_id = getattr(cfg, 'group_id', registry['group_id'])
     export = db.export()
     db_hashes = db.all_hashes()
     mvp_inactive = {sha256(d['token']) for d in registry['devices'].values() if d['status'] != 'active'}
     allowed = {}
     for row in export:
+        if row['group_id'] != group_id:
+            continue
         if not TOKEN_ID.fullmatch(row['token_id']) or not HASH.fullmatch(row['token_hash']):
             raise ApplyError('unexpected row in caddy_allowlist_export')
         path = cfg.token_dir / row['token_id']
@@ -186,7 +197,7 @@ def apply(cfg, db, *, expect_ok=(), expect_denied=()):
     revision = db.next_revision()
     data = {'revision': revision, 'upstream': registry['upstream'],
             'devices': {k: {'token': v, 'status': 'active'} for k, v in sorted(allowed.items())}}
-    text = render(data, cfg.upstream)
+    text = render(data, cfg.upstream, getattr(cfg, 'memory_upstream', None))
     output = cfg.output
     if output.is_symlink() or output.parent.is_symlink():
         raise ApplyError('Caddy output must not be a symlink')
@@ -237,7 +248,7 @@ def handle_issue(cfg, db, req):
     tid, rid = req['token_id'], req['request_id']
     cred = cfg.spool / 'credentials' / tid
     dev = db.device(tid)
-    if not dev or dev['status'] != 'active':
+    if not dev or dev['group_id'] != getattr(cfg, 'group_id', 'group-a') or req.get('group_id') != dev['group_id'] or dev['status'] != 'active':
         cred.unlink(missing_ok=True)
         return {'status': 'failed', 'error': 'device is not active in the registry'}
     try:
@@ -271,7 +282,7 @@ def handle_issue(cfg, db, req):
 def handle_revoke(cfg, db, req):
     tid, rid = req['token_id'], req['request_id']
     dev = db.device(tid)
-    if not dev or dev['status'] == 'active':
+    if not dev or dev['group_id'] != getattr(cfg, 'group_id', 'group-a') or req.get('group_id') != dev['group_id'] or dev['status'] == 'active':
         return {'status': 'failed', 'error': 'device is not pending revocation'}
     secret = cfg.token_dir / tid
     try:
@@ -342,7 +353,8 @@ def import_mvp(cfg, db):
         for key, device in sorted(registry['devices'].items()):
             if device['status'] != 'active':
                 continue
-            tid = f'tok_mvp{key}01'
+            group_id = getattr(cfg, 'group_id', 'group-a')
+            tid = f'tok_mvp{key}01' if group_id == 'group-a' else 'tok_mvp' + sha256(group_id + ':' + key)[:16]
             atomic_write(cfg.token_dir / tid, device['token'] + '\n')
             row = db.import_device(token_id=tid, token_hash=sha256(device['token']),
                                    label=f'維護者 / {key} (MVP)', platform='macos' if key == 'mac' else 'windows',
@@ -359,7 +371,7 @@ def import_mvp(cfg, db):
 
 def build_config(args):
     cfg = argparse.Namespace(**vars(args))
-    cfg.reload_cmd = args.reload_cmd.split()
+    cfg.reload_cmd = shlex.split(args.reload_cmd)
     cfg.probe = http_probe
     for directory in (cfg.state, cfg.token_dir):
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -375,21 +387,23 @@ def build_config(args):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument('command', choices=['process', 'render', 'import-mvp'])
+    p.add_argument('--group-id', default='group-a')
     p.add_argument('--state', type=Path, default=Path('/var/lib/neighbor-hub/private'))
     p.add_argument('--token-dir', type=Path, default=Path('/var/lib/neighbor-hub/private/tokens-db'))
     p.add_argument('--spool', type=Path, default=Path('/var/lib/neighbor-hub/token-spool'))
     p.add_argument('--output', type=Path, default=Path('/etc/caddy/hub-private/auth.caddy'))
     p.add_argument('--config', type=Path, default=Path('/etc/caddy/Caddyfile'))
     p.add_argument('--owner', default='caddy')
+    p.add_argument('--memory-upstream')
     p.add_argument('--upstream', default='127.0.0.1:8765')
     p.add_argument('--caddy-bin', default='/usr/bin/caddy')
     p.add_argument('--reload-cmd', default='systemctl reload caddy')  # system Caddy ExecReload = caddy reload --force
     p.add_argument('--probe-url', default='https://hub.example.invalid/health/liveness')
-    p.add_argument('--psql', default=str(Path(__file__).resolve().parent / 'postgres') + ' psql')
+    p.add_argument('--psql', default=shlex.quote(str(Path(__file__).resolve().parent / 'postgres')) + ' psql')
     args = p.parse_args(argv)
     try:
         cfg = build_config(args)
-        db = PsqlDb(args.psql.split())
+        db = PsqlDb(shlex.split(args.psql), args.group_id)
         if args.command == 'process':
             for rid, status in process(cfg, db):
                 print(json.dumps({'t': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'request_id': rid, 'status': status}))

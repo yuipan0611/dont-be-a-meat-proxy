@@ -78,7 +78,8 @@ function rewriteToolsList(buf, contentType) {
  * @param {string} o.upstreamUrl   http://hindsight:8888 (internal network only)
  * @param {string} o.upstreamKey   Hindsight tenant API key (secret file)
  */
-export function createBankProxy({ registry, upstreamUrl, upstreamKey, log = () => {} }) {
+export function createBankProxy({ registry, upstreamUrl, upstreamKey, groupId = 'group-a', log = () => {} }) {
+  if (!/^[a-z][a-z0-9-]{1,62}$/.test(groupId)) throw new Error('invalid group_id');
   const upstream = new URL(upstreamUrl);
   const transport = upstream.protocol === 'https:' ? https : http;
 
@@ -92,7 +93,7 @@ export function createBankProxy({ registry, upstreamUrl, upstreamKey, log = () =
       log({ ev: 'registry_error', error: String(e?.message ?? e) });
       return plain(res, 503, 'token registry unavailable');
     }
-    if (!dev) return plain(res, 401, 'invalid or revoked token');
+    if (!dev || dev.groupId !== groupId) return plain(res, 401, 'invalid or revoked token');
 
     const m = BANK_PATH.exec(req.url);
     if (!m || m[1] !== dev.bankId) {
@@ -117,6 +118,15 @@ export function createBankProxy({ registry, upstreamUrl, upstreamKey, log = () =
         }));
         res.writeHead(200, { 'content-type': 'application/json' });
         return res.end(JSON.stringify(Array.isArray(msg) ? errs : errs[0] ?? null));
+      }
+      const pending = [...msgs];
+      while (pending.length) {
+        const value = pending.pop();
+        if (!value || typeof value !== 'object') continue;
+        for (const [key, val] of Object.entries(value)) {
+          if (key === 'bank_id' && val !== dev.bankId) return plain(res, 403, 'foreign bank argument');
+          if (val && typeof val === 'object') pending.push(val);
+        }
       }
       wantsToolsList = msgs.some((x) => x?.method === 'tools/list');
     }

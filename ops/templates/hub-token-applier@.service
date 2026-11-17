@@ -1,0 +1,17 @@
+[Unit]
+Description=Hub group %i TokenApplier
+After=docker.service caddy.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/neighbor-hub/groups/%i.env
+# Every group shares this lock because Caddy validates and reloads all sites together.
+ExecStart=/usr/bin/flock /var/lib/neighbor-hub/applier-lock/global.lock /opt/neighbor-hub/ops/token-applier process --group-id ${HUB_GROUP_ID} --state ${HUB_PRIVATE_DIR} --token-dir ${HUB_PRIVATE_DIR}/tokens-db --spool ${HUB_TOKEN_SPOOL_DIR} --output /etc/caddy/hub-private/%i/auth.caddy --upstream 127.0.0.1:${HUB_MAIL_PORT} --memory-upstream 127.0.0.1:${HUB_BANKPROXY_PORT} --probe-url ${HUB_PUBLIC_URL}/health/liveness
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/neighbor-hub/groups/%i /var/lib/neighbor-hub/applier-lock /etc/caddy/hub-private/%i
+UMask=0077

@@ -92,7 +92,7 @@ test('no token, a wrong token, or the upstream master key → 401 on every path;
 test('own bank: forwarded to /mcp/<bank>/ with the master key; bank/identity headers stripped; session id kept', async (t) => {
   const s = await setup();
   t.after(s.cleanup);
-  const body = s.rpc('tools/call', { name: 'recall', arguments: { query: '交接', bank_id: 'group-b', include_chunks: true } });
+  const body = s.rpc('tools/call', { name: 'recall', arguments: { query: '交接', bank_id: 'group-a', include_chunks: true } });
   const r = await s.call('/mcp/group-a', { body, headers: { 'x-bank-id': 'group-b', 'mcp-session-id': 'sess-1', 'x-tenant-id': 'evil', 'mcp-protocol-version': '2025-06-18' } });
   assert.equal(r.status, 200);
   assert.equal(r.headers.get('mcp-session-id'), 'sess-1');
@@ -104,7 +104,7 @@ test('own bank: forwarded to /mcp/<bank>/ with the master key; bank/identity hea
   assert.equal(got.headers['x-tenant-id'], undefined);
   assert.equal(got.headers['mcp-session-id'], 'sess-1');
   assert.equal(got.headers['mcp-protocol-version'], '2025-06-18');
-  assert.deepEqual(JSON.parse(got.body), body); // bank_id in arguments is ignored by the per-bank endpoint (F-05 §2)
+  assert.deepEqual(JSON.parse(got.body), body); // Own-bank arguments are preserved
 });
 
 test('another bank, the multi-bank /mcp/, REST, metrics and admin paths → 403 for a valid token', async (t) => {
@@ -192,4 +192,16 @@ test('oversized or non-JSON POST bodies are refused before forwarding', async (t
   assert.equal((await s.call('/mcp/group-a/', { body: '{not json' })).status, 400);
   assert.equal((await s.call('/mcp/group-a/', { body: JSON.stringify({ x: 'a'.repeat(3 * 1024 * 1024) }) })).status, 413);
   assert.equal(s.up.seen.length, 0);
+});
+
+test('group-bound proxy rejects a valid foreign token on every path and foreign bank_id arguments', async (t) => {
+ const up=await fakeHindsight(); const registry=memRegistry();
+ const proxy=await listen(createBankProxy({groupId:'group-a',registry,upstreamUrl:up.url,upstreamKey:MASTER}));
+ t.after(async()=>{await close(proxy.server);await close(up.server);});
+ for(const path of ['/mcp/group-a/','/mcp/group-b/','/mcp/','/healthz','/','/v1/default/banks']) {
+  const r=await fetch(proxy.url+path,{headers:{authorization:`Bearer ${BOB}`}});
+  assert.equal(r.status,401,path);
+ }
+ const r=await fetch(proxy.url+'/mcp/group-a/',{method:'POST',headers:{authorization:`Bearer ${ALICE}`},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'recall',arguments:{bank_id:'group-b',query:'private'}}})});
+ assert.equal(r.status,403);assert.equal(up.seen.length,0);
 });

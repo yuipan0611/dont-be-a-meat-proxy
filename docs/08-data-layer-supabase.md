@@ -173,3 +173,8 @@ PGSSLMODE=disable supabase db push --db-url 'postgresql://postgres:<local>@127.0
 - `ops/postgres migrate` 原樣套用本目錄 4 migrations，用單一交易與私有 checksum ledger 確保重跑與 SQL 失敗安全；正式不 seed。vector 安裝在 extensions schema，使用 schema-qualified operator 或明確 search_path。
 - `ops/backup` 透過 `HUB_PG_BACKUP=1` 把 hub.dump 放入既有每日 archive，保留原 7 天輪替。新 DB 的正式資料初始化、Caddy／HubClock 改走 DB、Hindsight 專屬 DB 與到期 purge 整合仍各自驗收。
 - 完整部署／備份／回滾：[L-01 runbook](ops/runbook-L01-postgres.md)；本機證據：[L-01 validation](ops/evidence/L01-local-validation.txt)。
+
+
+### L-08 組別應用邊界（本機驗證）
+
+`hub_app`／`service_role` 的 raw SQL 仍具跨組權限；L-08 以固定 group_id 的 bot store、bank-proxy registry 與 TokenApplier SQL 強制限制組別，並以 composite member/group FK 防止混組寫入。bridge cursor 以 `(group_id, agent_name)` 為主鍵，容許各組使用相同 Mail agent 名稱。詳見 `docs/ops/L08-group-isolation.md` 與 `20261121000000_l08_group_boundaries.sql`；grp-test／grp-test2 本機 TC-14 通過，VPS/TLS/實際 Discord 接入尚待操作者驗收。

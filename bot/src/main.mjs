@@ -28,6 +28,7 @@ export async function loadConfig() {
   const capUsd = Number(env('BOT_DAILY_CAP_USD', '0.50'));
   if (!(capUsd >= 0)) throw new Error('BOT_DAILY_CAP_USD must be ≥ 0');
   return {
+    groupId: env('HUB_GROUP_ID'),
     guildId: env('DISCORD_GUILD_ID'),
     applicationId: env('DISCORD_APPLICATION_ID'),
     discordTokenFile: env('DISCORD_TOKEN_FILE'),
@@ -55,8 +56,9 @@ export function mailToken(text) {
 }
 
 async function build(cfg) {
+  if (!/^[a-z][a-z0-9-]{1,62}$/.test(cfg.groupId) || cfg.mail.projectKey !== '/data/projects/' + cfg.groupId) throw new Error('Group / Mail project mismatch');
   const pool = await createPool(cfg.pg);
-  const store = createPgStore({ pool });
+  const store = createPgStore({ pool, groupId: cfg.groupId });
   const mailClient = createMailClient({ url: cfg.mail.url, token: mailToken(await readFile(cfg.mail.tokenFile, 'utf8')), projectKey: cfg.mail.projectKey, agentName: cfg.mail.agentName });
   const mail = createMailReader({ client: mailClient, projectKey: cfg.mail.projectKey });
   const clock = { nowMs: () => Date.now() };
@@ -78,7 +80,7 @@ async function run(cfg, { once = false } = {}) {
     },
   });
   const assistant = createAssistant({ llm: { create: (p) => llm.messages.create(p) }, tools: createReadOnlyTools({ store, mail }), budget, log });
-  const connect = createConnect({ store, applier: createSpoolApplier({ dir: cfg.spoolDir }), hubUrl: cfg.hubUrl, log });
+  const connect = createConnect({ store, applier: createSpoolApplier({ dir: cfg.spoolDir, groupId: cfg.groupId }), hubUrl: cfg.hubUrl, log });
   const github = createGitHubClient({
     token: cfg.github?.token,
     tokenFile: cfg.github?.tokenFile,

@@ -267,7 +267,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST https://<HUB_DOMAIN>/mcp/ -H "A
 | AC-12.4、R-4 | TC-01、TC-10 | 未執行 | GAP-12、14 |
 | AC-01.2 | TC-11 | 未執行 | — |
 | AC-02.2、06.6 | TC-12 | 未執行 | GAP-04 |
-| 跨組隔離（S3 前提） | TC-14 | 未執行 | — |
+| 跨組隔離（S3 前提） | TC-14 | L-08 本機 grp-test／grp-test2 通過；VPS 實際入口待驗，尚不可據此開放 /connect | `docs/ops/L08-group-isolation.md`、`docs/ops/evidence/L08-tc14-local.txt` |
 | AC-07.1～07.8 | TC-15 | 未執行 | GAP-09、10、11、20 |
 | AC-12.1～12.3、12.5 | TC-16 | 未執行 | GAP-15 |
 | G-04、AC-08.1～08.6、13.4 | TC-17、EVAL-02 | 未執行 | GAP-16～19 |

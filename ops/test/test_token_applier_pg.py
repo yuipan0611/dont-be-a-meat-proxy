@@ -61,6 +61,25 @@ class PsqlDbTests(unittest.TestCase):
         psql(f"insert into devices (member_id, group_id, label, platform, token_id, token_prefix, token_hash)"
              f" values ('{維護者}', 'group-a', '維護者 / t', 'linux', '{tid}', 'mph_xxxx', '{sha(token)}');")
 
+    def test_group_scoped_reads_updates_and_import_as_service_role(self):
+        member = '00000000-0000-4000-8000-0000000000b1'
+        psql("insert into groups(id,display_name,project_key,mail_hostname) values ('grp-test2','B','/data/projects/grp-test2','b.local');"
+             f"insert into members(id,group_id,display_name,role) values ('{member}','grp-test2','B','owner');"
+             f"insert into devices(member_id,group_id,label,platform,token_id,token_prefix,token_hash) values ('{member}','grp-test2','B','linux','tok_foreign01','mph_test',repeat('b',64));")
+        command = ['docker', 'exec', '-i', '-e', 'PGOPTIONS=-crole=service_role', NAME, 'psql', '-X', '-U', 'postgres', '-d', 'hub', '-v', 'ON_ERROR_STOP=1']
+        a, b = ta.PsqlDb(command, 'group-a'), ta.PsqlDb(command, 'grp-test2')
+        self.assertEqual(len(a.export()), 2)
+        self.assertEqual([r['token_id'] for r in b.export()], ['tok_foreign01'])
+        self.assertIsNone(a.device('tok_foreign01'))
+        self.assertIsNone(b.device('tok_fakemac01'))
+        self.assertEqual(b.all_hashes(), {'b' * 64})
+        a.mark_applied('tok_foreign01', 99, 'forbidden')
+        a.fail_issue('tok_foreign01', 'forbidden', 'foreign')
+        self.assertEqual(b.device('tok_foreign01')['status'], 'active')
+        self.assertEqual(b.next_revision(), 1)
+        row = b.import_device(token_id='tok_importb01', token_hash='c'*64, label='B', platform='linux', agent='RedStone')
+        self.assertEqual(row['group_id'], 'grp-test2')
+
     def test_reads_and_state_transitions_with_audit(self):
         self.assertEqual([r['token_id'] for r in self.db.export()], ['tok_fakemac01', 'tok_fakewin01'])
         self.assertEqual(len(self.db.all_hashes()), 2)

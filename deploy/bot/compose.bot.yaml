@@ -17,6 +17,7 @@ services:
     image: neighbor-hub-bot:l03
     command: [run]
     environment:
+      HUB_GROUP_ID: ${HUB_GROUP_ID:?set HUB_GROUP_ID}
       DISCORD_GUILD_ID: ${HUB_DISCORD_GUILD_ID:?set HUB_DISCORD_GUILD_ID}
       DISCORD_APPLICATION_ID: ${HUB_DISCORD_APPLICATION_ID:?set HUB_DISCORD_APPLICATION_ID}
       DISCORD_TOKEN_FILE: /run/bot/discord.token
@@ -25,7 +26,7 @@ services:
       HUB_PG_PASSWORD_FILE: /run/bot/hub-app.password
       MAIL_URL: http://mail-a:8765/mcp/   # inside mail_a_net; never via Caddy
       MAIL_TOKEN_FILE: /run/bot/mail-a.env
-      MAIL_PROJECT_KEY: /data/projects/group-a
+      MAIL_PROJECT_KEY: /data/projects/${HUB_GROUP_ID:?set HUB_GROUP_ID}
       MAIL_AGENT_NAME: HubBot             # session label only; the bot never sends Mail
       HUB_PUBLIC_URL: ${HUB_PUBLIC_URL:-https://hub.example.invalid}
       TOKEN_SPOOL_DIR: /spool
@@ -58,6 +59,6 @@ services:
 networks:
   hub_db_net:
     external: true
-    name: neighbor-hub-db_hub-db-net      # L-01 internal network; db has no host port
+    name: ${HUB_PG_PROJECT:-neighbor-hub-db}_hub-db-net      # L-01 internal network; db has no host port
   bot_egress:
     driver: bridge                        # Discord Gateway/REST + Anthropic API outbound only

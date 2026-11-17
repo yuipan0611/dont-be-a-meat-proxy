@@ -1,0 +1,8 @@
+[Unit]
+Description=Retry Hub group %i token requests
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=5s
+Unit=hub-token-applier@%i.service
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,30 @@
+// Executed on the isolated test DB network, as hub_app -> service_role (never a DB superuser).
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import pg from '../../bot/node_modules/pg/lib/index.js';
+import {createPgStore} from '../../bot/src/store-pg.mjs';
+import {createPgRegistry} from '../bank-proxy/registry-pg.mjs';
+const password=readFileSync('/run/private/hub-app.password','utf8').trim();
+const pool=new pg.Pool({host:'db',database:'hub',user:'hub_app',password});
+const sha=token=>import('node:crypto').then(({createHash})=>createHash('sha256').update(token).digest('hex'));
+const a=createPgStore({pool,groupId:'grp-test'}), b=createPgStore({pool,groupId:'grp-test2'});
+const registry=createPgRegistry({host:'db',password,groupId:'grp-test'});
+try {
+ assert.deepEqual((await pool.query('select session_user, current_user')).rows[0],{session_user:'hub_app',current_user:'service_role'});
+ const member='00000000-0000-4000-8000-0000000000b1';
+ assert.equal(await a.findMemberByDiscord('10000000\x30000000002','20000000\x30000000002'),null);
+ assert.ok(await b.findMemberByDiscord('10000000\x30000000002','20000000\x30000000002'));
+ assert.equal(await registry.lookup(await sha(process.env.FOREIGN_TEST_TOKEN)),null);
+ await b.commitIngest({groupId:'grp-test2',agentName:'RedStone',cursor:99,rows:[{groupId:'grp-test2',memberId:member,mailId:1,recipientAgent:'RedStone',label:'x',sender:'x',subject:'B-private',summary:'B-private',mailCreatedAt:'2026-11-20T00:00:00Z',state:'pending'}]});
+ assert.deepEqual(await a.listPending(member),[]);assert.deepEqual(await a.listBacklog(member),[]);
+ assert.deepEqual(await a.membersWithWork(),[]);assert.equal(await a.getCursor('RedStone'),null);
+ await a.commitIngest({groupId:'grp-test',agentName:'RedStone',cursor:1,rows:[]});
+ assert.equal(await b.getCursor('RedStone'),99);
+ const row=(await b.listPending(member))[0];await a.markNotification(row.id,'sent');await a.markDigested([row.id],'foreign');
+ assert.equal((await b.listPending(member)).length,1);
+ assert.equal(await a.requestRevocation({tokenId:'tok_grptest02',memberId:member,actorId:'test',reason:'test',requestId:'deny'}),false);
+ await assert.rejects(a.reserveBudget({groupId:'grp-test2'}),/Group boundary/);
+ await assert.rejects(a.issueDevice({groupId:'grp-test2',memberId:member}),/Group boundary/);
+ await assert.rejects(a.commitIngest({groupId:'grp-test',agentName:'RedStone',cursor:200,rows:[{groupId:'grp-test2'}]}),/Group boundary/);
+ console.log('PASS TC14 DB: hub_app/service_role; foreign registry/member/notification/cursor/budget/device access denied; same-name cursor independent');
+} finally {await registry.end();await pool.end();}

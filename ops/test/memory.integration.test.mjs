@@ -119,18 +119,18 @@ test('L-02 Hindsight + bank-proxy on the L-01 cluster', { skip, timeout: 20 * 60
     console.log(`FACTS=${facts.length} simplified_like=${simplified.length} (informational, not a pass condition)`);
   });
 
-  await t.test('isolation: other bank 403, multi-bank / REST 403, bank_id argument ignored, write tools refused', async () => {
+  await t.test('isolation: other bank 403, multi-bank / REST 403, bank_id argument refused, write tools refused', async () => {
     const hdr = { authorization: `Bearer ${TOKENS.mac}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
     for (const path of ['/mcp/group-b/', '/mcp/', '/v1/default/banks', '/metrics']) {
       assert.equal((await fetch(`${s.base}${path}`, { method: 'POST', headers: hdr, body: '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' })).status, 403, path);
     }
     const bob = await mcpSession(url('group-a'), TOKENS.other);
-    assert.equal(bob.init.status, 403);
+    assert.equal(bob.init.status, 401);
     const mac = await mcpSession(url('group-a'), TOKENS.mac);
-    const cross = resultText(await mac.call('get_document', { document_id: 'mail-b-1', bank_id: 'group-b' }));
-    assert.doesNotMatch(cross, /GROUP-B-PRIVATE-MARKER/);
-    const rec = resultText(await mac.call('recall', { query: 'MongoDB GROUP-B-PRIVATE-MARKER', bank_id: 'group-b' }));
-    assert.doesNotMatch(rec, /GROUP-B-PRIVATE-MARKER/);
+    const cross = await mac.call('get_document', { document_id: 'mail-b-1', bank_id: 'group-b' });
+    assert.equal(cross.status, 403);
+    const rec = await mac.call('recall', { query: 'MongoDB GROUP-B-PRIVATE-MARKER', bank_id: 'group-b' });
+    assert.equal(rec.status, 403);
     for (const name of ['retain', 'sync_retain', 'reflect', 'delete_bank', 'clear_memories', 'update_bank', 'delete_document']) {
       assert.equal((await mac.call(name, {})).body.error.data.reason, 'TOOL_NOT_ALLOWED', name);
     }

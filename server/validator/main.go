@@ -30,6 +30,9 @@ func main() {
 		}
 		return
 	}
+	if env("HUB_GROUP_ID", "") == "" {
+		log.Fatal("HUB_GROUP_ID required")
+	}
 	h, err := newValidator(env("VALIDATOR_UPSTREAM", "http://mail-a:8765"), env("VALIDATOR_ALLOWLIST", "/run/private/validator-allowlist.json"))
 	if err != nil {
 		log.Print("validator configuration unavailable; no traffic accepted")
