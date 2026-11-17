@@ -1,0 +1,57 @@
+# Standalone project: -p neighbor-hub-db. Never merge into the running Mail stack.
+services:
+  db:
+    # pgvector official multiarch index; inspected 2026-11-17 (amd64 VPS, arm64 local).
+    image: pgvector/pgvector:pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782
+    platform: ${HUB_PG_PLATFORM:-linux/amd64}
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    secrets: [postgres_password, hub_app_password]
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - max_connections=30
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_parallel_workers_per_gather=0
+    # No ports: host ops use docker compose exec; Mail never joins these networks.
+    networks: [hub-db-net, hindsight-db-net]
+    volumes:
+      # PG18 official image uses /var/lib/postgresql/18/docker.
+      - pg_data:/var/lib/postgresql
+      - ${HUB_PG_SQL_DIR:-../../supabase}:/supabase:ro
+      - ./:/opt/hub-postgres:ro
+    mem_limit: 512m
+    memswap_limit: 512m
+    shm_size: 128m
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    stop_grace_period: 60s
+    healthcheck:
+      # initdb's temporary server only accepts Unix sockets; wait for final TCP server.
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, postgres, -d, postgres]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+networks:
+  hub-db-net:
+    internal: true
+  hindsight-db-net:
+    internal: true
+volumes:
+  pg_data:
+secrets:
+  postgres_password:
+    file: ${HUB_PRIVATE_DIR:-/var/lib/neighbor-hub/private}/postgres.password
+  hub_app_password:
+    file: ${HUB_PRIVATE_DIR:-/var/lib/neighbor-hub/private}/hub-app.password
