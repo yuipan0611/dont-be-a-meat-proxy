@@ -116,9 +116,23 @@ def init_secrets(state):
     print('Private credentials ready; no values printed; existing tokens retained')
 
 
-def render(data, upstream):
+def check_loopback(upstream, what):
     if not re.fullmatch(r'127\.0\.0\.1:[1-9][0-9]{0,4}', upstream) or int(upstream.split(':')[1]) > 65535:
-        raise RuntimeError('Mail upstream must be a loopback address and valid port')
+        raise RuntimeError(what + ' upstream must be a loopback address and valid port')
+
+
+def memory_block(memory_upstream):
+    # MVP: memory is off. L-02: strip /memory and hand the request to bank-proxy WITH the device's own
+    # bearer (no header_up Authorization): bank-proxy maps that token to exactly one bank.
+    if memory_upstream is None:
+        return [' handle @memory {', '  respond "Memory is not enabled in MVP" 503', ' }']
+    check_loopback(memory_upstream, 'Memory')
+    return [' handle @memory {', '  uri strip_prefix /memory', '  reverse_proxy ' + memory_upstream + ' {',
+            '   header_up Host ' + memory_upstream, '   flush_interval -1', '  }', ' }']
+
+
+def render(data, upstream, memory_upstream=None):
+    check_loopback(upstream, 'Mail')
     active = [d['token'] for d in data['devices'].values() if d['status'] == 'active']
     if not active:
         return '# Hub revision ' + str(data['revision']) + '\nrespond "Unauthorized" 401\n'
@@ -126,7 +140,7 @@ def render(data, upstream):
     lines.extend(' header Authorization "Bearer ' + value + '"' for value in active)
     lines.extend([
         '}', 'handle @hub_allowed {', ' @memory path /memory /memory/*',
-        ' handle @memory {', '  respond "Memory is not enabled in MVP" 503', ' }',
+        *memory_block(memory_upstream),
         ' handle {', '  reverse_proxy ' + upstream + ' {',
         '   header_up Authorization "Bearer ' + data['upstream'] + '"',
         '   header_up Host ' + upstream, '  }', ' }', '}',
@@ -250,7 +264,7 @@ def apply_config(args, data):
     if os.geteuid() == 0:
         os.chown(output.parent, 0, owner[1])
     old = private_read(output) if output.exists() else None
-    atomic_write(output, render(data, args.upstream), owner=owner)
+    atomic_write(output, render(data, args.upstream, args.memory_upstream), owner=owner)
     if args.prepare_only:
         print('Private Caddy snippet prepared; not validated or activated')
         return
@@ -330,6 +344,8 @@ def main(command):
         parser.add_argument('--config', type=Path, default=Path('/etc/caddy/Caddyfile'))
         parser.add_argument('--owner', default='caddy')
         parser.add_argument('--upstream', default='127.0.0.1:8765')
+        parser.add_argument('--memory-upstream', default=None,
+                            help='L-02 bank-proxy loopback address (e.g. 127.0.0.1:8780); omit to keep memory off')
         parser.add_argument('--caddy-bin', default='/usr/bin/caddy')
         parser.add_argument('--reload-mode', choices=['systemd', 'caddy'], default='systemd')
         parser.add_argument('--admin', default='127.0.0.1:2019')
