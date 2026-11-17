@@ -11,6 +11,7 @@ import { createGatewayBudget } from './budget.mjs';
 import { createAssistant, createReadOnlyTools, MODEL } from './assistant.mjs';
 import { createConnect } from './connect.mjs';
 import { createDecisionsManager } from './decisions.mjs';
+import { createDecisionMailWriter } from './decision-mail.mjs';
 import { createGitHubClient } from './github.mjs';
 import { createTaskService } from './task.mjs';
 import { createRouter } from './router.mjs';
@@ -36,6 +37,7 @@ export async function loadConfig() {
     model: env('LLM_MODEL', MODEL),
     pg: { host: env('HUB_PG_HOST', 'db'), port: Number(env('HUB_PG_PORT', '5432')), database: env('HUB_PG_DATABASE', 'hub'), user: env('HUB_PG_USER', 'hub_app'), passwordFile: env('HUB_PG_PASSWORD_FILE') },
     mail: { url: env('MAIL_URL', 'http://mail-a:8765/mcp/'), tokenFile: env('MAIL_TOKEN_FILE'), projectKey: env('MAIL_PROJECT_KEY', '/data/projects/group-a'), agentName: env('MAIL_AGENT_NAME', 'HubBot') },
+    decisionWriter: { url: env('MAIL_WRITER_URL', 'http://validator:8766/mcp/'), senderFile: env('MAIL_WRITER_SENDER_FILE', '/run/bot/hubbot.sender.json') },
     hubUrl: env('HUB_PUBLIC_URL'),
     spoolDir: env('TOKEN_SPOOL_DIR', '/spool'),
     presence: env('BOT_PRESENCE_DIGEST', '0') === '1',
@@ -86,7 +88,9 @@ async function run(cfg, { once = false } = {}) {
   });
   const assistant = createAssistant({ llm, tools: createReadOnlyTools({ store, mail }), budget, model: cfg.model, log });
   const connect = createConnect({ store, applier: createSpoolApplier({ dir: cfg.spoolDir, groupId: cfg.groupId }), hubUrl: cfg.hubUrl, log });
-  const decisions = createDecisionsManager({ store, discord: dm, mailClient, clock, defaultGuildId: cfg.guildId, log });
+  const writer = await createDecisionMailWriter({ ...cfg.decisionWriter, projectKey: cfg.mail.projectKey,
+    token: mailToken(await readFile(cfg.mail.tokenFile, 'utf8')) });
+  const decisions = createDecisionsManager({ store, discord: dm, mailClient: writer, clock, defaultGuildId: cfg.guildId, log });
   const github = createGitHubClient({
     token: cfg.github?.token,
     tokenFile: cfg.github?.tokenFile,

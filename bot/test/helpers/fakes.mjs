@@ -78,9 +78,14 @@ export function createFakeMail() {
           body: args.body_md,
           threadId: args.thread_id,
         });
-        return { id };
+        return { message_id: id };
       }
       throw new Error(`unknown tool: ${name}`);
+    },
+    async sendDecision(message) {
+      const receipt = await this.callTool('send_message', { ...message,
+        sender_name: 'JadeBluff', sender_token: 'synthetic-writer-token' });
+      return { messageId: receipt.message_id };
     },
     async sendItem(item) {
       if (down) throw Object.assign(new Error('hub down'), { code: 'E-HUB' });

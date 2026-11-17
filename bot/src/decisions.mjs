@@ -92,57 +92,22 @@ export function createDecisionsManager({ store, discord, mailClient, clock, remi
       const newStatus = action === 'confirm' ? 'confirmed' : 'rejected';
       const nowIso = clock?.iso ? clock.iso() : new Date(nowMs).toISOString();
 
-      const updated = await store.updateDecisionStatus({
-        draftMailId,
-        status: newStatus,
-        memberId: member.memberId,
-        discordUserId: String(ix.user.id),
-        memberName: member.displayName ?? '維護者',
-        now: nowIso,
-      });
-
-      if (!updated) {
+      let delivery;
+      try {
+        if (!mailClient?.sendDecision) throw new Error('Mail writer unavailable');
+        delivery = await store.deliverDecision({
+          draftMailId, status: newStatus, memberId: member.memberId,
+          discordUserId: String(ix.user.id), memberName: member.displayName ?? '維護者', now: nowIso,
+        }, action => mailClient.sendDecision(action.message));
+      } catch (e) {
+        log({ ev: 'decision.mail_sync_error', code: e.code ?? 'UNCONFIRMED' });
+        return reply('決策寫回失敗，尚未完成確認或駁回；請按原按鈕重試，同一筆操作不會重複寫入。');
+      }
+      if (delivery.already) {
         if (ix.message?.editable) await ix.message.edit({ components: [] }).catch(() => {});
         return reply('此決策草稿已被處理過，按鈕只能使用一次。');
       }
-
-      await store.audit({
-        groupId: member.groupId,
-        actorType: 'member',
-        actorId: String(ix.user.id),
-        action: `discord.decision.${newStatus}`,
-        requestId: String(ix.id),
-        details: {
-          draft_mail_id: draftMailId,
-          status: newStatus,
-          confirmed_by: member.displayName ?? '維護者',
-          confirmed_at: updated.confirmed_at,
-        },
-      });
-
-      // Write back to Hub Mail if mailClient available
-      if (mailClient) {
-        try {
-          await mailClient.callTool('send_message', {
-            project_key: `/data/projects/${member.groupId}`,
-            sender_name: 'HubBot',
-            to: [dec.author_agent],
-            subject: `[決策${newStatus === 'confirmed' ? '已確認' : '已駁回'}] #${draftMailId}`,
-            topic: 'decision',
-            thread_id: String(draftMailId),
-            body_md: JSON.stringify({
-              v: 1,
-              kind: 'decision_status',
-              draft_mail_id: draftMailId,
-              status: newStatus,
-              decided_by: member.displayName ?? '維護者',
-              decided_at: nowIso,
-            }),
-          });
-        } catch (e) {
-          log({ ev: 'decision.mail_sync_error', error: e.message });
-        }
-      }
+      const updated = delivery.decision;
 
       // Disable buttons on original message
       if (ix.message?.editable) {

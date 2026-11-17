@@ -227,7 +227,7 @@ def bootstrap(args):
         data = load_state(args.state_dir)
         project = '/data/projects/' + data['group_id']
         # memorybridge (L-02b): generated name like HubClock; existing registrations are retained.
-        for device, expected in [('mac', 'BlueLake'), ('windows', 'RedStone'), ('hubclock', None), ('memorybridge', None)]:
+        for device, expected in [('mac', 'BlueLake'), ('windows', 'RedStone'), ('hubclock', None), ('memorybridge', None), ('hubbot', None)]:
             path = args.state_dir / (device + '.sender.json')
             if path.exists():
                 saved = json.loads(private_read(path))
@@ -248,7 +248,7 @@ def bootstrap(args):
                 raise RuntimeError('Unexpected canonical registration result')
             session.tool('set_contact_policy', {'project_key': project, 'agent_name': name, 'policy': 'open'})
             saved = {'agentName': name, 'senderToken': credential, 'projectKey': project,
-                     'logicalRole': {'hubclock': 'HubClock', 'memorybridge': 'MemoryBridge'}.get(device, device)}
+                     'logicalRole': {'hubclock': 'HubClock', 'memorybridge': 'MemoryBridge', 'hubbot': 'HubBot'}.get(device, device)}
             atomic_write(path, json.dumps(saved, indent=2) + '\n')
             print('BOOTSTRAPPED role ' + saved['logicalRole'] + ': ' + name + '; registration saved privately')
 

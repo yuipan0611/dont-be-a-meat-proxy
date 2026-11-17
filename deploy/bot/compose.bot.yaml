@@ -28,6 +28,8 @@ services:
       HUB_PG_PASSWORD_FILE: /run/bot/hub-app.password
       MAIL_URL: http://mail-a:8765/mcp/   # inside mail_a_net; never via Caddy
       MAIL_TOKEN_FILE: /run/bot/mail-a.env
+      MAIL_WRITER_URL: http://validator:8766/mcp/
+      MAIL_WRITER_SENDER_FILE: /run/bot/hubbot.sender.json
       MAIL_PROJECT_KEY: /data/projects/${HUB_GROUP_ID:?set HUB_GROUP_ID}
       MAIL_AGENT_NAME: HubBot             # session label only; the bot never sends Mail
       HUB_PUBLIC_URL: ${HUB_PUBLIC_URL:-https://hub.example.invalid}

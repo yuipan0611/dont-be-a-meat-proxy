@@ -53,12 +53,13 @@ class GatewayLaunchTest(unittest.TestCase):
                 self.assertEqual('deploy/memory/compose.gemini-api.yaml' in files, backend.startswith('gemini-api-'))
 
     def test_stage3_starts_gateway_before_consumers_without_generating_text(self):
-        with patch.dict(launch.ENV, {'HUB_OPS_UID': '10001', 'HUB_OPS_GID': '10001'}, clear=True), \
+        with patch.dict(launch.ENV, {'HUB_OPS_UID': '10001', 'HUB_OPS_GID': '10001', 'HUB_BOT_UID': '10002', 'HUB_BOT_GID': '10002'}, clear=True), \
              patch.dict(launch.J, {'before': {}}, clear=True), \
              patch.object(launch, 'unchanged'), patch.object(launch, 'office'), \
              patch.object(launch, 'mem') as mem, patch.object(launch, 'hub'), \
              patch.object(launch, 'run', return_value=SimpleNamespace(stdout=b'')), \
-             patch.object(launch.os, 'chown'), patch.object(launch, 'evidence'):
+             patch.object(launch.os, 'chown'), patch.object(launch, 'evidence'), \
+             patch.object(launch, 'secret_file', return_value='synthetic-identity'), patch.object(launch, 'put_secret') as copy:
             launch.step3()
             self.assertIn('llm-gateway', mem.call_args_list[0].args)
             up = [c for c in mem.call_args_list if c.args[0] == 'up']
@@ -67,6 +68,7 @@ class GatewayLaunchTest(unittest.TestCase):
             self.assertIn('hindsight', up[1].args)
             # No model endpoint is probed by this stage; readiness remains a separate acceptance.
             self.assertFalse(any('/v1/messages' in str(c) or '/chat/completions' in str(c) for c in mem.call_args_list))
+            self.assertEqual(copy.call_args.args, (launch.PRIVATE / 'bot/hubbot.sender.json', 'synthetic-identity', 10002, 10002))
 
 
 if __name__ == '__main__':

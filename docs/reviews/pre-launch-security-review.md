@@ -2,7 +2,7 @@
 
 日期：2026-11-18（Asia/Taipei）。審查者：Codex，獨立執行，沒有 helper worker。
 
-**結論：暫不建議開放正式 token 發放與決策確認；R-04 已於後續修正，R-05 仍會在 Mail 同步失敗後回覆決策成功。** 共 10 項：阻擋上線 5 項（本分支已修 4、未修 1）、上線後修 3 項、建議 2 項。以下「已修」僅表示本分支的本機證據，不表示 master 已整合或 VPS 已套用。
+**結論：本分支已修完原 5 項上線阻擋，仍需 PM 整合與正式環境驗收後才能開放。** 共 10 項：阻擋上線 5 項（本分支已修 5、未修 0）、上線後修 3 項、建議 2 項。以下原始檔案行號與重現是固定 master 的歷史發現，「已修」僅表示本分支的本機證據，不表示 VPS 已套用。
 
 ## 審查版本與方法
 
@@ -16,8 +16,8 @@
 | R-01 | 阻擋上線 | 備份／還原對 JSON cursor 使用 shell eval | 已修 `91b6959` |
 | R-02 | 阻擋上線 | L09 拒絕文件指定的 Groq 模型名稱 | 已修 `1afbba2` |
 | R-03 | 阻擋上線 | L09 探測跟隨 redirect 並轉送 Bearer | 已修 `68d901e` |
-| R-04 | 阻擋上線 | 發放失敗／逾時後 Caddy token 可能仍有效 | 已修，見後續修正 |
-| R-05 | 阻擋上線 | 決策回覆成功但 Mail 寫回失敗，bot writer 未完整接線 | 未修；啟用相關寫入前必須處理 |
+| R-04 | 阻擋上線 | 發放失敗／逾時後 Caddy token 可能仍有效 | 已修 `f105c33` |
+| R-05 | 阻擋上線 | 決策回覆成功但 Mail 寫回失敗，bot writer 未完整接線 | 已修，見後續修正 R-05 |
 | R-06 | 上線後修 | query 與上游錯誤原文進入 log／狀態 | 未修 |
 | R-07 | 上線後修 | client 本機全文暫存未限制 600／700 | 未修 |
 | R-08 | 上線後修 | task 確認沒有重查有效成員或檢查期限 | 未修；目前 L09 無 GitHub token |
@@ -57,7 +57,7 @@
 - **具體證據：** 真 `process()`／`apply()` 搭配既有 unit 的假 Caddy／probe fixture，得到 `[(lateprobe, failed)] DB=revocation_pending token_still_in_Caddy_snippet=True reloads=1`。這證明程式產生的 allowlist 與 DB 相反；未冒稱已在 VPS 實測舊 token。
 - **另一個時序缺口：** helper 在 30 秒 bot timeout 前已套用並完成最後一次 settle，之後 bot 才將 DB row 改 pending；`connect()` 沒排新的 revoke，`process()` 只跑 spool request，沒有定期依 DB 對帳。若 receipt 晚到／遺失，token 可留在載入的 Caddy config；bank-proxy 的每次 DB 查詢只能阻擋 memory，無法阻擋 Mail。
 - **建議修法：** 持久化待撤銷／補償工作並重試到 Caddy 401 證據成立；定期以 DB desired state 對帳，明確處理已載入 config 與失敗的 probe／reload；發放回覆不能把 DB pending 當入口已拒絕。對最後一把 token、空集合、晚回執、helper crash 與 bot timeout 的交錯補 integration tests。
-- **未修原因：** 單改空集合比較只能修一個分支，仍留下跨程序 late-receipt race；需要 bot、spool、applier 的完整補償契約。交由 PM 派工，未以局部 patch 宣稱 fail-closed 完成。
+- **原審查判斷：** 單改空集合比較只能修一個分支，仍留下跨程序 late-receipt race；後續已依 PM 派工完成下述持久化補償契約。
 
 ### R-05｜決策的成功訊息早於真正 Mail 寫回，writer 身份也尚未接好
 
@@ -128,8 +128,34 @@
 
 初始 Node baseline 因新 worktree 尚未 `npm ci` 而有 pg／discord.js module 缺失；已用 lockfile 安裝（ignore scripts）後重跑，最終 Node 無失敗。原生 Go 不存在，最初 network-none 容器也因缺 module cache 失敗；改用可下載依賴的同一鎖定 builder，最後 Go 測試通過。沒有改測試來掩蓋 baseline failure 或把 skip 算成功。
 
-程式修正各自獨立 commit：`91b6959`（備份／還原 eval）、`1afbba2`（Groq model parser）、`68d901e`（HTTP probes）。**仍須 PM 整合後修 R-04、R-05 並驗證，再決定是否開放 token 發放與決策確認；本報告不是部署批准。**
+程式修正各自獨立 commit：`91b6959`（備份／還原 eval）、`1afbba2`（Groq model parser）、`68d901e`（HTTP probes）。**R-04、R-05 已於後續修正，PM 仍須整合、套新 migration／writer 身份並驗證後，才能決定開放 token 發放與決策確認；本報告不是部署批准。**
 
 ## 後續修正 R-04
 
 TokenApplier 保留每把 token 的私有撤銷憑證，每次 process 即使 spool 已空也依 DB 狀態對帳；失敗、探測斷線與晚回執導致的 pending row 會持續重試，直到重新載入且舊 token 實測 401 才完成撤銷並刪憑證。空 allowlist 同樣會產生並套用全拒絕設定；bot 發放失敗只回報待撤銷，不宣稱入口已拒絕。TDD 與真本機 Caddy 200→401、其他裝置仍 200 的收據見 evidence；無法連線或 Caddy 持續拒絕 reload 時維持 pending 並留下補償記錄，需 timer 持續運作及服務恢復後收斂，不保證故障中的 Caddy 可立刻改變載入設定。
+
+## 後續修正 R-04 的完整邊界（`f105c33`）
+
+發放在任何可能 reload 前先保存 root 私有 `.revoke` 記號，只有 applied 收據持久化後才清除；helper／DB 在 reload 後失敗或重啟未知結果，會保守取消，不能信任尚為 active 的 row。bot timeout／失敗先排獨立 `cancel_issue`（不等待回執），再更新 DB；補償記號與 credential 在 401 前都保留。取消早於原 issue 也不會被後續發放覆蓋，新請求附 `expires_at`，helper 在套用前與套用後都檢查期限，過期轉入撤銷。背景 timer 每輪對帳，不依賴原 spool request 尚未被歸檔。
+
+最終 R-04 專項：TokenApplier **33 pass**、connect **10 pass**；包含真本機 Caddy 200→401、其他裝置仍 200，以及 DB 斷線、晚回執、取消先到、過期與暫時補償失敗後恢復。持續 DB／磁碟／Caddy 故障時保留 pending，服務與 timer 恢復後才能收斂；未承諾故障中的靜態 Caddy 可以瞬間撤銷。
+
+## 後續修正 R-05
+
+新增第 9 份 migration `20261123000000_decision_mail_delivery.sql`：同一 decision row 保存 `mail_action` 與 `mail_message_id`，沿用既有 RLS／group key。第一個 transaction 持久化原 action／作者／時間／完整訊息／UUID idempotency key；第二個 transaction 鎖住同組 decision row，在 Mail 回傳有效 message ID 後才連同 audit 原子更新 confirmed/rejected。網路失敗、回應遺失、Mail 已存但 DB 完成失敗時，維持 draft 並可用原按鈕重試；並發重試只會有一個 writer，同一 action 的 Mail 重放沿用完全相同內容與 key。反向 confirm/reject 不能覆寫待同步意圖。這是可恢復的 Mail 先寫、DB 後確認流程，不宣稱跨系統原子 transaction。
+
+bot 以 bootstrap 產生的專用 canonical HubBot 角色與 sender token 發送，thread 使用 `decision-<id>`；私有身份來源 0600、bot 副本 0400，writer 經 validator，缺身份或缺 writer 時只能回覆失敗並保留草稿。錯誤回覆不包含上游 body。操作員必須先 migrate，再生成／複製 writer 身份、重建 bot；舊版已確認但無 Mail 收據的歷史資料需逐筆對帳，不自動重送。詳細步驟見 [L09 操作手冊](../ops/runbook-L09-launch-deploy.md#p-3-後續安全修正的部署契約)。
+
+真 Postgres 測試以 trigger 模擬「Mail 已存、DB 最後 update 失敗」，重建 store 後重試，確認 action 不變、只有一封 Mail／一筆完成 audit；另驗同組 owner、他組拒絕、反向操作與併發。真鎖定 Mail＋validator 的測試實際註冊身份、傳送、模擬成功回應遺失、重建 manager 並重試：recipient inbox 只有一封決策結果，DB 直到有效收據才 confirmed。未呼叫真 Discord／LLM。
+
+本次 R-05 修正決策確認路徑；L09 的 GitHub token 缺省 gate 保持不變，原 /task 成功路徑及其 Hub 同步仍待啟用 GitHub writer 前獨立驗收。
+
+### 本次最終驗證
+
+| 指令／範圍 | 結果 |
+| --- | --- |
+| `node --test bot/test/*.test.mjs bot/test/integration/*.test.mjs client/test/mail-client.test.mjs client/test/hub-hook.test.mjs` | **194 tests：193 pass、0 fail、1 skip** |
+| `python3 -m unittest discover -s ops/test -v`（含 token_applier、hub_ops、L09） | **50 tests：49 pass、0 fail、1 skip** |
+| `git diff --check`／codebase safety strict validation | **PASS**（既有 3 項未知仍列明） |
+
+Node skip 是原 TC-18 的 native Mail binary 不存在；Python skip 是原生 Caddy 不在 PATH。新的 Docker Caddy 與真 Mail＋validator 測試都有實際執行，不把跳過算通過。完整輸出附在 evidence 的 Follow-up final 區段。沒有 push、VPS、spikes 執行檔、provider 呼叫或其他 worktree 編輯。

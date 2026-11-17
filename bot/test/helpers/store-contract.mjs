@@ -87,6 +87,34 @@ export function storeContract(t, make) {
       assert.equal(row.reserved, 0);
       assert.equal(await s.markCapNotified('group-a', '2026-11-22'), true);
     }),
+    t('decision delivery persists intent before IO and serializes retries after an unknown outcome', async () => {
+      const s = await make();
+      await s.recordDecisionDraft({ groupId: 'group-a', draftMailId: 777, authorAgent: 'BlueLake' });
+      const request = { draftMailId: 777, status: 'confirmed', memberId: 維護者, discordUserId: OWNER_DISCORD,
+        memberName: '維護者', now: '2026-11-20T02:00:00.000Z' };
+      const attempted = [];
+      await assert.rejects(async () => s.deliverDecision(request, async action => {
+        attempted.push(structuredClone(action));
+        throw new Error('synthetic outage');
+      }), /synthetic outage/);
+      const pending = await s.getDecisionByMailId(777);
+      assert.equal(pending.status, 'draft');
+      assert.ok(pending.mail_action, 'intent survives failed delivery');
+      await assert.rejects(async () => s.deliverDecision({ ...request, status: 'rejected' }, async () => {
+        assert.fail('opposite action must not write Mail');
+      }), /pending/);
+      const results = await Promise.all([0, 1].map(() => s.deliverDecision({ ...request, now: '2026-11-21T00:00:00.000Z' }, async action => {
+        attempted.push(structuredClone(action));
+        return { messageId: 888 };
+      })));
+      assert.equal(results.filter(r => !r.already).length, 1);
+      assert.equal(attempted.length, 2, 'only one retry sends; the other sees committed status');
+      assert.deepEqual(attempted[0], attempted[1]);
+      const final = await s.getDecisionByMailId(777);
+      assert.equal(final.status, 'confirmed');
+      assert.equal(Number(final.mail_message_id), 888);
+      assert.equal(final.confirmed_at, '2026-11-20T02:00:00.000000Z');
+    }),
     t('decision lifecycle: record draft → update status (once) → reminders & list', async () => {
       const s = await make();
       const draft = await s.recordDecisionDraft({

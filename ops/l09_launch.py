@@ -354,6 +354,8 @@ assert urllib.request.urlopen(r,timeout=60).status==200
     run([ROOT / 'ops/bootstrap', '--state-dir', PRIVATE, '--url', 'http://127.0.0.1:8765/mcp/'], 'MemoryBridge registration')
     p = PRIVATE / 'memorybridge.sender.json'
     os.chown(p, int(ENV['HUB_OPS_UID']), int(ENV['HUB_OPS_GID']))
+    put_secret(PRIVATE / 'bot/hubbot.sender.json', secret_file(PRIVATE / 'hubbot.sender.json'),
+               int(ENV['HUB_BOT_UID']), int(ENV['HUB_BOT_GID']))
     evidence('new_services', 'gateway liveness only (not LLM readiness); Hindsight healthy; bank created; bank-proxy healthy; explorer.js 200; bot config OK')
     unchanged(J['before'])
     office()
