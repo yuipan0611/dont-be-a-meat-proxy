@@ -41,7 +41,7 @@ export function createDmSender(client) {
 
 export function wireEvents({ client, guildId, router, store, presence, log }) {
   client.on(Events.InteractionCreate, (ix) => {
-    if (!ix.isChatInputCommand()) return;
+    if (!ix.isChatInputCommand() && !ix.isButton()) return;
     router.handle(ix).catch((e) => log({ ev: 'interaction.error', error: e.code ?? e.message }));
   });
   // SDS API-05: a channel question addressed to the bot only gets a pointer to /status.
