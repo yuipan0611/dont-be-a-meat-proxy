@@ -2,7 +2,7 @@
 
 基線：master `0cc8934`，2026-11-17。此票整合部署程序；本機 Docker 假 VPS 演練不代表 `<VPS_IP>`、真 Discord、Anthropic、OAuth 或 Windows 已驗收。正式結果逐項寫入 [delivery-S1](../delivery-S1.md)。Codex 未登入 VPS、未 push、未修改 master。
 
-**最新上線 gate（已 merge master `101363c`）**：[SRS §4.6](../03-srs.md) 的 維護者 新決策要求 VPS Gemini 訂閱後端，F-11 正在查證/實作；本票原派工與目前 Compose/bot/gateway 仍為 Anthropic。下列已演練的 Anthropic 路徑只能作整合基線，**F-11 完成接線、請求數限額、登入持久化與條款適用性核對之前，不得照此啟動正式 LLM consumers**；不把這次 dry-run 算 Gemini 驗收，也不自行切換 provider。PM 需確認 L09/F11 的接續範圍後才發正式部署令。
+**F-11 接線更新（2026-11-17）**：Compose／bot／EVAL／L09 driver 已改用獨立共用 gateway，預設 `disabled`，不再要求或複製 Anthropic key。個人 Gemini CLI 訂閱已見官方停用公告，Antigravity 的第三方服務條款及免費 API 的資料使用政策仍待 維護者 決定，詳 [F-11](../research/F-11-gemini-subscription-backend.md)。本頁既有完整 dry-run 是 F-11 前的部署基線；接線後僅完成單元／Compose／image 與備份回歸，**尚未重跑 L09 全套演練、真認證或 LLM 驗收**，不得以 gateway liveness 代替 readiness。
 
 部署順序固定為 **1 備份 → 2 schema/私密副本 → 3 建置及新服務 → 4 validator 維護窗 → 5 一次 Caddy 切換 → 6 consumers/排程 → 7 技術檢查 → 人工驗收**。不要再交錯執行舊 runbook 的 reload／render-caddy 指令。
 
@@ -15,13 +15,12 @@ PM 在 Mac 執行（只有 PM 操作 SCP／VPS；下面不顯示檔案內容）�
 ```sh
 ssh root@<VPS_IP> 'install -d -m 700 /var/lib/neighbor-hub/private'
 scp ~/.config/hub-discord/bot.token root@<VPS_IP>:/var/lib/neighbor-hub/private/discord.token
-scp ~/.config/hub-llm/anthropic.key root@<VPS_IP>:/var/lib/neighbor-hub/private/anthropic.key
-ssh root@<VPS_IP> 'chown root:root /var/lib/neighbor-hub/private/discord.token /var/lib/neighbor-hub/private/anthropic.key; chmod 600 /var/lib/neighbor-hub/private/discord.token /var/lib/neighbor-hub/private/anthropic.key'
+ssh root@<VPS_IP> 'chown root:root /var/lib/neighbor-hub/private/discord.token; chmod 600 /var/lib/neighbor-hub/private/discord.token'
 ```
 
-SCP 完成到 chmod 之間視為封閉準備期，不啟動服務。來源檔需 Mac owner-only；不要 `cat`、`echo`、`set -x` 或把秘密放 argv/env_file、Git、驗收收據。來源保留 root:root 600；腳本建立 bot／web／bank-proxy uid 10002 的 0400 專用副本、Hindsight uid 1000 的 0400 副本及 bridge 原有 ops UID 的 0600 副本，不輪替既有值。副本與來源不一致就停下查原因，不覆蓋。
+SCP 完成到 chmod 之間視為封閉準備期，不啟動服務。來源檔需 Mac owner-only；不要 `cat`、`echo`、`set -x` 或把秘密放 argv/env_file、Git、驗收收據。來源保留 root:root 600；腳本建立 bot／web／bank-proxy uid 10002 的 0400 專用副本、Hindsight uid 1000 的 0400 副本及 bridge 原有 ops UID 的 0600 副本，不輪替既有值。副本與來源不一致就停下查原因，不覆蓋。F-11 gateway uid/gid 10004 的內部 key 副本為 0600，profile／request state 目錄 0700；bot 只得到自己的內部 gateway key。只有明確選 API 時，維護者 另把 root:root 0600 的來源 `private/gemini-api.key` 放妥，腳本才複製到 gateway 的 0600 secret，不給 bot／Hindsight。
 
-UI 還需要 **Discord OAuth client secret**（不同於 bot token），PM 由 Developer Portal 以同等私密方式放到 `private/discord-client.secret`（root:root 600）。加精確 redirect `https://hub.example.invalid/auth/callback`、identify scope；不變更 Gateway/Interactions Endpoint。先準備 Application ID、guild ID、維護者 user ID、核對過的架構 map（可用 `/opt/neighbor-hub/web/architecture.json`）。UID 1000、10002 不應對應不受信任的 VPS 登入使用者；有衝突先停下規劃 UID，不讓秘密暴露給它們。
+UI 還需要 **Discord OAuth client secret**（不同於 bot token），PM 由 Developer Portal 以同等私密方式放到 `private/discord-client.secret`（root:root 600）。加精確 redirect `https://hub.example.invalid/auth/callback`、identify scope；不變更 Gateway/Interactions Endpoint。先準備 Application ID、guild ID、維護者 user ID、核對過的架構 map（可用 `/opt/neighbor-hub/web/architecture.json`）。UID 1000、10002、10004 不應對應不受信任的 VPS 登入使用者；有衝突先停下規劃 UID，不讓秘密暴露給它們。
 
 **GitHub token 尚無**：bot/web 目錄不可有 github.token；本次清除繼承的 GITHUB_TOKEN/PAT，web GITHUB_TOKEN_FILE 留空以啟動 UI，bot 仍指向缺少的檔案，`/task` 確認後回 E-GITHUB 且不發 API／不新增 Hub task。TC-19 正向維持待驗；不可填假 PAT。取得正式最小權限 token 後另做受控接線與 TC-19，不需要再次部署本輪。
 
@@ -32,7 +31,12 @@ HUB_DISCORD_GUILD_ID=實際17到20位數字
 HUB_DISCORD_APPLICATION_ID=實際17到20位數字
 L09_OWNER_DISCORD_ID=實際17到20位數字
 HUB_WEB_MAP_FILE=/opt/neighbor-hub/web/architecture.json
+HUB_LLM_BACKEND=disabled
+HUB_LLM_UPSTREAM_MODEL=gemini-3.1-flash-lite
+HUB_LLM_DAILY_REQUEST_LIMIT=500
 ```
+
+先依 F-11 確認 backend／條款／billing，再開始有 source fingerprint 的分段部署；不要中途換 provider 設定。`HUB_LLM_BACKEND` 可選 disabled、gemini-cli、antigravity-cli、gemini-api-free、gemini-api-paid；API 會自動合併 provider-key overlay，CLI 登入由 維護者 另依 F-11 執行，腳本不代登入。
 
 既有 ops UID/GID 自動從 `private/hubclock.sender.json` 取；不要修改原 clock／Mail 憑證 owner。部署固定 group-a、project `neighbor-hub`／`neighbor-hub-db`／`neighbor-hub-memory`，memory 8780、web 8781、validator 8765，皆只綁 127.0.0.1。正式機使用 image 原平台；本機 arm64 演練才設定 HUB_PG_PLATFORM/HUB_HS_PLATFORM/HUB_VALIDATOR_PLATFORM。
 
@@ -95,9 +99,9 @@ systemctl list-units --all 'hub-token-applier*' --no-pager
 
 前置：步驟 2 PASS、下載／編譯時資源仍足夠。執行 `ops/deploy-l09.sh --step 3`。
 
-建 bank-proxy、validator、bot、web images；pull Hindsight；啟動獨立 `neighbor-hub-memory` 的 hindsight/bank-proxy（health 等待 600 秒，首次模型下載可能較久），在容器內建立 group-a bank，不花 LLM 費用。web 用 8781、HUB_WEB_MAP_FILE 實際接到 WEB_MAP_FILE，鏡像會建 source snapshot。啟動 web 用 `--no-deps`；bot 僅 run --no-deps check-config，尚不連 Discord。`ops/bootstrap` 用既有 loopback Mail 註冊 MemoryBridge，保留已有 Mac／Windows／HubClock sender，不輪替憑證。原容器每段前後都比對。
+建 llm-gateway、bank-proxy、validator、bot、web images；pull Hindsight；啟動獨立 `neighbor-hub-memory` 的 llm-gateway/hindsight/bank-proxy（health 等待 600 秒，首次模型下載可能較久），在容器內建立 group-a bank，不花 LLM 費用。web 用 8781、HUB_WEB_MAP_FILE 實際接到 WEB_MAP_FILE，鏡像會建 source snapshot。啟動 web 用 `--no-deps`；bot 僅 run --no-deps check-config，尚不連 Discord。`ops/bootstrap` 用既有 loopback Mail 註冊 MemoryBridge，保留已有 Mac／Windows／HubClock sender，不輪替憑證。原容器每段前後都比對。
 
-預期：Hindsight/bank-proxy healthy、`http://127.0.0.1:8781/explorer.js` 200、bot config OK、office 200、IDs+StartedAt unchanged、STEP 3 PASS。
+預期：gateway liveness（disabled 時無模型 readiness）、Hindsight/bank-proxy healthy、`http://127.0.0.1:8781/explorer.js` 200、bot config OK、office 200、IDs+StartedAt unchanged、STEP 3 PASS。
 
 失敗回復：只 stop 新 web／memory，保留 Hindsight volume、DB／ledger。修復後重跑未 PASS 段；不重建 DB、Mail 或 clock，不開放 8780/8781 firewall。
 
@@ -133,7 +137,7 @@ validate 失敗：自動還原原 hub.caddy，**不 reload**，保留 inactive �
 
 register-commands 是此部署的明確外部操作，會在指定 guild 註冊目前 bot 定義（connect/revoke/status/task/decision 等依版本）；再 `up -d --no-deps bot memory-bridge`，不重建 Mail/clock。bridge 走 validator（本輪會另外覆蓋 bridge 的 MAIL URL），只索引 Mail 的 handoff/decision，原文保存成功才記 indexed。client 須設 `memory_agent` 為實際 bootstrap 名稱；舊訊息按 Mail ID reindex，不重送 Mail，不把歷史自動算已索引。
 
-安裝 backup service drop-in：HUB_PG_BACKUP=1、HUB_HINDSIGHT_BACKUP=1，同一每日 archive 保含 hub/hindsight dump、private、clock、bank-proxy ledger。本票另納入 memory-bridge/*.json（排除 live locks）；JSON 原子換檔，與 Mail／DB 非跨系統交易一致快照。恢復 bridge 時停 writer、從 archive/memory-bridge 原 owner 600 還原 JSON，刪 runtime lease，unknown 狀態按同 document ID 查明後補寫。啟動**真 systemd hub-backup.service**驗 sandbox，不用單次 CLI 成功冒充 systemd。
+安裝 backup service drop-in：HUB_PG_BACKUP=1、HUB_HINDSIGHT_BACKUP=1，同一每日 archive 保含 hub/hindsight dump、private、clock、歷史 bank-proxy ledger 與 F-11 `llm-gateway/gemini-requests.json`（存在時附 SHA256；不含 writer lock）。本票另納入 memory-bridge/*.json（排除 live locks）；JSON 原子換檔，與 Mail／DB 非跨系統交易一致快照。恢復 bridge 時停 writer、從 archive/memory-bridge 原 owner 600 還原 JSON，刪 runtime lease，unknown 狀態按同 document ID 查明後補寫。啟動**真 systemd hub-backup.service**驗 sandbox，不用單次 CLI 成功冒充 systemd。
 
 預期：group-a timer active、legacy writers disabled、bot/bridge running、backup Result=success、office 200、保護容器 IDs+StartedAt unchanged、STEP 6 PASS。由 PM 檢查安全 event logs 的 ready/tick（不貼原始 response／credentials），journalctl 的 request receipt 與 audit 對應。
 

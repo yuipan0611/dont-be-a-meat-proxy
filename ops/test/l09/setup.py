@@ -6,7 +6,7 @@ import secrets
 import shutil
 import subprocess
 P=Path('/var/lib/neighbor-hub/private'); P.mkdir(parents=True, mode=0o700)
-for name in ('postgres.password','hub-app.password','discord.token','anthropic.key','discord-client.secret'):
+for name in ('postgres.password','hub-app.password','discord.token','discord-client.secret'):
     p=P/name; p.write_text(secrets.token_hex(32)+'\n'); p.chmod(0o600)
 for d in ('hubclock','memory-bridge'):
     p=Path('/var/lib/neighbor-hub')/d; p.mkdir(mode=0o700); os.chown(p,10001,10001)
@@ -28,6 +28,8 @@ f=root/'ops/test/l09'
 subprocess.run(['docker','build','-t','l09-hindsight-fixture',str(f),'-f',str(f/'Dockerfile.provider')],check=True,stdout=subprocess.DEVNULL)
 p=root/'deploy/memory/compose.yaml'
 s=p.read_text(); s=s.replace('ghcr.io/vectorize-io/hindsight:1.2.1@sha256:d2bc230a714e933affd63753e181a0579328fdcbbc021800a76e0bc7b6e76b31','l09-hindsight-fixture'); p.write_text(s)
+# F-11 gateway is disabled in this rehearsal: no Google CLI installation or account is needed.
+(root/'ops/llm-gateway/Dockerfile').write_text((root/'ops/llm-gateway/Dockerfile.test').read_text())
 # Use the real validator artifact built from this checkout by the outer Docker builder.
 (root/'server/validator/Dockerfile').write_text('FROM neighbor-l09-validator:dry-built\n')
 # Bot fixture checks orchestration start/register boundaries, never reaches Discord REST/Gateway.

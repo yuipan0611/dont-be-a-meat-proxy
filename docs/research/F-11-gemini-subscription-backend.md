@@ -1,6 +1,6 @@
 # F-11：VPS 訂閱 LLM 後端與共用 gateway
 
-查證日期：**2026-11-17（Asia/Taipei）**。分支 `example-org/codex-F11`，由 `101363c`（當次本機 master 最新）開始；沒有 push、改 master、SSH、帳號登入或 Chrome 操作。範圍含 PM 後續要求的 Antigravity CLI、AI Studio 免費 API 與付費 Flash-Lite 比較。
+查證日期：**2026-11-17（Asia/Taipei）**。分支 `example-org/codex-F11`，由 `101363c`（起始時本機 master 最新）開始，交付前再 merge `d1746d6`（含 L-09 新部署程式）；沒有 push、改 master、SSH、帳號登入或 Chrome 操作。範圍含 PM 後續要求的 Antigravity CLI、AI Studio 免費 API 與付費 Flash-Lite 比較。
 
 ## 結論先看
 
@@ -187,3 +187,5 @@ bot 離線時沒有 Discord 通知保證：維護者 需監看 gateway `/readyz`
 * 最終測試數、Compose 與 image build 結果在 [F-11-validation.txt](F-11-validation.txt)；未跑／skip 與失敗都分開列，不作訂閱可用證明。
 
 最終驗證摘要（2026-11-17）：核心 gateway／L-02／EVAL **58 pass / 0 fail**（其中 F-11 22）；bot **65 pass / 0 fail**；memory bridge **16 pass / 0 fail**；真 Postgres **13 pass / 0 fail / 1 skip**（原生 Mail binary 缺少）。三種 Compose 與 test-only overlay 的 `config --quiet` 通過；gateway／bot／bank-proxy image 建置通過，image 內 `gemini --version` 為 **0.68.0**（沒有生成或登入）。
+
+整合最新 master 的 L-09 後，已同步其 secrets／gateway 啟動與 API overlay 選擇：不要求 Anthropic key，gateway 內部 keys 10004/0600，預設 disabled，L09 只驗 gateway liveness；新增 L09 wiring／既有 bridge-backup 共 **4 項 Python 測試通過**，F-11 ledger backup 合併後再次 **1/1 通過**。L09 完整 nested Docker 演練尚未重跑，舊收據不延伸成 F-11 上線驗收。

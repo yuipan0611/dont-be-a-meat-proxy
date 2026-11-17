@@ -68,7 +68,10 @@ def hub(*args, final=True, **kw):
 
 
 def mem(*args, **kw):
-    return dc('neighbor-hub-memory', ['deploy/memory/compose.yaml'], *args, **kw)
+    files = ['deploy/memory/compose.yaml']
+    if ENV.get('HUB_LLM_BACKEND') in ('gemini-api-free', 'gemini-api-paid'):
+        files.append('deploy/memory/compose.gemini-api.yaml')
+    return dc('neighbor-hub-memory', files, *args, **kw)
 
 
 def pg(*args, data=None):
@@ -190,8 +193,10 @@ def step1():
     mem('config', '--quiet')
     require(SITE.read_text().count('import /etc/caddy/hub-private/auth.caddy') == 1, 'site must contain exactly one legacy auth import')
     require(str(SITE) in CADDY.read_text(), 'Caddyfile must import existing hub site; inspect privately')
-    for p in ('discord.token', 'anthropic.key', 'discord-client.secret', 'postgres.password', 'hub-app.password', 'tokens.json'):
+    for p in ('discord.token', 'discord-client.secret', 'postgres.password', 'hub-app.password', 'tokens.json'):
         secret_file(PRIVATE / p)
+    if ENV.get('HUB_LLM_BACKEND') in ('gemini-api-free', 'gemini-api-paid'):
+        secret_file(PRIVATE / 'gemini-api.key')
     for p in (PRIVATE / 'bot/github.token', PRIVATE / 'web/github.token'):
         require(not p.exists(), 'this launch requires GitHub token absent (/task fail-closed)')
     for p in ('8780', '8781'):
@@ -264,7 +269,7 @@ on conflict do nothing; commit;""")
             # Original mail-a.env may belong to the pre-existing ops UID.
             value = (PRIVATE / filename).read_text().strip()
             put_secret(PRIVATE / name / filename, value, uid, uid)
-    for filename in ('discord.token', 'anthropic.key'):
+    for filename in ('discord.token',):
         put_secret(PRIVATE / 'bot' / filename, secret_file(PRIVATE / filename), botuid, botuid)
     put_secret(PRIVATE / 'web/discord-client.secret', secret_file(PRIVATE / 'discord-client.secret'), botuid, botuid)
     directory(SPOOL, botuid, botuid)
@@ -280,10 +285,25 @@ on conflict do nothing; commit;""")
             uid = 0 if path.parent == PRIVATE else 1000
             write(path, secrets.token_hex(32) + '\n', uid, uid, 0o600 if uid == 0 else 0o400)
     put_secret(mp / 'hindsight/hindsight-db.password', secret_file(PRIVATE / 'hindsight-db.password'), 1000, 1000)
-    for filename in ('hindsight-api.key', 'llm-gateway.key'):
+    for filename in ('hindsight-api.key',):
         put_secret(mp / 'bank-proxy' / filename, secret_file(mp / 'hindsight' / filename, 1000, (0o400,)), botuid, botuid)
-    for filename in ('hub-app.password', 'anthropic.key'):
+    for filename in ('hub-app.password',):
         put_secret(mp / 'bank-proxy' / filename, secret_file(PRIVATE / filename), botuid, botuid)
+    # F-11: provider credentials exist only in the dedicated gateway; never rotate an existing key.
+    gateway_uid = 10004
+    gateway_private = PRIVATE / 'llm-gateway'
+    directory(gateway_private, gateway_uid, gateway_uid)
+    for name in ('gemini', 'llm-gateway', 'agy-bin'):
+        directory(Path('/var/lib/neighbor-hub') / name, gateway_uid, gateway_uid)
+    put_secret(gateway_private / 'hindsight.key', secret_file(mp / 'hindsight/llm-gateway.key', 1000, (0o400,)), gateway_uid, gateway_uid, 0o600)
+    for name in ('bot', 'eval'):
+        path = gateway_private / (name + '.key')
+        if not path.exists():
+            write(path, secrets.token_hex(32) + '\n', gateway_uid, gateway_uid)
+        secret_file(path, gateway_uid)
+    put_secret(PRIVATE / 'bot/llm-gateway.key', secret_file(gateway_private / 'bot.key', gateway_uid), botuid, botuid)
+    if ENV.get('HUB_LLM_BACKEND') in ('gemini-api-free', 'gemini-api-paid'):
+        put_secret(gateway_private / 'gemini-api.key', secret_file(PRIVATE / 'gemini-api.key'), gateway_uid, gateway_uid, 0o600)
     put_secret(PRIVATE / 'memorybridge.hindsight-api.key', secret_file(mp / 'hindsight/hindsight-api.key', 1000, (0o400,)), opsuid, opsgid, 0o600)
     directory(Path('/var/lib/neighbor-hub/memory-bridge'), opsuid, opsgid)
     directory(PRIVATE / 'validator', opsuid, opsgid)
@@ -298,9 +318,10 @@ on conflict do nothing; commit;""")
 
 def step3():
     unchanged(J['before'])
-    mem('build', 'bank-proxy')
+    mem('build', 'bank-proxy', 'llm-gateway')
     mem('pull', 'hindsight')
     hub('build', 'validator', 'bot', 'web')
+    mem('up', '-d', '--no-deps', '--wait', '--wait-timeout', '120', 'llm-gateway', timeout=180)
     mem('up', '-d', '--no-deps', '--wait', '--wait-timeout', '600', 'hindsight', 'bank-proxy', timeout=1200)
     # Bank creation requires no LLM call. It is internal, never an exposed master credential.
     py = """import urllib.request
@@ -318,7 +339,7 @@ assert urllib.request.urlopen(r,timeout=60).status==200
     run([ROOT / 'ops/bootstrap', '--state-dir', PRIVATE, '--url', 'http://127.0.0.1:8765/mcp/'], 'MemoryBridge registration')
     p = PRIVATE / 'memorybridge.sender.json'
     os.chown(p, int(ENV['HUB_OPS_UID']), int(ENV['HUB_OPS_GID']))
-    evidence('new_services', 'Hindsight healthy; bank created; bank-proxy healthy; explorer.js 200; bot config OK')
+    evidence('new_services', 'gateway liveness only (not LLM readiness); Hindsight healthy; bank created; bank-proxy healthy; explorer.js 200; bot config OK')
     unchanged(J['before'])
     office()
 
@@ -469,7 +490,7 @@ def step7():
         present.add(service)
         require(o['State']['Running'] and not o['State'].get('OOMKilled') and o['RestartCount'] == 0, 'unhealthy/restarted service: ' + service)
         evidence('service_' + service, 'running; restart=0; OOM=false')
-    require({'mail-a', 'hubclock', 'validator', 'web', 'bot', 'memory-bridge', 'hindsight', 'bank-proxy'} <= present, 'launch service missing')
+    require({'mail-a', 'hubclock', 'validator', 'web', 'bot', 'memory-bridge', 'hindsight', 'bank-proxy', 'llm-gateway'} <= present, 'launch service missing')
     evidence('technical_deployment', 'PASS; real Discord/OAuth/TC-14 VPS/TC-16..21 and peak RAM still require delivery-S1 evidence')
 
 
@@ -485,13 +506,17 @@ def main():
         config = secret_file(args.config)
         allowed = {'HUB_DISCORD_GUILD_ID', 'HUB_DISCORD_APPLICATION_ID', 'L09_OWNER_DISCORD_ID', 'HUB_OPS_UID', 'HUB_OPS_GID',
                    'HUB_BOT_UID', 'HUB_BOT_GID', 'HUB_WEB_UID', 'HUB_WEB_GID', 'HUB_WEB_MAP_FILE', 'HUB_PUBLIC_URL', 'L09_OFFICE_URL',
-                   'HUB_PG_PLATFORM', 'HUB_HS_PLATFORM', 'HUB_VALIDATOR_PLATFORM'}
+                   'HUB_PG_PLATFORM', 'HUB_HS_PLATFORM', 'HUB_VALIDATOR_PLATFORM',
+                   'HUB_LLM_BACKEND', 'HUB_LLM_UPSTREAM_MODEL', 'HUB_LLM_DAILY_REQUEST_LIMIT'}
         config_keys = set()
         for line in config.splitlines():
             if not line.strip() or line.startswith('#'):
                 continue
             k, sep, v = line.partition('=')
-            require(sep and k in allowed and re.fullmatch(r'[A-Za-z0-9_./:@-]+', v), 'invalid/non-allowlisted non-secret config')
+            valid_value = re.fullmatch(r'[A-Za-z0-9_./:@-]+', v)
+            if k == 'HUB_LLM_UPSTREAM_MODEL':
+                valid_value = re.fullmatch(r'[A-Za-z0-9 ._-]{1,128}', v)
+            require(sep and k in allowed and valid_value, 'invalid/non-allowlisted non-secret config')
             ENV[k] = v
             config_keys.add(k)
         for k in ('HUB_DISCORD_GUILD_ID', 'HUB_DISCORD_APPLICATION_ID', 'L09_OWNER_DISCORD_ID'):
@@ -505,6 +530,8 @@ def main():
         require(ENV['HUB_BOT_UID'] == ENV['HUB_BOT_GID'] == ENV['HUB_WEB_UID'] == ENV['HUB_WEB_GID'] == '10002', 'L09 container copies require uid/gid 10002')
         ENV.setdefault('HUB_PUBLIC_URL', 'https://hub.example.invalid')
         ENV.setdefault('L09_OFFICE_URL', 'https://office.example.invalid')
+        ENV.setdefault('HUB_LLM_BACKEND', 'disabled')
+        require(ENV['HUB_LLM_BACKEND'] in ('disabled', 'gemini-cli', 'antigravity-cli', 'gemini-api-free', 'gemini-api-paid'), 'unknown LLM backend')
         ENV.update(HUB_GROUP_ID='group-a', HUB_PRIVATE_DIR=str(PRIVATE), HUB_TOKEN_SPOOL_DIR=str(SPOOL),
                    HUB_PG_PROJECT='neighbor-hub-db', HUB_MAIL_PORT='8765', HUB_BANKPROXY_PORT='8780', HUB_WEB_PORT='8781',
                    HUB_WEB_GITHUB_TOKEN_FILE='', HUB_WEB_ORIGIN=ENV['HUB_PUBLIC_URL'])
