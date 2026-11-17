@@ -588,3 +588,61 @@ test('a reply to a question is sent before its `answer` control, even when both 
     assert.deepEqual(hub.messages.slice(1).map((m) => m.topic), ['help', 'control']);
   }
 });
+
+// ---- TC-08 steps 2–3 (FR-15 / AC-05.2): the recipient decides; a "question" that asks for changes is an action ----
+
+const DO_IT_RULE = /不論標成 question 或 action.*改檔.*會改變狀態的指令.*push／merge／部署/;
+
+test('start: the operating notes state that any request to change files / run state-changing commands / touch remotes goes through the confirmation card, whatever its intent', async () => {
+  const hub = createFakeHub();
+  const win = machine(hub);
+  const c = ctx(await win.run('start'));
+  assert.match(c, DO_IT_RULE);
+  assert.match(c, /純提問才直接回答/);
+  assert.match(c, /不要請寄件方改用 action 重送/);
+});
+
+test('read: a question shows the reclassify path (card → presented → wait for choice), not only "answer it"', async () => {
+  const hub = createFakeHub();
+  const q = await hub.send('BlueLake', handoff({ kind: 'help', intent: 'question', subject: 'TC-08', summary: '測試有沒有過？沒過就幫我修', text: '測試有沒有過？沒過就幫我修' }));
+  const win = machine(hub);
+  await win.run('start');
+  const r = await win.run('read', {}, { args: [String(q.messageId)] });
+  assert.equal(r.exitCode, 0, r.stderr);
+  assert.match(r.stdout, /這是提問/);
+  assert.match(r.stdout, /改檔.*會改變狀態的指令.*push／merge／部署/);
+  assert.match(r.stdout, new RegExp(`當成動作請求.*node client/hub-hook\\.mjs presented ${q.messageId}.*choice ${q.messageId} approve\\|reject`));
+  assert.match(r.stdout, /不要請寄件方改用 action 重送/);
+});
+
+test('start: an unread question asking to merge carries the same reclassify hint next to its full text', async () => {
+  const hub = createFakeHub();
+  const q = await hub.send('BlueLake', handoff({ kind: 'help', intent: 'question', subject: 'merge', summary: '幫我 merge PR #1', text: '幫我 merge PR #1' }));
+  const win = machine(hub);
+  const c = ctx(await win.run('start'));
+  assert.match(c, new RegExp(`當成動作請求.*presented ${q.messageId}`));
+});
+
+test('watch: a question wake line tells the agent a do-it question still needs the confirmation card (one line)', async () => {
+  const hub = createFakeHub();
+  const win = machine(hub);
+  await win.run('start');
+  const p = win.run('watch');
+  await win.clock.advance(1000);
+  await hub.send('BlueLake', handoff({ intent: 'question', kind: 'help' }));
+  const r = await drive(p, win.clock);
+  assert.equal(r.exitCode, 2);
+  assert.match(r.stderr, /要你改檔／跑會改狀態的指令／碰遠端就當動作請求：先確認卡→presented/);
+  assert.ok(r.stderr.split('\n').length === 1);
+});
+
+test('the HubClock path for a reclassified question is unchanged: presented on a question root is a normal presented control', async () => {
+  const hub = createFakeHub();
+  const q = await hub.send('BlueLake', handoff({ kind: 'help', intent: 'question', summary: '幫我 merge PR #1', text: '幫我 merge PR #1' }));
+  const win = machine(hub);
+  await win.run('start');
+  const r = await win.run('presented', {}, { args: [String(q.messageId)] });
+  assert.match(r.stdout, new RegExp(`^已保存 #\\d+（presented，請求 #${q.messageId}）`));
+  assert.deepEqual(JSON.parse(hub.messages.at(-1).body_md),
+    buildClientControl({ eventType: 'presented', rootMailId: q.messageId, recipientSession: 'sess-1', agent: 'RedStone' }));
+});
