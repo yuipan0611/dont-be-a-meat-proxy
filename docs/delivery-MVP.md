@@ -11,8 +11,8 @@
 | H-02 VPS 部署（mail-a＋hub Caddy 片段＋HubClock） | ✅ mail-a＋Caddy＋HubClock（SandyThrush） | docs/ops/vps-inventory.md「H-02 實機部署紀錄」 |
 | office.example.invalid 部署前後都正常 | ✅ | before 200 → after 200 |
 | H-06 備份上線（每日備份、還原演練、Mac 每週加密拉回） | ✅ | docs/ops/vps-inventory.md「H-06 實機備份上線」 |
-| Mac 接入（onboarding-S1） | ⬜ | |
-| Windows 接入，≤15 分鐘 | ⬜ | 實際分鐘： |
+| Mac 接入（onboarding-S1） | 🟡 PM 已備好 `~/hub-mac`（client、protocol、設定、只含 Mac 憑證、啟動腳本 `start-hub-claude.sh`）；`hub-hook inbox` 對正式 Hub 連線成功。待 維護者 啟動 Claude 並信任資料夾 | |
+| Windows 接入，≤15 分鐘 | 🟡 PM 已打包 `~/hub-win.zip`（只含 Windows 憑證、`start-hub-claude.ps1`）；待 維護者 搬到 Windows | 實際分鐘： |
 | 兩台都已信任專案、`/hooks` 看得到 hub-hook | ⬜ | |
 
 ## 本機已有的自動化證據（PM 2026-11-17 在 master 重跑）
