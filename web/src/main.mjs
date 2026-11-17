@@ -7,7 +7,7 @@ const secret = async k => (await readFile(required(k),'utf8')).trim();
 const generated=JSON.parse(await readFile(new URL('../.generated/architecture.json',import.meta.url),'utf8'));
 const configured=process.env.WEB_MAP_FILE?JSON.parse(await readFile(process.env.WEB_MAP_FILE,'utf8')):{};
 if(configured.repo && configured.repo!==generated.repo)throw new Error('map and code snapshot repo mismatch');
-const map={...generated,...configured,symbols:generated.symbols,codeSnapshot:generated.codeSnapshot};
+const map={...generated,...configured,symbols:generated.symbols,atlas:generated.atlas,codeSnapshot:generated.codeSnapshot};
 const origin=required('WEB_ORIGIN');
 if (new URL(origin).protocol !== 'https:' || new URL(origin).origin !== origin) throw new Error('WEB_ORIGIN must be an HTTPS origin without trailing slash');
 if (!/^[\w.-]+\/[\w.-]+$/.test(map.repo)) throw new Error('invalid configured repo');

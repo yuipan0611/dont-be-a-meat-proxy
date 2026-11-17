@@ -4,3 +4,14 @@ web/node_modules
 spikes
 web/.generated
 client/test
+
+**/node_modules
+**/__pycache__
+.hub-local
+deploy/private
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.token
+**/*.password
