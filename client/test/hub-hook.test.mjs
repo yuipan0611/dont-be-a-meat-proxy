@@ -849,3 +849,17 @@ test('an action card tells the agent to try `auto check` first and never to run 
   const s = ctx(await win.run('start'));
   assert.match(s, /auto on.*使用者本人/);
 });
+
+test('L-02 順手修: an auto-mode notice names the pair (target → recipient), never "#null"', async () => {
+  const hub = createFakeHub();
+  const win = machine(hub);
+  const on = await clockResult(hub, ['RedStone', 'BlueLake'], 'g', { kind: 'auto', status: 'auto_on', root_mail_id: null, grant_key: 'grant:1', recipient_agent: 'RedStone', target: 'BlueLake', text: 'auto mode 已開啟：RedStone 對 BlueLake，60 分鐘。' });
+  const r = await win.run('read', {}, { args: [String(on.messageId)] });
+  assert.doesNotMatch(r.stdout, /#null/);
+  assert.match(r.stdout, /BlueLake → RedStone 的 auto mode/);
+  assert.match(r.stdout, /HubClock 通知：auto mode 已開啟/);
+  const rej = await clockResult(hub, ['RedStone'], 'g2', { kind: 'auto', status: 'auto_rejected', root_mail_id: null, recipient_agent: 'RedStone', target: null, error_code: 'E-AUTO', text: '必須指定對象。' });
+  const r2 = await win.run('read', {}, { args: [String(rej.messageId)] });
+  assert.doesNotMatch(r2.stdout, /#null|null →/);
+  assert.match(r2.stdout, /（未指定） → RedStone 的 auto mode/);
+});

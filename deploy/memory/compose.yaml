@@ -1,0 +1,120 @@
+# L-02 standalone project: -p neighbor-hub-memory. Needs the L-01 project (neighbor-hub-db) running.
+# Never merged into the Mail stack; Mail joins none of these networks.
+#
+# hindsight   — Hindsight 1.2.1 API only (control-plane UI off). DB = L-01 cluster, database hindsight,
+#               login hindsight_app, over hindsight-db-net only. LLM = the gateway below (never a real key).
+# bank-proxy  — :8780 member endpoint for Caddy (/memory/* → here), published on host loopback only;
+#               :8790 LLM gateway with the global 0.50 USD/day ledger, reachable only on memory-net.
+services:
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight:1.2.1@sha256:d2bc230a714e933affd63753e181a0579328fdcbbc021800a76e0bc7b6e76b31
+    platform: ${HUB_HS_PLATFORM:-linux/amd64}
+    # Secrets become env only inside the container, after start; never in compose files or argv.
+    entrypoint:
+      - /bin/bash
+      - -ceu
+      - |
+        export HINDSIGHT_API_DATABASE_URL="postgresql://hindsight_app:$$(cat /run/secrets/hindsight_db_password)@db:5432/hindsight"
+        export HINDSIGHT_API_TENANT_API_KEY="$$(cat /run/secrets/hindsight_api_key)"
+        export HINDSIGHT_API_LLM_API_KEY="$$(cat /run/secrets/llm_gateway_key)"
+        exec /app/start-all.sh
+    environment:
+      HINDSIGHT_ENABLE_CP: "false"
+      HINDSIGHT_API_WORKER_ID: hindsight-1   # stable: in-flight tasks are recovered after a container recreate
+      HINDSIGHT_API_MCP_ENABLED_TOOLS: recall,list_memories,get_memory,get_document   # second wall behind bank-proxy
+      HINDSIGHT_API_TENANT_EXTENSION: hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension
+      HINDSIGHT_API_LLM_PROVIDER: ${HINDSIGHT_LLM_PROVIDER:-anthropic}
+      HINDSIGHT_API_LLM_MODEL: ${HINDSIGHT_LLM_MODEL:-claude-haiku-5-5}
+      HINDSIGHT_API_LLM_BASE_URL: ${HINDSIGHT_LLM_BASE_URL:-http://bank-proxy:8790}
+      HINDSIGHT_API_LLM_MAX_CONCURRENT: "2"
+      HINDSIGHT_API_LLM_OUTPUT_LANGUAGE: "Traditional Chinese (zh-TW, 繁體中文); never convert to Simplified Chinese"
+      HINDSIGHT_API_DB_POOL_MIN_SIZE: "1"
+      HINDSIGHT_API_DB_POOL_MAX_SIZE: "5"
+      HINDSIGHT_API_LOG_LEVEL: warning
+    secrets:
+      - hindsight_db_password
+      - {source: hs_tenant_key, target: hindsight_api_key}
+      - {source: hs_gateway_key, target: llm_gateway_key}
+    networks: [memory-net, hindsight-db-net]
+    volumes:
+      - hs_models:/home/hindsight/.cache   # embedding/reranker models, downloaded once
+    mem_limit: ${HUB_HS_MEM_LIMIT:-2g}
+    memswap_limit: ${HUB_HS_MEM_LIMIT:-2g}
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/health/live', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 180s
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+  bank-proxy:
+    image: neighbor-bank-proxy:${HUB_BANKPROXY_TAG:-l02}
+    build: ../../ops/bank-proxy
+    user: "${HUB_BANKPROXY_UID:-10002}:${HUB_BANKPROXY_GID:-10002}"
+    environment:
+      HUB_DB_HOST: db
+      HINDSIGHT_URL: http://hindsight:8888
+      ANTHROPIC_URL: ${HUB_ANTHROPIC_URL:-https://api.anthropic.com}
+      LEDGER_FILE: /state/llm-ledger.json
+      LLM_DAILY_CAP_MICROS: "500000"
+    secrets:
+      - hub_app_password
+      - anthropic_api_key
+      - {source: bp_tenant_key, target: hindsight_api_key}
+      - {source: bp_gateway_key, target: llm_gateway_key}
+    ports:
+      - "127.0.0.1:${HUB_BANKPROXY_PORT:-8780}:8780"   # 8790 (gateway) is deliberately not published
+    networks: [memory-net, hub-db-net]
+    volumes:
+      - ${HUB_BANKPROXY_STATE_DIR:-/var/lib/neighbor-hub/bank-proxy}:/state
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    memswap_limit: 128m
+    restart: unless-stopped
+    stop_grace_period: 15s
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8780/healthz]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+networks:
+  memory-net: {}   # bridge with egress: model download (hindsight) and api.anthropic.com (gateway)
+  hindsight-db-net:
+    external: true
+    name: ${HUB_PG_PROJECT:-neighbor-hub-db}_hindsight-db-net
+  hub-db-net:
+    external: true
+    name: ${HUB_PG_PROJECT:-neighbor-hub-db}_hub-db-net
+volumes:
+  hs_models:
+secrets:
+  # One directory per container user (hindsight uid 1000, bank-proxy uid 10002), files 0400 owned by that
+  # user: Compose file secrets keep host ownership on Linux. The tenant key and the gateway key exist
+  # twice (same value, one copy per user). See runbook-L02 §2.
+  hindsight_db_password:
+    file: ${HUB_MEMORY_PRIVATE_DIR:-/var/lib/neighbor-hub/private/memory}/hindsight/hindsight-db.password
+  hs_tenant_key:
+    file: ${HUB_MEMORY_PRIVATE_DIR:-/var/lib/neighbor-hub/private/memory}/hindsight/hindsight-api.key
+  hs_gateway_key:
+    file: ${HUB_MEMORY_PRIVATE_DIR:-/var/lib/neighbor-hub/private/memory}/hindsight/llm-gateway.key
+  hub_app_password:
+    file: ${HUB_MEMORY_PRIVATE_DIR:-/var/lib/neighbor-hub/private/memory}/bank-proxy/hub-app.password
+  anthropic_api_key:
+    file: ${HUB_MEMORY_PRIVATE_DIR:-/var/lib/neighbor-hub/private/memory}/bank-proxy/anthropic.key
+  bp_tenant_key:
+    file: ${HUB_MEMORY_PRIVATE_DIR:-/var/lib/neighbor-hub/private/memory}/bank-proxy/hindsight-api.key
+  bp_gateway_key:
+    file: ${HUB_MEMORY_PRIVATE_DIR:-/var/lib/neighbor-hub/private/memory}/bank-proxy/llm-gateway.key
