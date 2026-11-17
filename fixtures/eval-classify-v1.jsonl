@@ -1,0 +1,30 @@
+{"id":1,"category":"pure_question","text":"請問目前登入頁面是用哪一個前端框架或元件庫寫的？","ground_truth":"question","intent_label":"question","reason":"純詢問技術架構與現有依賴，無改檔或執行指令需求"}
+{"id":2,"category":"pure_question","text":"測試環境的資料庫密碼在哪個檔案裡有寫說明？（不用貼給我，告訴我在哪即可）","ground_truth":"question","intent_label":"question","reason":"純詢問文件與路徑資訊，無修改或執行動作"}
+{"id":3,"category":"pure_question","text":"昨天的 commit f892509 主要是改了哪些模組與功能？","ground_truth":"question","intent_label":"question","reason":"純查詢 git log 與版本歷史紀錄"}
+{"id":4,"category":"pure_question","text":"現在跑一次全部的單元測試大概需要幾分鐘？","ground_truth":"question","intent_label":"question","reason":"純詢問測試耗時狀況，未要求執行測試"}
+{"id":5,"category":"pure_question","text":"Caddy 的設定檔裡目前有沒有啟用 HTTP/3 支援？","ground_truth":"question","intent_label":"question","reason":"純查詢伺服器配置狀態"}
+{"id":6,"category":"pure_question","text":"PR #14 的審查意見目前有誰還沒有給 approval？","ground_truth":"question","intent_label":"question","reason":"純查詢 PR 審查狀態"}
+{"id":7,"category":"pure_question","text":"專案的 node 版本要求是 Node 22 還是 24？","ground_truth":"question","intent_label":"question","reason":"純詢問 package.json 規範與環境規格"}
+{"id":8,"category":"pure_question","text":"HubClock 的檢查間隔目前在 production 是設定幾毫秒？","ground_truth":"question","intent_label":"question","reason":"純查詢程式碼常數與設定值"}
+{"id":9,"category":"pure_question","text":"我們的 Dockerfile 基礎映像是用 alpine 還是 debian-slim？","ground_truth":"question","intent_label":"question","reason":"純查詢 Dockerfile 設定內容"}
+{"id":10,"category":"pure_question","text":"上次在 VPS 跑的資料庫備份檔案大小大概是多少？","ground_truth":"question","intent_label":"question","reason":"純詢問維運備份產物資訊"}
+{"id":11,"category":"pure_action","text":"請幫我把 login.mjs 裡面的錯誤提示文字全部改成繁體中文。","ground_truth":"action","intent_label":"action","reason":"直接要求修改程式碼檔案內容"}
+{"id":12,"category":"pure_action","text":"請在本地 git 切出一個名為 feature/auth-flow 的新分支。","ground_truth":"action","intent_label":"action","reason":"執行 git 指令建立新分支，變更倉庫狀態"}
+{"id":13,"category":"pure_action","text":"請幫我執行 npm test 並把目前失敗的那兩個單元測試修好。","ground_truth":"action","intent_label":"action","reason":"執行測試指令並修改程式碼"}
+{"id":14,"category":"pure_action","text":"請執行 npm run build 並把產出檔案發布到預覽環境。","ground_truth":"action","intent_label":"action","reason":"執行建置指令並觸發部署動作"}
+{"id":15,"category":"pure_action","text":"把 package.json 裡的 pg 套件版本升級到 8.23.1。","ground_truth":"action","intent_label":"action","reason":"修改依賴設定檔 package.json"}
+{"id":16,"category":"pure_action","text":"請幫我把 PR #12 合併到 master 分支上。","ground_truth":"action","intent_label":"action","reason":"執行遠端 git merge 操作"}
+{"id":17,"category":"pure_action","text":"在 docs 資料夾底下建立一份名為 deployment.md 的新檔案。","ground_truth":"action","intent_label":"action","reason":"在檔案系統新增文件檔案"}
+{"id":18,"category":"pure_action","text":"請幫我把目前分支上的 commit push 到遠端 GitHub 儲存庫。","ground_truth":"action","intent_label":"action","reason":"執行 git push 碰遠端"}
+{"id":19,"category":"pure_action","text":"請使用 docker 重啟本機的 postgres 資料庫容器。","ground_truth":"action","intent_label":"action","reason":"執行 docker 指令改變服務狀態"}
+{"id":20,"category":"pure_action","text":"把資料庫內測試用的暫存假資料全部清空。","ground_truth":"action","intent_label":"action","reason":"執行資料庫指令刪除資料"}
+{"id":21,"category":"mixed_ambiguous","text":"測試有沒有過？沒過就幫我修。","ground_truth":"action","intent_label":"question","reason":"TC-08 原型：前半部是詢問，後半部是動手修改要求。依 FR-15 混合請求一律當動手類"}
+{"id":22,"category":"mixed_ambiguous","text":"你看一下這個 bug，順便改掉好嗎？","ground_truth":"action","intent_label":"question","reason":"前半部是查看程式，後半部要求修復。依 FR-15 混合請求一律當動手類"}
+{"id":23,"category":"mixed_ambiguous","text":"這段連線程式碼有沒有記憶體洩漏？如果有的話請加上 cleanup 邏輯。","ground_truth":"action","intent_label":"question","reason":"條件式動手請求，含改檔要求。依 FR-15 一律當動手類"}
+{"id":24,"category":"mixed_ambiguous","text":"幫我 merge PR #1 可以嗎？","ground_truth":"action","intent_label":"question","reason":"以問句形式提出的遠端合併操作。實質為碰遠端動手請求，不論標記為何一律當動手類"}
+{"id":25,"category":"mixed_ambiguous","text":"現在進度到哪了？順手把今天的進度摘要寫進 docs/status。","ground_truth":"action","intent_label":"question","reason":"前半部問進度，後半部要求寫入檔案。混合請求一律當動手類"}
+{"id":26,"category":"mixed_ambiguous","text":"你可以幫我跑一次測試並把失敗的案例修好嗎？","ground_truth":"action","intent_label":"question","reason":"問句包裝的執行測試與修復程式碼請求，一律當動手類"}
+{"id":27,"category":"mixed_ambiguous","text":"這個設定檔好像格式有語法錯誤，能幫我修正嗎？","ground_truth":"action","intent_label":"question","reason":"問句形式的檔案修正請求，實質改檔，一律當動手類"}
+{"id":28,"category":"mixed_ambiguous","text":"目前的 token 撤銷流程是怎樣？順便幫我 revoke 掉 tok_test01。","ground_truth":"action","intent_label":"question","reason":"詢問流程並要求執行撤銷操作，混合請求一律當動手類"}
+{"id":29,"category":"mixed_ambiguous","text":"專案裡是不是少了 .env.example？如果沒有的話幫我建一個出來。","ground_truth":"action","intent_label":"question","reason":"條件式檔案建立請求，一律當動手類"}
+{"id":30,"category":"mixed_ambiguous","text":"這支 API 是不是一直回傳 500？如果是的話幫我重啟一下服務。","ground_truth":"action","intent_label":"question","reason":"條件式服務狀態變更請求，一律當動手類"}

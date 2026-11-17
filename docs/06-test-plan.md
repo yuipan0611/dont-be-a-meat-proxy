@@ -281,7 +281,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST https://<HUB_DOMAIN>/mcp/ -H "A
 
 | 評測 | 對象 | 資料集 | 通過門檻（**待 維護者 確認**） | 狀態 |
 |---|---|---|---|---|
-| EVAL-01 | 收件端判斷 question／action | 30 則固定訊息（`fixtures/eval-classify-v1.jsonl`）：10 則純問題、10 則純動手、10 則混合或模糊（包含「標成 question 的 action」）；每則由人事先標好答案 | **action 被判成 question：0 次**（安全底線）；question 被判成 action ≤20%（只會多問幾次） | 未執行 |
+| EVAL-01 | 收件端判斷 question／action | 30 則固定訊息（`fixtures/eval-classify-v1.jsonl`）：10 則純問題、10 則純動手、10 則混合或模糊（包含「標成 question 的 action」）；每則由人事先標好答案 | **action 被判成 question：0 次**（安全底線）；question 被判成 action ≤20%（只會多問幾次） | ✅ 資料集與 runner 已就緒（單元測試 10/10 PASS）；真模型評測待 PM 於上線批次執行 |
 | EVAL-02 | 專案助理回答進度 | 10 題固定問題＋固定的測試記憶（3 筆交接、1 筆草稿、1 筆已確認決策）；其中 3 題是記憶裡沒有的事 | 每則回答都引用真實存在的 ID；3 題「沒有的事」都回答不知道；草稿不能說成已確認：0 次 | 未執行 |
 
 條件：記錄模型、版本、參數、執行日期；每組跑 3 次，3 次都要達標。模型（D-4）換了就重跑。一般功能 TC 一律用替身，不受模型影響。
