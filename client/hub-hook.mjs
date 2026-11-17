@@ -384,6 +384,67 @@ async function modeStart(ctx, input) {
     } catch (e) {
       out.push(`⚠ 無法取得專案現況（最近交接）：${describeError(e)}。`);
     }
+
+    // SR-DEC-04 / AC-11.4 / L-05: Project decisions (drafts and confirmed listed separately with status).
+    try {
+      const decMessages = await withBudget(client.callTool('fetch_topic', { project_key: cfg.projectKey, topic_name: 'decision', limit: cfg.recentN, include_bodies: true }), left(), clock);
+      const decList = (Array.isArray(decMessages) ? decMessages : decMessages.messages ?? []);
+      const statusByDraftId = new Map();
+      const drafts = [];
+      for (const m of decList) {
+        let env = parseEnvelope(m);
+        if (!env) {
+          try { env = JSON.parse(m.body_md); } catch {}
+        }
+        if (env?.kind === 'decision_status' && env.draft_mail_id) {
+          statusByDraftId.set(Number(env.draft_mail_id), env);
+        } else if (env?.kind === 'decision' || (m.topic === 'decision' && env?.kind !== 'decision_status')) {
+          drafts.push(m);
+        }
+      }
+      drafts.sort((a, b) => (a.created_ts === b.created_ts ? b.id - a.id : a.created_ts < b.created_ts ? 1 : -1));
+
+      const confirmed = [];
+      const unconfirmed = [];
+      for (const m of drafts) {
+        const st = statusByDraftId.get(m.id);
+        const env = parseEnvelope(m);
+        const item = {
+          id: m.id,
+          createdTs: m.created_ts,
+          from: m.from,
+          subject: m.subject,
+          summary: env ? clip(oneLine(env.summary), 100) : '格式不明',
+          status: st ? (st.status === 'confirmed' ? '已確認' : st.status === 'rejected' ? '已駁回' : '草稿') : '草稿',
+          decidedBy: st?.decided_by,
+          decidedAt: st?.decided_at,
+        };
+        if (item.status === '已確認') confirmed.push(item);
+        else if (item.status === '草稿') unconfirmed.push(item);
+      }
+
+      if (confirmed.length || unconfirmed.length) {
+        out.push('專案決策（已確認與草稿分開列）：');
+        if (confirmed.length) {
+          out.push('已確認決策（正式）：');
+          for (const d of confirmed) {
+            out.push(`- #${d.id}｜${d.createdTs}｜${d.from}｜${d.subject}｜${d.summary}（確認者：${d.decidedBy ?? '維護者'}，時間：${d.decidedAt ?? ''}）`);
+          }
+        } else {
+          out.push('已確認決策（正式）：（目前沒有已確認決策）');
+        }
+        if (unconfirmed.length) {
+          out.push('草稿決策（待確認）：');
+          for (const d of unconfirmed) {
+            out.push(`- #${d.id}｜${d.createdTs}｜${d.from}｜${d.subject}｜${d.summary}（狀態：草稿，待確認）`);
+          }
+        } else {
+          out.push('草稿決策（待確認）：（目前沒有草稿決策）');
+        }
+      }
+    } catch (e) {
+      out.push(`⚠ 無法取得專案決策：${describeError(e)}。`);
+    }
   }
 
   // 5. What the agent can do; and what it just received counts as read.
@@ -636,7 +697,8 @@ async function modeSend(ctx, input, { checkpoint }) {
   const [res] = results.filter((r) => r.entry.key === entry.key);
   const ans = answer && results.find((r) => r.entry.key === answer.key);
   if (ans && !ans.messageId) clockNote += '（「已回答」紀錄還沒送到 HubClock，會自動重送）';
-  if (res?.messageId) return { stdout: `已保存 #${res.messageId}（${checkpoint ? '交接' : '訊息'}給 ${item.to.join(', ')}）${clockNote}\n` };
+  const kindLabel = checkpoint ? '交接' : item.kind === 'decision' ? '決策草稿' : '訊息';
+  if (res?.messageId) return { stdout: `已保存 #${res.messageId}（${kindLabel}給 ${item.to.join(', ')}）${clockNote}\n` };
   if (res?.failed) return { exitCode: 1, stderr: `未寫入：${describeError(res.error)}` };
   return { exitCode: 1, stderr: `${deliveryText(res?.error ?? {})}。原因：${describeError(res?.error)}` };
 }

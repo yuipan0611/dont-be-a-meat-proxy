@@ -36,8 +36,9 @@ export function createBridge({ mail, store, clock, freshMs = 10 * 60_000, pageLi
         for (const memberId of w.memberIds) {
           rows.push({
             groupId: w.groupId, memberId, mailId: n.mailId, recipientAgent: w.agentName, label: n.label,
-            sender: n.sender, subject: n.subject, summary: n.summary, mailCreatedAt: n.createdTs,
+            sender: n.sender, subject: n.subject, summary: n.summary, text: n.text ?? n.summary, mailCreatedAt: n.createdTs,
             state: age > freshMs ? 'held' : 'pending',
+            isDecision: n.isDecision || (n.label && n.label.startsWith('決策')),
           });
         }
       }

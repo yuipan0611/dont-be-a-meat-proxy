@@ -58,6 +58,30 @@ export function createFakeMail() {
       if (!m) throw new Error('not found');
       return { raw: JSON.stringify(m), message: { ...m } };
     },
+    async callTool(name, args) {
+      if (name === 'fetch_inbox_events') {
+        const ev = await this.fetchEvents({ agentName: args.agent_name, after: args.after, limit: args.limit });
+        return {
+          events: ev.events,
+          next_cursor: ev.nextCursor,
+          has_more: ev.hasMore,
+          tail_cursor: ev.tailCursor,
+        };
+      }
+      if (name === 'send_message') {
+        const id = this.deliver({
+          from: args.sender_name,
+          to: args.to,
+          cc: args.cc ?? [],
+          subject: args.subject,
+          topic: args.topic,
+          body: args.body_md,
+          threadId: args.thread_id,
+        });
+        return { id };
+      }
+      throw new Error(`unknown tool: ${name}`);
+    },
   };
 }
 
@@ -68,12 +92,15 @@ export function createFakeDiscord() {
   return {
     sent,
     failNextSends(n, outcome = 'failed') { failNext = n; mode = outcome; },
-    async sendDm(userId, content) {
+    async sendDm(userId, payload) {
       if (failNext > 0) {
         failNext--;
         throw Object.assign(new Error('discord unavailable'), { outcome: mode, code: 'DISCORD_DOWN' });
       }
-      sent.push({ userId, content });
+      const entry = typeof payload === 'string'
+        ? { userId, content: payload }
+        : { userId, content: payload.content, components: payload.components };
+      sent.push(entry);
       return { messageId: `dm-${sent.length}` };
     },
   };
@@ -121,5 +148,23 @@ export function fakeInteraction(commandName, opts = {}, { userId = OWNER_DISCORD
     async deferReply(o) { log.push({ type: 'defer', ...o }); },
     async editReply(o) { log.push({ type: 'edit', ...o }); },
     async followUp(o) { log.push({ type: 'followUp', ...o }); },
+  };
+}
+
+export function fakeButtonInteraction(customId, { userId = OWNER_DISCORD, guildId = GUILD, message = {} } = {}) {
+  const log = [];
+  return {
+    log,
+    id: String(ixSeq++),
+    customId,
+    guildId,
+    user: { id: userId },
+    message: { editable: true, edit: async (o) => log.push({ type: 'message.edit', ...o }), ...message },
+    isButton: () => true,
+    isChatInputCommand: () => false,
+    async deferReply(o) { log.push({ type: 'defer', ...o }); },
+    async editReply(o) { log.push({ type: 'edit', ...o }); },
+    async reply(o) { log.push({ type: 'reply', ...o }); },
+    async update(o) { log.push({ type: 'update', ...o }); },
   };
 }

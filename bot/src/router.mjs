@@ -31,7 +31,11 @@ export const COMMANDS = Object.freeze([
   },
 ]);
 
-export function createRouter({ store, connect, assistant, log = () => {} }) {
+export function createRouter({ store, connect, assistant, decisions = null, log = () => {} }) {
+  async function handleButton(ix) {
+    if (decisions) return decisions.handleButton(ix);
+  }
+
   async function handle(ix) {
     if (!['connect', 'revoke', 'status'].includes(ix.commandName)) return;
     await ix.deferReply({ flags: EPHEMERAL });
@@ -66,5 +70,5 @@ export function createRouter({ store, connect, assistant, log = () => {} }) {
       return reply('處理失敗，請稍後再試；持續失敗請找 operator。');
     }
   }
-  return { handle };
+  return { handle, handleButton };
 }

@@ -133,7 +133,7 @@ export function createReadOnlyTools({ store, mail }) {
         return rows.map((r) => ({
           mail_id: r.mail_id, created_ts: r.mail_created_at, type: r.label, from: r.sender, to: r.recipient_agent,
           subject: r.subject, summary: r.summary,
-          ...(r.label.startsWith('決策') ? { decision_status: '草稿' } : {}),
+          ...(r.decision_status ? { decision_status: r.decision_status } : r.label.startsWith('決策') ? { decision_status: '草稿' } : {}),
         }));
       },
     },

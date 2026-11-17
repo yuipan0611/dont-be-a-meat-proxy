@@ -6,6 +6,14 @@ import pg from 'pg';
 const NOTIF_COLS = `id, group_id, member_id, mail_id::int as mail_id, recipient_agent, label, sender, subject, summary,
   to_char(mail_created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as mail_created_at, state`;
 
+const DECISION_COLS = `id, group_id, draft_mail_id::int as draft_mail_id, draft_id, author_agent, subject, summary, text,
+  status, version, confirmed_by, confirmed_by_discord_id, confirmed_by_name,
+  to_char(confirmed_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as confirmed_at,
+  decision_reason, discord_message_id, reminder_sent,
+  to_char(reminder_sent_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as reminder_sent_at,
+  to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,
+  to_char(updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as updated_at`;
+
 export function createPgStore({ pool }) {
   async function tx(fn) {
     const c = await pool.connect();
@@ -108,6 +116,14 @@ export function createPgStore({ pool }) {
              values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) on conflict (member_id, mail_id) do nothing`,
             [n.groupId, n.memberId, n.mailId, n.recipientAgent, n.label, n.sender, n.subject, n.summary, n.mailCreatedAt, n.state]);
           inserted += r.rowCount;
+          if (n.label?.startsWith('決策') || n.isDecision) {
+            await c.query(
+              `insert into public.decisions
+                 (group_id, draft_mail_id, draft_id, author_agent, subject, summary, text, status, created_at)
+               values ($1, $2, $3, $4, $5, $6, $7, 'draft', coalesce($8::timestamptz, now()))
+               on conflict (draft_mail_id) do nothing`,
+              [n.groupId, n.mailId, `dec_${n.mailId}`, n.sender, n.subject ?? '', n.summary ?? '', n.text ?? n.summary ?? '', n.mailCreatedAt]);
+          }
         }
         await c.query(
           `insert into public.bridge_cursors (agent_name, group_id, cursor) values ($1,$2,$3)
@@ -167,9 +183,100 @@ export function createPgStore({ pool }) {
 
     async recentItems(groupId, limit) {
       const r = await q(
-        `select distinct on (mail_id) ${NOTIF_COLS} from public.discord_notifications where group_id = $1
-          order by mail_id desc, id limit $2`, [groupId, limit]);
+        `select distinct on (n.mail_id)
+           n.id, n.group_id, n.member_id, n.mail_id::int as mail_id, n.recipient_agent, n.label, n.sender, n.subject, n.summary,
+           to_char(n.mail_created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as mail_created_at, n.state,
+           case
+             when d.status = 'confirmed' then '已確認'
+             when d.status = 'rejected' then '已駁回'
+             when d.status = 'draft' then '草稿'
+             when n.label like '決策%' then '草稿'
+             else null
+           end as decision_status
+          from public.discord_notifications n
+          left join public.decisions d on d.draft_mail_id = n.mail_id
+         where n.group_id = $1
+         order by n.mail_id desc, n.id limit $2`, [groupId, limit]);
       return r.rows;
+    },
+
+    async recordDecisionDraft({ groupId, draftMailId, draftId, authorAgent, subject = '', summary = '', text = '', createdAt = null }) {
+      const dId = draftId ?? `dec_${draftMailId}`;
+      const r = await q(
+        `insert into public.decisions (group_id, draft_mail_id, draft_id, author_agent, subject, summary, text, created_at)
+         values ($1, $2, $3, $4, $5, $6, $7, coalesce($8::timestamptz, now()))
+         on conflict (draft_mail_id) do update set updated_at = now()
+         returning ${DECISION_COLS}`,
+        [groupId, draftMailId, dId, authorAgent, subject, summary, text, createdAt]
+      );
+      return r.rows[0];
+    },
+
+    async getDecisionByMailId(draftMailId) {
+      const r = await q(`select ${DECISION_COLS} from public.decisions where draft_mail_id = $1`, [draftMailId]);
+      return r.rows[0] ?? null;
+    },
+
+    async getDecisionByDraftId(draftId) {
+      const r = await q(`select ${DECISION_COLS} from public.decisions where draft_id = $1 or draft_mail_id::text = $1`, [draftId]);
+      return r.rows[0] ?? null;
+    },
+
+    async listDecisions(groupId, { status, limit = 50 } = {}) {
+      if (status) {
+        const r = await q(
+          `select ${DECISION_COLS} from public.decisions where group_id = $1 and status = $2 order by created_at desc, id desc limit $3`,
+          [groupId, status, limit]
+        );
+        return r.rows;
+      }
+      const r = await q(
+        `select ${DECISION_COLS} from public.decisions where group_id = $1 order by created_at desc, id desc limit $2`,
+        [groupId, limit]
+      );
+      return r.rows;
+    },
+
+    async updateDecisionStatus({ draftMailId, status, memberId, discordUserId, memberName, reason = null, now = null }) {
+      const r = await q(
+        `update public.decisions
+            set status = $2,
+                confirmed_by = $3,
+                confirmed_by_discord_id = $4,
+                confirmed_by_name = $5,
+                confirmed_at = coalesce($6::timestamptz, now()),
+                decision_reason = $7,
+                version = version + 1,
+                updated_at = coalesce($6::timestamptz, now())
+          where draft_mail_id = $1 and status = 'draft'
+          returning ${DECISION_COLS}`,
+        [draftMailId, status, memberId, discordUserId, memberName, now, reason]
+      );
+      return r.rows[0] ?? null;
+    },
+
+    async listDueDraftReminders(nowMs, timeoutMs = 7 * 24 * 60 * 60 * 1000) {
+      const cutoff = new Date(nowMs - timeoutMs).toISOString();
+      const r = await q(
+        `select ${DECISION_COLS} from public.decisions
+          where status = 'draft' and not reminder_sent and created_at <= $1::timestamptz
+          order by created_at asc`,
+        [cutoff]
+      );
+      return r.rows;
+    },
+
+    async markDraftReminderSent(draftMailId, now = null) {
+      const r = await q(
+        `update public.decisions
+            set reminder_sent = true,
+                reminder_sent_at = coalesce($2::timestamptz, now()),
+                updated_at = coalesce($2::timestamptz, now())
+          where draft_mail_id = $1
+          returning ${DECISION_COLS}`,
+        [draftMailId, now]
+      );
+      return r.rows[0] ?? null;
     },
 
     async itemBelongsToGroup(groupId, mailId) {
