@@ -28,3 +28,7 @@
 收取 web/、deploy/web/、client 兩檔與文件增補；不要覆寫主分支 bot、memory 或其他 worker 修改。先建置 artifact，再啟動服務；Docker 會自行建置。更新 Caddy 公開靜態路由含 explorer.js，保留 API session 和 MCP bearer 的分流。
 
 仍待：真 Discord callback、VPS/TLS 路由、真 Mail/GitHub 資料與原有流程回歸、完整 8 GB stack／128 MiB web 壓測、三位新手各自指出某流程的呼叫方向／介面／程式碼位置。source revision 與服務部署狀態另行核對，不把原始碼快照當作已部署。
+
+## 第三版取代狀態（2026-11-17）
+
+維護者 判定第二版過於簡陋；本文件保留作歷史。現在以 [第三版系統圖譜交付](11-architecture-atlas.md) 為準：全庫模型、拆開 Caddy／validator、三條流程教學與五層實際內容，核心範圍不再限於 3 檔／17 函式。第二版提及的小地圖／雙指縮放／scope hash 不再是第三版承諾；第三版採明確層級導覽與新的 level/service/module/selected hash。

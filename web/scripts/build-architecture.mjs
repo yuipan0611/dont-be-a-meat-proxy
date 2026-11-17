@@ -1,4 +1,4 @@
-import {parse} from 'acorn';
+import {extractJavaScript,scanArchitecture} from './scan-architecture.mjs';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
@@ -7,15 +7,7 @@ import {fileURLToPath} from 'node:url';
 export const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 const sha=s=>createHash('sha256').update(s).digest('hex');
 export function extractFunctions(text,path){
- const found={};
- function walk(n,scope=[]){
-  if(!n||typeof n!=='object')return;
-  const named=n.type==='FunctionDeclaration'&&n.id?.name;
-  const next=named?[...scope,named]:scope;
-  if(named){const name=next.join('.'),id=`${path}#${name}`;if(found[id])throw Error(`ambiguous symbol: ${id}`);found[id]={id,name,path,startLine:n.loc.start.line,endLine:n.loc.end.line,params:n.params.map(p=>text.slice(p.start,p.end)),code:text.slice(n.start,n.end),fileHash:sha(text)};}
-  for(const [k,v]of Object.entries(n))if(!['loc','start','end'].includes(k)){if(Array.isArray(v))v.forEach(c=>walk(c,next));else if(v&&typeof v==='object')walk(v,next);}
- }
- walk(parse(text,{ecmaVersion:'latest',sourceType:'module',locations:true}));return found;
+ return extractJavaScript(text,path).symbols;
 }
 const definitions=[
  ['client/mail-client.mjs','createMailClient.sendItem','準備並送出訊息','驗證訊息、建立 envelope，成功後回傳保存回執。'],
@@ -37,13 +29,13 @@ const definitions=[
  ['ops/lifecycle/lifecycle.mjs','createLifecycle.onChoice','處理確認結果','依請求與時限檢查選擇，不直接修改工作站程式碼。']
 ];
 export async function build(){
- const files={};for(const [path] of definitions)if(!files[path])files[path]=extractFunctions(await readFile(resolve(root,path),'utf8'),path);
- const symbols={};for(const [path,name,title,description]of definitions){const id=`${path}#${name}`,s=files[path][id];if(!s)throw Error(`missing required symbol: ${id}`);symbols[id]={...s,title,description};}
+ const {symbols,atlas}=await scanArchitecture(root);
+ for(const [path,name,title,description]of definitions){const id=`${path}#${name}`,s=symbols[id];if(!s)throw Error(`missing required symbol: ${id}`);symbols[id]={...s,title,description};}
  let revision=process.env.SOURCE_REVISION??'unavailable',dirty=true;
- try{revision=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();dirty=!!execFileSync('git',['status','--porcelain','--',...Object.keys(files),'web/'],{cwd:root,encoding:'utf8'}).trim();}catch{}
+ try{revision=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();dirty=!!execFileSync('git',['status','--porcelain','--',...atlas.coverage.roots],{cwd:root,encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();}catch{}
  const map=JSON.parse(await readFile(resolve(root,'web/architecture.json'),'utf8'));
- const metadata={revision,dirty,snapshotHash:sha(JSON.stringify(symbols)),source:'建置時原始碼快照；關係為人工核對，非即時執行追蹤'};
- const output={...map,codeSnapshot:metadata,symbols};
+ const metadata={revision,dirty,snapshotHash:sha(JSON.stringify({symbols,atlas})),source:'建置時全庫語法快照；關係與說明為人工核對，非即時執行追蹤'};
+ const output={...map,codeSnapshot:metadata,symbols,atlas};
  await mkdir(resolve(root,'web/.generated'),{recursive:true});
  await writeFile(resolve(root,'web/.generated/architecture.json'),JSON.stringify(output));
  return output;
