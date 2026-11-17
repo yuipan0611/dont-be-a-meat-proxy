@@ -354,3 +354,7 @@
 維護者：「不要用 Anthropic API 當入口；主從模式，VPS 是主系統，裡面登入 Gemini，用 Gemini 的訂閱額度。」
 - 影響：SR-AST-04（每日上限金額）改為每日請求數上限；L-02 gateway、L-03 `/status`、L-02b bridge 的 LLM 後端改為 Gemini（F-11 查證與實作中）。§4.4 #8 的「Haiku 5.5、0.50 USD」由本節取代。
 - 待 F-11 查證：Gemini CLI 在伺服器上的登入方式、訂閱配額、**以個人訂閱當多人服務後端是否符合 Google 條款**。
+
+### 4.7 維護者 決定（2026-11-17）：LLM 後端改用 Groq（gpt-oss）
+
+F-11 查證後（Gemini CLI 個人訂閱 2026-06-18 停用；Antigravity 條款有停權風險），維護者 選用自有的 **Groq API（OpenAI open-weight gpt-oss）**。取代 §4.6 的 Gemini 方向。F-07 已查：Groq 不用客戶資料訓練、預設日誌最多 30 天、可開 ZDR；免費層 TPM／TPD 不足以承載 Hindsight retain，需付費 Developer Plan（gpt-oss-120b 約 US$0.15／0.60 per 1M tokens）。實作：F-11b。
