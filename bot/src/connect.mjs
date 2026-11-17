@@ -38,9 +38,12 @@ export function createConnect({ store, applier, hubUrl, randomBytes = nodeRandom
       res = { status: 'unknown', error: e.message };
     }
     if (res.status !== 'applied') {
+      // Independent durable cancellation also survives an outage of the bot's DB connection.
+      try { await applier.cancelIssue?.({ requestId, groupId: member.groupId, tokenId: t.tokenId }); }
+      catch { log({ ev: 'connect.cancel_queue_failed', tokenId: t.tokenId }); }
       await store.requestRevocation({ tokenId: t.tokenId, memberId: member.memberId, actorId: 'bot', reason: `issue_${res.status}`, requestId });
       log({ ev: 'connect.failed', tokenId: t.tokenId, status: res.status });
-      return { ok: false, text: '發放失敗：Hub 沒有確認套用這把 token（已作廢，不能使用）。請稍後再試；持續失敗請找 operator。' };
+      return { ok: false, text: '發放失敗：Hub 沒有確認套用這把 token，已標記待撤銷，背景會持續核對直到確認拒絕；目前不能宣稱入口已撤銷。請稍後再試；持續失敗請找 operator。' };
     }
     await store.audit({ groupId: member.groupId, actorType: 'bot', actorId, action: 'device.issue.applied', targetTable: 'devices', targetId: t.tokenId, requestId, details: { config_revision: res.configRevision ?? null } });
     return { ok: true, tokenId: t.tokenId, text: renderConnect({ mcpUrl, token: t.token, tokenId: t.tokenId, label: cleanLabel }) };

@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'ops'))
@@ -151,6 +152,163 @@ class TokenApplierTests(unittest.TestCase):
 
     # ------------------------------------------------------------------ tests
 
+    def test_failed_last_token_probe_removes_loaded_token_after_401(self):
+        registry = json.loads((self.cfg.state / 'tokens.json').read_text())
+        for dev in registry['devices'].values():
+            dev['status'] = 'revoked'
+        ta.atomic_write(self.cfg.state / 'tokens.json', json.dumps(registry))
+        token = self.bot_issue('lastprobe', 'tok_lastprobe1')
+        # New-token readiness fails, but the compensation's old-token probe can prove 401.
+        self.cfg.probe = lambda url, t: 503 if t and t in self.allowed() else 401
+        ta.process(self.cfg, self.db)
+        self.assertNotIn(token, self.allowed())
+        self.assertEqual(self.db.device('tok_lastprobe1')['status'], 'revoked')
+        self.assertFalse((self.cfg.token_dir / 'tok_lastprobe1').exists())
+
+    def test_late_bot_timeout_is_reconciled_without_another_spool_request(self):
+        token = self.bot_issue('lateissue', 'tok_lateissue1')
+        ta.process(self.cfg, self.db)
+        self.db.fail_issue('tok_lateissue1', 'lateissue', 'bot_timeout_after_receipt')
+        # The successful issue request/receipt is already archived; a fresh timer run must repair it.
+        self.assertEqual(list((self.cfg.spool / 'requests').glob('*.json')), [])
+        ta.process(self.cfg, self.db)
+        self.assertNotIn(token, self.allowed())
+        self.assertEqual(self.db.device('tok_lateissue1')['status'], 'revoked')
+
+    def test_failed_compensation_keeps_secret_until_a_later_successful_run(self):
+        token = self.bot_issue('retryissue', 'tok_retryissue1')
+        ta.process(self.cfg, self.db)
+        self.db.fail_issue('tok_retryissue1', 'retryissue', 'late_timeout')
+        (self.d / 'validate-fails').touch()
+        ta.process(self.cfg, self.db)
+        self.assertTrue((self.cfg.token_dir / 'tok_retryissue1').exists())
+        self.assertEqual(self.db.device('tok_retryissue1')['status'], 'revocation_pending')
+        (self.d / 'validate-fails').unlink()
+        ta.process(self.cfg, self.db)
+        self.assertNotIn(token, self.allowed())
+        self.assertFalse((self.cfg.token_dir / 'tok_retryissue1').exists())
+        self.assertEqual(self.db.device('tok_retryissue1')['status'], 'revoked')
+
+    def test_failed_probe_cleanup_never_deletes_unconfirmed_revocation_secret(self):
+        self.bot_issue('unknownprobe', 'tok_unknownprobe1')
+        self.cfg.probe = lambda url, token: 401 if token is None else 503
+        ta.process(self.cfg, self.db)
+        self.assertTrue((self.cfg.token_dir / 'tok_unknownprobe1').exists())
+        self.assertEqual(self.db.device('tok_unknownprobe1')['status'], 'revocation_pending')
+        self.cfg.probe = self.fake_probe
+        ta.process(self.cfg, self.db)
+        self.assertEqual(self.db.device('tok_unknownprobe1')['status'], 'revoked')
+        self.assertFalse((self.cfg.token_dir / 'tok_unknownprobe1').exists())
+
+    def test_probe_connection_exception_is_compensated_on_the_next_run(self):
+        token = self.bot_issue('networkprobe', 'tok_networkprobe1')
+        def unreachable(url, value):
+            raise RuntimeError('Hub probe failed; no authorization result confirmed')
+        self.cfg.probe = unreachable
+        try:
+            ta.process(self.cfg, self.db)
+        except RuntimeError:
+            self.fail('probe failure escaped without persisting revocation_pending')
+        self.assertEqual(self.db.device('tok_networkprobe1')['status'], 'revocation_pending')
+        self.assertTrue((self.cfg.token_dir / 'tok_networkprobe1').exists())
+        self.cfg.probe = self.fake_probe
+        ta.process(self.cfg, self.db)
+        self.assertNotIn(token, self.allowed())
+        self.assertEqual(self.db.device('tok_networkprobe1')['status'], 'revoked')
+
+    def test_real_caddy_late_timeout_denies_token_without_a_new_request(self):
+        if subprocess.run(['docker', 'info'], capture_output=True).returncode:
+            self.skipTest('Docker unavailable; live Caddy reconciliation not exercised')
+        name = 'p3-reconcile-' + str(os.getpid())
+        config = self.d / 'live.Caddyfile'
+        config.write_text('{\n auto_https off\n}\nhttp://:8080 {\n import ' +
+                          json.dumps(str(self.output)) + '\n}\nhttp://:8081 {\n respond "ok" 200\n}\n')
+        registry = json.loads((self.cfg.state / 'tokens.json').read_text())
+        ta.atomic_write(self.output, hub_ops.render(registry, '127.0.0.1:8081'))
+        image = 'caddy:2.11.9'
+        try:
+            subprocess.run(['docker', 'run', '-d', '--rm', '--name', name,
+                            '-p', '127.0.0.1::8080', '-v', f'{self.d}:{self.d}', image,
+                            'caddy', 'run', '--config', str(config), '--adapter', 'caddyfile'],
+                           check=True, capture_output=True)
+            address = subprocess.check_output(['docker', 'port', name, '8080'], text=True).strip()
+            url = 'http://' + address + '/health/liveness'
+            for _ in range(50):
+                try:
+                    if hub_ops.probe(url, self.mac) == 200:
+                        break
+                except RuntimeError:
+                    pass
+                time.sleep(0.1)
+            self.assertEqual(hub_ops.probe(url, self.mac), 200)
+            wrapper = self.d / 'live-caddy'
+            wrapper.write_text('#!/bin/sh\nexec docker exec ' + name + ' caddy "$@"\n')
+            wrapper.chmod(0o700)
+            self.cfg.caddy_bin = str(wrapper)
+            self.cfg.config = config
+            self.cfg.upstream = '127.0.0.1:8081'
+            self.cfg.reload_cmd = ['docker', 'exec', name, 'caddy', 'reload', '--config', str(config), '--adapter', 'caddyfile']
+            self.cfg.probe_url = url
+            self.cfg.probe = hub_ops.probe
+            token = self.bot_issue('liveissue', 'tok_liveissue1')
+            ta.process(self.cfg, self.db)
+            self.assertEqual(hub_ops.probe(url, token), 200)
+            self.db.fail_issue('tok_liveissue1', 'liveissue', 'bot_timeout_after_receipt')
+            ta.process(self.cfg, self.db)
+            self.assertEqual(hub_ops.probe(url, token), 401)
+            self.assertEqual(hub_ops.probe(url, self.mac), 200, 'other devices remain valid')
+            self.assertEqual(self.db.device('tok_liveissue1')['status'], 'revoked')
+        finally:
+            subprocess.run(['docker', 'rm', '-f', name], capture_output=True)
+
+    def test_db_failure_after_reload_keeps_a_durable_compensation_marker(self):
+        token = self.bot_issue('dbafterapply', 'tok_dbafterapply1')
+        original = self.db.mark_applied
+        def fail_after_apply(*args):
+            self.db.down = True
+            return original(*args)
+        self.db.mark_applied = fail_after_apply
+        ta.process(self.cfg, self.db)
+        self.assertTrue((self.cfg.token_dir / 'tok_dbafterapply1.revoke').exists())
+        self.db.down = False
+        self.db.mark_applied = original
+        ta.process(self.cfg, self.db)
+        self.assertNotIn(token, self.allowed())
+        self.assertEqual(self.db.device('tok_dbafterapply1')['status'], 'revoked')
+
+    def test_cancel_issue_is_durable_even_when_bot_cannot_update_db(self):
+        token = self.bot_issue('cancelme', 'tok_cancelissue1')
+        ta.process(self.cfg, self.db)
+        self.request('cancelme-cancel', 'cancel_issue', 'tok_cancelissue1')
+        self.db.down = True
+        ta.process(self.cfg, self.db)
+        self.assertTrue((self.cfg.token_dir / 'tok_cancelissue1.revoke').exists())
+        self.db.down = False
+        ta.process(self.cfg, self.db)
+        self.assertNotIn(token, self.allowed())
+        self.assertEqual(self.db.device('tok_cancelissue1')['status'], 'revoked')
+
+    def test_cancel_before_issuance_never_activates_or_leaves_the_spool_secret(self):
+        token = self.bot_issue('issuesecond', 'tok_cancelfirst1')
+        self.request('cancelfirst', 'cancel_issue', 'tok_cancelfirst1')
+        os.utime(self.cfg.spool / 'requests/issuesecond.json', (time.time() + 10, time.time() + 10))
+        ta.process(self.cfg, self.db)
+        self.assertEqual(self.receipt('issuesecond')['status'], 'failed')
+        self.assertNotIn(token, self.allowed())
+        self.assertEqual(self.db.device('tok_cancelfirst1')['status'], 'revoked')
+        self.assertFalse((self.cfg.spool / 'credentials/tok_cancelfirst1').exists())
+
+    def test_expired_queued_issue_is_cancelled_even_without_a_bot_db_update(self):
+        token = self.bot_issue('expiredissue', 'tok_expiredissue1')
+        path = self.cfg.spool / 'requests/expiredissue.json'
+        req = json.loads(path.read_text())
+        req['expires_at'] = int(time.time() * 1000) - 1
+        path.write_text(json.dumps(req))
+        ta.process(self.cfg, self.db)
+        self.assertEqual(self.receipt('expiredissue')['status'], 'failed')
+        self.assertNotIn(token, self.allowed())
+        self.assertEqual(self.db.device('tok_expiredissue1')['status'], 'revoked')
+
     def test_registry_group_mismatch_cannot_import_before_apply(self):
         self.cfg.group_id = 'group-b'
         with self.assertRaises(ta.ApplyError):
@@ -211,7 +369,7 @@ class TokenApplierTests(unittest.TestCase):
         self.assertEqual(self.receipt('ix2')['status'], 'failed')
         self.assertNotIn('secret', self.receipt('ix2')['error'], 'Caddy output is suppressed')
         self.assertEqual(self.db.devices['tok_bbbb2222']['status'], 'revocation_pending')
-        self.assertFalse((self.d / 'tokens' / 'tok_bbbb2222').exists())
+        self.assertTrue((self.d / 'tokens' / 'tok_bbbb2222').exists(), 'retain compensation until a reload + 401 is proved')
         self.assertIn(first, self.allowed())
         self.assertNotIn(second, self.allowed())
 

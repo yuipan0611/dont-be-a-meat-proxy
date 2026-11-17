@@ -99,6 +99,8 @@ test('connect: applier failure → no token shown, row fails closed to revocatio
     await r.router.handle(ix);
     assert.equal(tokenIn(edit(ix)), undefined);
     assert.match(edit(ix), /發放失敗/);
+    assert.match(edit(ix), /待撤銷/);
+    assert.doesNotMatch(edit(ix), /已作廢，不能使用/);
     assert.equal(r.store.db.devices.at(-1).status, 'revocation_pending');
   }
 });
@@ -113,6 +115,31 @@ test('bad input: bad platform / malformed token id are rejected without side eff
   assert.match(edit(t), /格式不對/);
   assert.equal(r.store.db.devices.length, 2);
   assert.equal(維護者.length, 36);
+});
+
+test('failed issue persists cancellation before attempting a DB revocation update', async () => {
+  const store = createMemoryStore(seed()), events = [];
+  store.requestRevocation = async () => { events.push('db'); throw new Error('synthetic DB outage'); };
+  const connect = createConnect({ store, hubUrl: HUB, applier: {
+    issue: async () => ({ status: 'unknown' }),
+    cancelIssue: async r => { events.push('cancel'); assert.match(r.tokenId, /^tok_/); },
+  } });
+  await assert.rejects(connect.connect({ member: { memberId: 維護者, groupId: 'group-a' }, platform: 'macos',
+    requestId: 'cancel-before-db', actorId: 'synthetic' }), /synthetic DB outage/);
+  assert.deepEqual(events, ['cancel', 'db']);
+});
+
+test('spool cancellation queues without waiting for a receipt', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'l03-cancel-'));
+  try {
+    const applier = createSpoolApplier({ dir });
+    assert.equal(typeof applier.cancelIssue, 'function');
+    await applier.cancelIssue({ requestId: 'late123', groupId: 'group-a', tokenId: 'tok_' + '0123abcd' });
+    const req = JSON.parse(await readFile(join(dir, 'requests/late123-cancel.json'), 'utf8'));
+    assert.equal(req.op, 'cancel_issue');
+    assert.equal(req.token_id, 'tok_' + '0123abcd');
+    assert.equal((await stat(join(dir, 'requests/late123-cancel.json'))).mode & 0o777, 0o600);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
 test('spool applier: writes 0600 request + credential atomically and reads the helper receipt', async () => {
@@ -135,6 +162,7 @@ test('spool applier: writes 0600 request + credential atomically and reads the h
     const req = await helper;
     assert.deepEqual(res, { status: 'applied', configRevision: 3, probe: null, error: null });
     assert.equal(req.op, 'issue');
+    assert.ok(Number.isSafeInteger(req.expires_at) && req.expires_at > Date.now() - 2000);
     assert.equal(req.credential_ref, 'credentials/tok_' + '0123abcd');
     assert.ok(!JSON.stringify(req).includes('mph_secret'), 'request JSON has a ref, not the token');
     assert.equal((await readFile(join(dir, 'credentials', 'tok_' + '0123abcd'), 'utf8')).trim(), 'mph_secret');

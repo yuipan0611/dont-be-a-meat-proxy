@@ -170,7 +170,10 @@ def probe(url, token=None):
         with opener.open(urllib.request.Request(url, headers=headers), timeout=10) as response:
             return response.status
     except urllib.error.HTTPError as error:
-        return error.code
+        try:
+            return error.code
+        finally:
+            error.close()
     except (OSError, urllib.error.URLError):
         raise RuntimeError('Hub probe failed; no authorization result confirmed') from None
 

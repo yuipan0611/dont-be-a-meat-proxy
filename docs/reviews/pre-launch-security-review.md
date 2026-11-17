@@ -2,7 +2,7 @@
 
 日期：2026-11-18（Asia/Taipei）。審查者：Codex，獨立執行，沒有 helper worker。
 
-**結論：暫不建議開放正式 token 發放與決策確認；R-04 撤銷無法保證收斂，R-05 會在 Mail 同步失敗後回覆決策成功。** 共 10 項：阻擋上線 5 項（本分支已修 3、未修 2）、上線後修 3 項、建議 2 項。以下「已修」僅表示本分支的本機證據，不表示 master 已整合或 VPS 已套用。
+**結論：暫不建議開放正式 token 發放與決策確認；R-04 已於後續修正，R-05 仍會在 Mail 同步失敗後回覆決策成功。** 共 10 項：阻擋上線 5 項（本分支已修 4、未修 1）、上線後修 3 項、建議 2 項。以下「已修」僅表示本分支的本機證據，不表示 master 已整合或 VPS 已套用。
 
 ## 審查版本與方法
 
@@ -16,7 +16,7 @@
 | R-01 | 阻擋上線 | 備份／還原對 JSON cursor 使用 shell eval | 已修 `91b6959` |
 | R-02 | 阻擋上線 | L09 拒絕文件指定的 Groq 模型名稱 | 已修 `1afbba2` |
 | R-03 | 阻擋上線 | L09 探測跟隨 redirect 並轉送 Bearer | 已修 `68d901e` |
-| R-04 | 阻擋上線 | 發放失敗／逾時後 Caddy token 可能仍有效 | 未修 |
+| R-04 | 阻擋上線 | 發放失敗／逾時後 Caddy token 可能仍有效 | 已修，見後續修正 |
 | R-05 | 阻擋上線 | 決策回覆成功但 Mail 寫回失敗，bot writer 未完整接線 | 未修；啟用相關寫入前必須處理 |
 | R-06 | 上線後修 | query 與上游錯誤原文進入 log／狀態 | 未修 |
 | R-07 | 上線後修 | client 本機全文暫存未限制 600／700 | 未修 |
@@ -129,3 +129,7 @@
 初始 Node baseline 因新 worktree 尚未 `npm ci` 而有 pg／discord.js module 缺失；已用 lockfile 安裝（ignore scripts）後重跑，最終 Node 無失敗。原生 Go 不存在，最初 network-none 容器也因缺 module cache 失敗；改用可下載依賴的同一鎖定 builder，最後 Go 測試通過。沒有改測試來掩蓋 baseline failure 或把 skip 算成功。
 
 程式修正各自獨立 commit：`91b6959`（備份／還原 eval）、`1afbba2`（Groq model parser）、`68d901e`（HTTP probes）。**仍須 PM 整合後修 R-04、R-05 並驗證，再決定是否開放 token 發放與決策確認；本報告不是部署批准。**
+
+## 後續修正 R-04
+
+TokenApplier 保留每把 token 的私有撤銷憑證，每次 process 即使 spool 已空也依 DB 狀態對帳；失敗、探測斷線與晚回執導致的 pending row 會持續重試，直到重新載入且舊 token 實測 401 才完成撤銷並刪憑證。空 allowlist 同樣會產生並套用全拒絕設定；bot 發放失敗只回報待撤銷，不宣稱入口已拒絕。TDD 與真本機 Caddy 200→401、其他裝置仍 200 的收據見 evidence；無法連線或 Caddy 持續拒絕 reload 時維持 pending 並留下補償記錄，需 timer 持續運作及服務恢復後收斂，不保證故障中的 Caddy 可立刻改變載入設定。
