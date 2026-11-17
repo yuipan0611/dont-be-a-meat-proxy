@@ -163,6 +163,7 @@ export function createMailClient(opts) {
       text: item.text,
       links: item.links ?? [],
       unfinished: item.unfinished ?? [],
+      ...(item.workContext ? { work_context: item.workContext } : {}),
     };
     let receipt;
     try {
@@ -377,7 +378,8 @@ export function validateItem(item, { roster = null } = {}) {
     throw fieldError('unfinished', 'unfinished 須為字串陣列');
   }
   if (!UUID_RE.test(item.clientEventId)) throw fieldError('clientEventId', 'client_event_id 須為 UUID');
-  const rules = detectSecrets(item.subject, item.summary, item.text, links, unfinished);
+  if (item.workContext !== undefined) validateWorkContext(item.workContext);
+  const rules = detectSecrets(item.subject, item.summary, item.text, links, unfinished, item.workContext ? JSON.stringify(item.workContext) : '');
   if (rules.length) {
     throw new MailError('E-SECRET', 'Hub 禁止存放密碼／API key', {
       reason: 'secret', details: { rules, rulesVersion: SECRET_RULES_VERSION },
@@ -501,4 +503,13 @@ export async function syncInbox({ client, staging, limit = 100 }) {
     if (!page.hasMore) break;
   }
   return { staged, cursor };
+}
+
+/** Optional UI metadata; informational only, never an instruction or proof of success. */
+export function validateWorkContext(w) {
+  if (!w || typeof w !== 'object' || Array.isArray(w) || Object.keys(w).some(k => !['issue','components','paths','symbols','stage','test_result'].includes(k))) throw fieldError('workContext', '工作標註格式無效');
+  if (w.stage !== undefined && !['in_progress','blocked','handoff','completed'].includes(w.stage)) throw fieldError('workContext.stage', '工作階段無效');
+  for (const key of ['components','paths','symbols']) if (w[key] !== undefined && (!Array.isArray(w[key]) || w[key].length > 40 || !w[key].every(v => typeof v === 'string' && v.length > 0 && v.length <= 240 && !v.startsWith('/') && !v.includes('..') && !/[\x00-\x1f]/.test(v)))) throw fieldError('workContext.'+key, '請使用相對路徑或元件 ID，最多 40 筆');
+  if (w.issue !== undefined && (!isUrl(w.issue) || w.issue.length > 500)) throw fieldError('workContext.issue', '請提供 Issue URL');
+  if (w.test_result !== undefined && (typeof w.test_result !== 'string' || w.test_result.length > 500)) throw fieldError('workContext.test_result', '測試回報最多 500 字');
 }
