@@ -17,6 +17,7 @@ const icons = {
  data: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 4 18 4 18 0V5M3 12c0 4 18 4 18 0"/>',
  folder: '<path d="M2 6V3h7l3 3h10v15H2Z"/>',
  play: '<path d="m8 4 12 8-12 8Z"/>',
+ pause: '<path d="M8 4v16M16 4v16"/>',
  arrow: '<path d="M4 12h16m-6-6 6 6-6 6"/>',
  search: '<circle cx="10" cy="10" r="7"/><path d="m15 15 7 7"/>',
 };
@@ -183,7 +184,7 @@ export function createExplorer({map,api,onItem,onClear=()=>{}}){
   if(currentPage().kind==='flow'){const d=el('details');d.append(el('summary',`訊息種類 · ${atlas.messages.length}`));for(const m of atlas.messages)d.append(button(m.title,()=>{renderInspector(m);toggleInspector(true);},'module-row'));catalogBody.append(d);}
  }
  function renderPlayer(){player.replaceChildren();player.hidden=currentPage().kind!=='flow';if(player.hidden)return;
-  const bar=el('div',undefined,'player-bar');const play=button(playing?'暫停':'播放流程',()=>{if(playing){stop();renderPlayer();draw();}else startFlow();},'play-button');play.prepend(icon('play'));const pick=el('select');pick.setAttribute('aria-label','選擇教學流程');for(const f of flows){const o=el('option',f.name);o.value=f.id;pick.append(o);}pick.value=activeFlow.id;pick.addEventListener('change',()=>go('flow:'+pick.value));
+  const bar=el('div',undefined,'player-bar');const play=button(playing?'暫停':'播放流程',()=>{if(playing){stop();renderPlayer();draw();}else startFlow();},'play-button');play.prepend(icon(playing?'pause':'play'));const pick=el('select');pick.setAttribute('aria-label','選擇教學流程');for(const f of flows){const o=el('option',f.name);o.value=f.id;pick.append(o);}pick.value=activeFlow.id;pick.addEventListener('change',()=>go('flow:'+pick.value));
   const prev=button('上一步',()=>manualStep(Math.max(0,step-1)),'step-navigation'),next=button('下一步',()=>manualStep(Math.min(activeFlow.steps.length-1,step+1)),'step-navigation');prev.disabled=step<=0;next.disabled=step>=activeFlow.steps.length-1;bar.append(play,pick,prev,next);player.append(bar);
   const seq=el('div',undefined,'player-sequence');activeFlow.steps.forEach((s,i)=>{const b=button('',()=>manualStep(i),'step-chip'+(step===i?' active':''));b.append(el('span',String(i+1)),el('span',s[1]));seq.append(b);});const cap=el('div',undefined,'player-caption');cap.setAttribute('aria-live','polite');cap.append(el('strong',step>=0?activeFlow.steps[step][1]:'教學步驟先後 · 非即時流量'),el('span',step>=0?activeFlow.steps[step][2]:activeFlow.description));player.append(seq,cap);
  }
