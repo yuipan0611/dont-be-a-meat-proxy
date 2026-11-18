@@ -1,7 +1,7 @@
-# 08 組員接入手冊（S1 初稿：Mac 與 Windows 端）
+# 08 組員接入手冊（Mac、Windows、Linux）
 
 - **負責**：agy-junior-swe-2（Antigravity）｜**對應票號**：H-07｜**審查**：PM-Emily → 維護者
-- **版本**：v0.3 L-09 接入補充（2026-11-18）
+- **版本**：v0.4 Hub 一行安裝
 - **依據**：`docs/05-sds.md`（v0.3 權威）、`docs/04-sad.md`、`docs/research/F-08-hostinger-vscode.md`、`docs/06-test-plan.md`
 - **適用對象**：新手工程師、專案協作者（S1 階段供 維護者 於 Mac 與 Windows 操作；S2 開放組員時沿用）
 - **目標**：語言白話、步驟分明，**在 Windows 上照做 ≤ 15 分鐘接上**。
@@ -9,7 +9,44 @@
 
 ---
 
-## 快速目錄
+## 最快方式：三步
+
+1. **加入 Discord。** 用 PM 提供的邀請加入專案伺服器，等 PM 開放接入並綁定你的組員身分。
+2. **輸入 `/connect`。** 選這台電腦的 `macos`、`windows` 或 `linux`。從只有你看得到的回覆取得 Agent、平台、組別與 Token。如果 Agent 尚未配發，請向 PM 確認名稱。保留 Token ID，日後可用 `/revoke` 撤銷。
+3. **在專案資料夾開啟終端機，貼一行安裝指令。** 需要 [Node.js 22 或更新版](https://nodejs.org/en/download)。依提示貼入 Agent、平台和 Token。Token 提示不會回顯；整段 Token 只貼在這個提示。
+
+**Mac 或 Linux**
+
+```sh
+curl -fsS 'https://hub.example.invalid/install.sh' | sh
+```
+
+**Windows PowerShell 5.1 或 7**
+
+```powershell
+& ([scriptblock]::Create((Invoke-RestMethod 'https://hub.example.invalid/install.ps1')))
+```
+
+看到 `✅ Hub readiness 200` 和 `✅ Hub inbox can be listed` 代表這台裝置可以連線並列出收件匣。開一個新終端機，回原專案資料夾執行 `hub claude`，核對 Claude 的專案信任及 MCP 啟用提示。其他專案可在該資料夾執行 `hub setup`。沒裝 Claude Code 時，安裝器會印出 Codex 與 Cursor 的 MCP 設定與啟動方式。
+
+- **更新**用 `hub update`，沿用這台裝置的 Token。新版先驗雜湊、啟動並檢查 Hub，通過才換版。
+- **排查**用 `hub doctor`。若找不到 `hub`，重開終端機；Mac／Linux 可直接用 `"$HOME/.hub-client/bin/hub" doctor`，Windows 可用 `& "$env:LOCALAPPDATA\hub-client\bin\hub.cmd" doctor`。
+- **卸載**用 `hub uninstall`。已發出的裝置 Token 在 Discord 用 `/revoke` 撤銷。
+- **寄信與回報**使用 Agent Mail 的 sender token。向 PM 私下取得對應 Agent 的 `sender-token` 檔並放到見下表的資料夾。Mac／Linux 設為 600；Windows 以目前帳號私有權限保存。原本的 `HUB_SENDER_TOKEN` 也可沿用。
+
+| 平台 | `sender-token` 的資料夾 |
+|---|---|
+| Mac | `~/Library/Application Support/hub-client/<組別>/<Agent>/` |
+| Linux | `${XDG_DATA_HOME:-$HOME/.hub-local/share}/hub-client/<組別>/<Agent>/` |
+| Windows | `%LOCALAPPDATA%\hub-client\<組別>\<Agent>\` |
+
+已用舊手動設定的 Claude 專案可保留手動方式。若要切換，先備份 `.mcp.json` 與 `.claude/` 內設定，移除舊 Hub 的伺服器項和舊 `hub-hook.mjs` hooks，再執行 `hub setup`。
+
+---
+
+## 附錄｜手動安裝與排查
+
+### 附錄目錄
 
 1. [前置概念：什麼是裝置 Token？安全第一守則](#1-前置概念什麼是裝置-token安全第一守則)
 2. [第一步：加入 Discord、領取並保存裝置 Token](#2-第一步加入-discord領取並保存裝置-token)
@@ -45,9 +82,9 @@
 
 🟡 2. 確認 PM 已開放組員接入，且你的 Discord 帳號已與組員身分綁定。
 
-🟡 3. 在專案頻道選擇 `/connect`，在 `platform` 選 **Mac** 或 **Windows**，可在 `device` 填裝置名稱，再送出。
+🟡 3. 在專案頻道選擇 `/connect`，在 `platform` 選這台裝置的 **Mac** 或 **Windows**，可在 `device` 填裝置名稱，再送出。
 
-🟡 4. 確認機器人的回覆顯示「只有你看得到」，並從回覆的設定指令複製 `Bearer ` 後方、結尾引號前的字串。
+🟡 4. 確認機器人的回覆顯示「只有你看得到」，並複製 `Token` 欄位中的完整字串。
 
 🟡 5. 私下另外記下回覆中的 Token ID。裝置遺失或 token 外洩時，用 `/revoke` 的 `token_id` 選項撤銷，再用 `/connect` 領新值。
 

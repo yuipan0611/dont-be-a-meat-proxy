@@ -11,8 +11,8 @@ export function seed() {
     members: [{ id: 維護者, group_id: 'group-a', display_name: '維護者', role: 'owner' }],
     links: [{ member_id: 維護者, guild_id: GUILD, discord_user_id: OWNER_DISCORD }],
     devices: [
-      { member_id: 維護者, group_id: 'group-a', token_id: 'tok_fakemac01', token_hash: 'a'.repeat(64), allowed_agents: ['BlueLake'] },
-      { member_id: 維護者, group_id: 'group-a', token_id: 'tok_fakewin01', token_hash: 'b'.repeat(64), allowed_agents: ['RedStone'] },
+      { member_id: 維護者, group_id: 'group-a', platform: 'macos', token_id: 'tok_fakemac01', token_hash: 'a'.repeat(64), allowed_agents: ['BlueLake'] },
+      { member_id: 維護者, group_id: 'group-a', platform: 'windows', token_id: 'tok_fakewin01', token_hash: 'b'.repeat(64), allowed_agents: ['RedStone'] },
     ],
   };
 }

@@ -16,7 +16,7 @@ export const PLATFORMS = Object.freeze(['macos', 'windows', 'linux']);
 const sha256 = (s) => createHash('sha256').update(s, 'utf8').digest('hex');
 
 export function createConnect({ store, applier, hubUrl, randomBytes = nodeRandomBytes, log = () => {} }) {
-  const mcpUrl = new URL('/mcp/', hubUrl).href;
+  const onboarding = new URL('/install.sh', hubUrl).origin;
 
   function newToken() {
     const token = `mph_${randomBytes(32).toString('base64url')}`; // 256-bit
@@ -27,7 +27,7 @@ export function createConnect({ store, applier, hubUrl, randomBytes = nodeRandom
     if (!PLATFORMS.includes(platform)) return { ok: false, text: `平台只能是 ${PLATFORMS.join('／')}。` };
     const cleanLabel = String(label ?? '').replace(/[\r\n]/g, ' ').trim().slice(0, 40) || platform;
     const t = newToken();
-    await store.issueDevice({
+    const agents = await store.issueDevice({
       memberId: member.memberId, groupId: member.groupId, label: `${member.displayName} / ${cleanLabel}`, platform,
       tokenId: t.tokenId, tokenPrefix: t.tokenPrefix, tokenHash: t.tokenHash, actorId, requestId,
     });
@@ -46,7 +46,7 @@ export function createConnect({ store, applier, hubUrl, randomBytes = nodeRandom
       return { ok: false, text: '發放失敗：Hub 沒有確認套用這把 token，已標記待撤銷，背景會持續核對直到確認拒絕；目前不能宣稱入口已撤銷。請稍後再試；持續失敗請找 operator。' };
     }
     await store.audit({ groupId: member.groupId, actorType: 'bot', actorId, action: 'device.issue.applied', targetTable: 'devices', targetId: t.tokenId, requestId, details: { config_revision: res.configRevision ?? null } });
-    return { ok: true, tokenId: t.tokenId, text: renderConnect({ mcpUrl, token: t.token, tokenId: t.tokenId, label: cleanLabel }) };
+    return { ok: true, tokenId: t.tokenId, text: renderConnect({ onboarding, token: t.token, tokenId: t.tokenId, label: cleanLabel, platform, groupId: member.groupId, agents }) };
   }
 
   async function revoke({ member, tokenId, requestId, actorId }) {
@@ -69,14 +69,24 @@ export function createConnect({ store, applier, hubUrl, randomBytes = nodeRandom
   return { connect, revoke };
 }
 
-export function renderConnect({ mcpUrl, token, tokenId, label }) {
+export function renderConnect({ onboarding, token, tokenId, label, platform, groupId, agents = [] }) {
+  const names = agents.filter((name) => /^[A-Za-z][A-Za-z0-9]{0,63}$/.test(name));
+  const agentLine = names.length === 1 ? `Agent：\`${names[0]}\``
+    : names.length ? `Agent：${names.map((name) => `\`${name}\``).join('、')}（選這台裝置使用的名稱）`
+      : 'Agent 尚未配發，請向 PM 取得這台裝置的 canonical agent 名稱。';
+  const installer = platform === 'windows'
+    ? `& ([scriptblock]::Create((Invoke-RestMethod '${onboarding}/install.ps1')))`
+    : `curl -fsS '${onboarding}/install.sh' | sh`;
   return [
     `**${label} 的接入設定**（只有你看得到；這把 token 只顯示這一次）`,
-    'Claude Code（Mac／Windows 終端機貼上一行）：',
+    `平台：\`${platform}\`　組別：\`${groupId}\``,
+    agentLine,
+    '在專案資料夾開啟終端機，執行下方安裝指令。',
     '```',
-    `claude mcp add --transport http hub ${mcpUrl} --header "Authorization: Bearer ${token}"`,
+    installer,
     '```',
+    `Token：\`${token}\`（只貼到安裝器的隱藏提示）`,
     `Token ID：\`${tokenId}\`（撤銷時用 \`/revoke ${tokenId}\`）`,
-    '保存與刪除：這把 token 等同你這台裝置的密碼，只存在你的工具設定裡，不要貼到聊天或文件。Hub 只保存它的雜湊；遺失無法重看，請撤銷後重新 /connect。專案資料保存到 2027-03-31 後刪除。',
+    '保存與刪除：這把 token 等同你這台裝置的密碼，請勿貼到聊天或文件。遺失無法重看，請撤銷後重新 /connect。專案資料保存到 2027-03-31 後刪除。',
   ].join('\n');
 }

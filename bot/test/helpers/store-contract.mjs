@@ -28,6 +28,16 @@ export function storeContract(t, make) {
       await s.completeRevocation({ tokenId: 'tok_contract01', actorId: 'bot', requestId: '5', configRevision: 9 });
       assert.equal(await s.requestRevocation({ tokenId: 'tok_contract01', memberId: 維護者, actorId: 'x', reason: 'r', requestId: '6' }), false);
     }),
+    t('issue inherits only approved agent names for this member and platform', async () => {
+      const s = await make();
+      const issued = await s.issueDevice({
+        memberId: 維護者, groupId: 'group-a', label: '維護者 / replacement', platform: 'windows',
+        tokenId: 'tok_contract02', tokenPrefix: 'mph_test', tokenHash: 'd'.repeat(64), actorId: OWNER_DISCORD, requestId: '2',
+      });
+      assert.deepEqual(issued, ['RedStone']);
+      assert.equal(await s.requestRevocation({ tokenId: 'tok_fakewin01', memberId: 維護者, actorId: 'x', reason: 'rotate', requestId: '3' }), true);
+      assert.deepEqual((await s.watchedAgents()).map((entry) => entry.agentName), ['BlueLake', 'RedStone']);
+    }),
     t('watched agents come from active devices of linked members', async () => {
       const s = await make();
       const w = await s.watchedAgents();

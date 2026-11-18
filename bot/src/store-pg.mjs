@@ -71,11 +71,17 @@ export function createPgStore({ pool, groupId: boundGroup = 'group-a' }) {
 
     async issueDevice({ memberId, groupId, label, platform, tokenId, tokenPrefix, tokenHash, actorId, requestId }) {
       requireGroup(groupId);
-      await tx(async (c) => {
-        await c.query(
-          `insert into public.devices (member_id, group_id, label, platform, token_id, token_prefix, token_hash)
-           values ($1,$2,$3,$4,$5,$6,$7)`, [memberId, groupId, label, platform, tokenId, tokenPrefix, tokenHash]);
+      return tx(async (c) => {
+        const { rows } = await c.query(
+          `insert into public.devices (member_id, group_id, label, platform, token_id, token_prefix, token_hash, allowed_agents)
+           values ($1,$2,$3,$4,$5,$6,$7,array(
+             select distinct a.agent_name from public.devices d
+             cross join lateral unnest(d.allowed_agents) as a(agent_name)
+             where d.member_id = $1 and d.group_id = $2 and d.platform = $4 and d.status = 'active'
+             order by a.agent_name
+           )) returning allowed_agents`, [memberId, groupId, label, platform, tokenId, tokenPrefix, tokenHash]);
         await audit({ groupId, actorType: 'bot', actorId, action: 'device.issue.request', targetTable: 'devices', targetId: tokenId, requestId, details: { platform, token_prefix: tokenPrefix } }, c);
+        return rows[0].allowed_agents;
       });
     },
 

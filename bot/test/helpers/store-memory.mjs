@@ -31,8 +31,11 @@ export function createMemoryStore({ groups = [], members = [], links = [], devic
     },
     async issueDevice(d) {
       if (db.devices.some((x) => x.token_id === d.tokenId || x.token_hash === d.tokenHash)) throw new Error('duplicate token');
-      db.devices.push({ member_id: d.memberId, group_id: d.groupId, label: d.label, platform: d.platform, token_id: d.tokenId, token_prefix: d.tokenPrefix, token_hash: d.tokenHash, allowed_agents: [], status: 'active' });
+      const agents = [...new Set(db.devices.filter((x) => x.member_id === d.memberId && x.group_id === d.groupId &&
+        x.platform === d.platform && x.status === 'active').flatMap((x) => x.allowed_agents))].sort();
+      db.devices.push({ member_id: d.memberId, group_id: d.groupId, label: d.label, platform: d.platform, token_id: d.tokenId, token_prefix: d.tokenPrefix, token_hash: d.tokenHash, allowed_agents: agents, status: 'active' });
       db.audit.push({ action: 'device.issue.request', targetId: d.tokenId, details: { platform: d.platform, token_prefix: d.tokenPrefix } });
+      return agents;
     },
     async requestRevocation({ tokenId, memberId, reason }) {
       const d = db.devices.find((x) => x.token_id === tokenId && x.member_id === memberId && x.status === 'active');

@@ -1,0 +1,20 @@
+# Import inside the existing Hub site route, before the authenticated fallback.
+@hub_download path /dist /dist/* /install.sh /install.ps1
+handle @hub_download {
+  route {
+    @write not method GET HEAD
+    header @write Allow "GET, HEAD"
+    respond @write 405
+
+    header X-Content-Type-Options nosniff
+    @installer path /install.sh /install.ps1
+    header @installer Content-Type "text/plain; charset=utf-8"
+    header Cache-Control "no-store"
+
+    @release path_regexp release ^/(install\.(sh|ps1)|dist/(manifest\.json|config\.json|bootstrap\.mjs|hub-client-[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9]+([.-][A-Za-z0-9]+)*)?-[a-f0-9]{40}\.(tar\.gz|zip)))$
+    file_server @release {
+      root /var/www/hub-downloads
+    }
+    respond 404
+  }
+}

@@ -22,9 +22,9 @@ function rig(applierOpts) {
   return { store, applier, router };
 }
 const edit = (ix) => ix.log.find((x) => x.type === 'edit').content;
-const tokenIn = (text) => /Bearer (mph_[A-Za-z0-9_-]+)/.exec(text)?.[1];
+const tokenIn = (text) => /Token：`(mph_[A-Za-z0-9_-]+)`/.exec(text)?.[1];
 
-test('TC-16: /connect replies ephemerally with one config line; DB keeps only the hash', async () => {
+test('TC-16: /connect replies ephemerally with install fields; DB keeps only the hash', async () => {
   const r = rig();
   const ix = fakeInteraction('connect', { platform: 'windows', device: 'Windows 桌機' });
   await r.router.handle(ix);
@@ -32,7 +32,10 @@ test('TC-16: /connect replies ephemerally with one config line; DB keeps only th
   const text = edit(ix);
   const token = tokenIn(text);
   assert.ok(token && token.length > 40);
-  assert.match(text, /claude mcp add --transport http hub https:\/\/hub\.example\.test\/mcp\//);
+  assert.match(text, /Agent：`RedStone`/);
+  assert.match(text, /平台：`windows`/);
+  assert.match(text, /組別：`group-a`/);
+  assert.doesNotMatch(text, /BlueLake|Authorization|claude mcp add/);
   assert.match(text, /保存與刪除/); // R-8 notice
   const dev = r.store.db.devices.at(-1);
   assert.equal(dev.token_hash, sha(token));
