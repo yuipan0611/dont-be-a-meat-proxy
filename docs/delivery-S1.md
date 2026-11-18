@@ -9,7 +9,7 @@
 | TC-14 | 跨組隔離（上線前必過） | 🟡 本機 ✅，VPS 待部署 | 本機 grp-test／grp-test2：96 次跨組 401、附件 marker 無外洩、Hindsight／DB／決策隔離（`docs/ops/evidence/L08-L05-tc14-local.txt`） |
 | TC-15 | auto mode | ✅ 正式 Hub＋真 Windows | 拒絕案例（Mac）：無對象 #73→#75、300 分鐘 #74→#76，皆 auto_rejected、無生效 grant。維護者 在 Windows 親手 `auto on --for BlueLake --minutes 3` → #79 auto_on；生效中 Mac 送 action #80 → #81 auto_approved → Windows 未跳卡直接建 tc15.txt → #83 auto_executed succeeded；到期 #84 auto_ended；到期後 #85 → Windows 跳確認卡（presented），無人回應 30 分鐘 → #87 expired「視同拒絕，未執行」。2026-11-17 08:29～09:02Z |
 | TC-16 | Discord `/connect`／撤銷 | ⏳ 真 Discord＋VPS 待驗 | 本機既有 bot/PG tests；按 L09 清單取 ephemeral、非成員拒絕、applied/audit、舊 token 401/另一台 200 |
-| TC-17 | `/status` 唯讀引用／上限 | 🟡 部分通過（正式 VPS 2026-11-18 10:23 台北）：Hub 在線、`/status` ephemeral 私人回覆、查無資料拒答「記憶中沒有這項資訊」✅；待驗：新交接 #89 經 MemoryBridge 同步後可引用（P-4 查 bridge 未收件，<ORCA_ID>） | 問兩筆交接核對 #ID/台北時間；不存在資訊拒答；0 額度不呼叫 LLM；兩台關機仍可查 |
+| TC-17 | `/status` 唯讀引用／上限 | ✅ 引用＋拒答通過（正式 VPS）：10:23 台北查無資料拒答「記憶中沒有這項資訊」；Mac client 更新後 #90 經 MemoryBridge 02:40:56Z indexed，再問「最近有什麼交接？」回 #90（10:40 台北，標「同步記憶庫」）與 #89（10:25 台北，標「未同步記憶庫」），#ID＋台北時間正確、ephemeral。待補：0 額度不呼叫 LLM、兩台關機仍可查 | 問兩筆交接核對 #ID/台北時間；不存在資訊拒答；0 額度不呼叫 LLM；兩台關機仍可查 |
 | TC-18 | 通知／離線彙總 | ⏳ 真 Discord 待驗 | Mac→Windows 已保存訊息 15 秒內 DM；不存在收件者／未保存不通知；離線/DM 失敗一次彙總 |
 | TC-19 | `/task` | ⏳ 缺 GitHub token，保持 fail-closed | 先驗 E-GITHUB、不新增 Issue/Hub task；空標題、取消、非發起人、連點；token 到位後補 Issue URL＋唯一 Hub item 正向，不把拒絕算全過 |
 | TC-20 | 決策草稿／確認 | ⏳ 真 Discord 待驗 | 指定目前版本 owner/member 身分，草稿→確認、拒絕他人、重複互動、Mail ID/內容/狀態一致 |
