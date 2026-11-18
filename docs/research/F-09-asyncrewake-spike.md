@@ -3,7 +3,7 @@
 - **負責**：swe-Ben（Claude）｜**審查**：PM-Emily｜**決策**：維護者
 - **實測日期**：2026-11-17（Asia/Taipei）｜**對應**：票 H-04a、Brief A-4、SDS CLI-02、NFR-01
 - **環境**：macOS Darwin 27.2.0；**Claude Code 2.1.325**（`claude --version`）；Node v24.18.0；測試 session 的模型是 Opus 5.5、effort medium、權限模式為使用者預設的 auto mode（未更改）；在 Orca 的 Claude profile 下執行（`CLAUDE_CONFIG_DIR` 為 Orca profile，Orca 自己注入的 hook 也在，不影響結果）
-- **產出**：本文件＋[`spikes/h04a/`](../../spikes/h04a/README.md)（最小設定、watcher、driver、原始數據 `results/`）
+- **產出**：本文件＋`spikes/h04a/`（原始紀錄未公開）（最小設定、watcher、driver、原始數據 `results/`）
 
 ## 結論（先講）
 

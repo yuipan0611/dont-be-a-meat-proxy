@@ -172,7 +172,7 @@ PGSSLMODE=disable supabase db push --db-url 'postgresql://postgres:<local>@127.0
 - 最小版本使用 `hub_app`，NOINHERIT＋預設 service_role，另撤 postgres／template1／hub 的 PUBLIC CONNECT；L-02 新 database 必須同樣撤 PUBLIC CONNECT。L-08 的組別隔離仍待驗。
 - `ops/postgres migrate` 原樣套用本目錄 4 migrations，用單一交易與私有 checksum ledger 確保重跑與 SQL 失敗安全；正式不 seed。vector 安裝在 extensions schema，使用 schema-qualified operator 或明確 search_path。
 - `ops/backup` 透過 `HUB_PG_BACKUP=1` 把 hub.dump 放入既有每日 archive，保留原 7 天輪替。新 DB 的正式資料初始化、Caddy／HubClock 改走 DB、Hindsight 專屬 DB 與到期 purge 整合仍各自驗收。
-- 完整部署／備份／回滾：[L-01 runbook](ops/runbook-L01-postgres.md)；本機證據：[L-01 validation](ops/evidence/L01-local-validation.txt)。
+- 完整部署／備份／回滾：[L-01 runbook](ops/runbook-L01-postgres.md)；本機證據：L-01 validation（原始紀錄未公開）。
 
 
 ### L-08 組別應用邊界（本機驗證）

@@ -1,6 +1,6 @@
 # L-02b：Mail → Hindsight 索引 bridge（GAP-16）
 
-2026-11-18 L09 更新：VPS 已部署，LLM 使用共用 Groq gateway。下文原始部署與模型測試為歷史紀錄；正式順序以 [L09 runbook](runbook-L09-launch-deploy.md) 為準。兩端 client 必須更新 runtime 檔案並設定 `memory_agent`，舊 client 只加欄位仍不會 CC。已確認的 #89 案例與待 PM 核准的回填方案見 [索引診斷](evidence/L09-memory-bridge-89.md)。
+2026-11-18 L09 更新：VPS 已部署，LLM 使用共用 Groq gateway。下文原始部署與模型測試為歷史紀錄；正式順序以 [L09 runbook](runbook-L09-launch-deploy.md) 為準。兩端 client 必須更新 runtime 檔案並設定 `memory_agent`，舊 client 只加欄位仍不會 CC。已確認的 #89 案例與待 PM 核准的回填方案見 索引診斷（原始紀錄未公開）。
 
 > 2026-11-17 F-11 更新：正式 LLM 呼叫已改經共用 request-count gateway；本文 Anthropic／USD 設定為歷史紀錄。個人 Gemini CLI OAuth 已有官方停用公告，請依 [F-11 調研與部署設計](../research/F-11-gemini-subscription-backend.md) 的 backend／條款／隱私限制操作；目前預設 disabled。
 

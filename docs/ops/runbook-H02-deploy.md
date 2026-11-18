@@ -1,6 +1,6 @@
 # H-02：把 Mail 接到既有系統 Caddy
 
-操作人：維護者。程式與手冊：codex-senior-swe。依據：[SDS API-01／02／05](../05-sds.md)、[VPS 實際盤點與 PM 調整](vps-inventory.md)、[MVP 工作票](../07-tickets-mvp.md)。本文件的 VPS 指令由 維護者 執行，agent 沒有 SSH 權限。
+操作人：維護者。程式與手冊：codex-senior-swe。依據：[SDS API-01／02／05](../05-sds.md)、VPS 實際盤點與 PM 調整（原始紀錄未公開）、[MVP 工作票](../07-tickets-mvp.md)。本文件的 VPS 指令由 維護者 執行，agent 沒有 SSH 權限。
 
 目標是新增 `https://hub.example.invalid/mcp/`，同時保留 `office.example.invalid` 的既有行為。先啟 `mail-a`，完成驗收後再啟 H-05 HubClock 容器；既有 `/usr/bin/caddy` 繼續服務 80／443。不要重啟 Caddy、重開機、更新系統套件、重設防火牆或改其他服務。
 

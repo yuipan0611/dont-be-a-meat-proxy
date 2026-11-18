@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import subprocess
 import sys
 import unittest
@@ -18,7 +19,11 @@ import test_token_applier as unit  # noqa: E402
 IMAGE = 'pgvector/pgvector:pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782'
 NAME = f'l03b-pg-{os.getpid()}'
 維護者 = '00000000-0000-4000-8000-0000000000a1'
-DOCKER = subprocess.run(['docker', 'info'], capture_output=True).returncode == 0
+DOCKER = (
+    os.environ.get('HUB_TEST_NO_DOCKER') != '1'
+    and shutil.which('docker') is not None
+    and subprocess.run(['docker', 'info'], capture_output=True).returncode == 0
+)
 
 
 def sha(v):

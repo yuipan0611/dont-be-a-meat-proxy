@@ -1,7 +1,21 @@
+# Local runtime state and credentials
+.local
 .hub-local/
-__pycache__/
 deploy/private/
-node_modules/
+*.token
+*.key
+*.secret
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3-shm
+*.sqlite3-wal
+.env
+.env.*
+!.env.example
 
-# Local Playwright browser session artifacts
+# Dependencies and generated state
+__pycache__/
+node_modules/
 .playwright-cli/

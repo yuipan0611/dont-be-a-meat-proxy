@@ -120,7 +120,7 @@ CLI 與 IDE agent mode 配額共用，跨模型累計；一次 CLI 呼叫可能�
 
 影響範圍：`ops/llm-gateway`（新增）、L-02 service wiring、bot `/status` 與 owner 通知、EVAL provider、memory Compose／本機測試 overlay、備份 request ledger。風險高，原因是跨共用 LLM 介面與認證／用量邊界；不更動 member auth、Mail 協定、DB schema 或正式索引原文。先保留 L-02 ledger 原子預留／fsync／rename／crash 保守補記的實作，再用 request 單位 wrapper；原成本模組僅留作歷史回歸測試，正式 bank-proxy 不再啟動 Anthropic listener。
 
-實作順序與驗證：先完成 backend／request budget／queue，再加 JSON／buffered SSE shim 與 bot／EVAL wiring，最後 Compose／部署指引與回歸。基線 L-02＋EVAL 36/36；bot 初次因未安裝依賴而失敗，`npm ci --prefix bot` 後基線 64/64。改後實際命令／結果見本文末段及 [F-11-validation.txt](F-11-validation.txt)。
+實作順序與驗證：先完成 backend／request budget／queue，再加 JSON／buffered SSE shim 與 bot／EVAL wiring，最後 Compose／部署指引與回歸。基線 L-02＋EVAL 36/36；bot 初次因未安裝依賴而失敗，`npm ci --prefix bot` 後基線 64/64。改後實際命令／結果見本文末段及 F-11-validation.txt（原始紀錄未公開）。
 
 ```text
 Discord /status ─ Messages client ─┐
@@ -186,7 +186,7 @@ bot 離線時沒有 Discord 通知保證：維護者 需監看 gateway `/readyz`
 * 來源查證、provider 設定切換、fake Gemini／Antigravity executable、fake API、共用 request cap／FIFO／逾時／crash、shim／bot tool loop／EVAL 與認證通知均有本機證據。
 * 正式帳號 entitlement、條款例外、VPS 登入／refresh／容器重建、Antigravity Linux binary／keyring、真實品質／延遲／Hindsight retain 均**未驗收**；沒有任何真 Google／Anthropic 生成請求。
 * `docs/ops/runbook-L02-memory.md`、L-03、L02b 與 EVAL 舊文件中的 Anthropic／USD 部分為歷史紀錄，以本文件的正式 wiring 與限制為準。舊本機 Ollama 整合測試使用 **test-only** overlay，不讓 production env 繞過 gateway。
-* 最終測試數、Compose 與 image build 結果在 [F-11-validation.txt](F-11-validation.txt)；未跑／skip 與失敗都分開列，不作訂閱可用證明。
+* 最終測試數、Compose 與 image build 結果在 F-11-validation.txt（原始紀錄未公開）；未跑／skip 與失敗都分開列，不作訂閱可用證明。
 
 最終驗證摘要（2026-11-17）：核心 gateway／L-02／EVAL **58 pass / 0 fail**（其中 F-11 22）；bot **65 pass / 0 fail**；memory bridge **16 pass / 0 fail**；真 Postgres **13 pass / 0 fail / 1 skip**（原生 Mail binary 缺少）。三種 Compose 與 test-only overlay 的 `config --quiet` 通過；gateway／bot／bank-proxy image 建置通過，image 內 `gemini --version` 為 **0.68.0**（沒有生成或登入）。
 
@@ -246,4 +246,4 @@ gateway 保留台北日 500 次 durable ledger、單一 active FIFO、最多 20 
 - [groq-smoke.mjs](../../ops/llm-gateway/groq-smoke.mjs) 由 PM 執行。使用已部署 gateway（provider key 由服務讀私密檔），腳本只從私密檔讀 gateway／Hindsight internal key：一次中文短答、一次強制唯讀 function call、一筆真正 Hindsight sync retain、原文與非空 facts recall，刪專用 UUID scratch bank。Hindsight REST 流程依 [retain](https://docs.hindsight.vectorize.io/api-reference/retain-memories/)／[recall](https://docs.hindsight.vectorize.io/api-reference/recall-memories/) 定義，1.2.1 的真機行為待 PM 執行，未用自行模擬 extraction 替代。
 - smoke 不顯示 key／原文／上游 body，失敗不自動重試。它只檢查中文存在與 facts 非空；繁簡、取證正確性、繁中萃取品質及延遲 SLA 仍須 PM 判讀。三階段不是固定三次 provider invocation，Hindsight 可能多次呼叫。未執行真 smoke、未花任何 維護者 API 額度。
 
-本機 fake HTTP／原有 fake CLI、bot 及部署回歸收據見 [F-11b-validation.txt](F-11b-validation.txt)。這些證明接線與拒絕行為，不證明真 Groq 帳號配額、模型品質或 VPS 已上線。
+本機 fake HTTP／原有 fake CLI、bot 及部署回歸收據見 F-11b-validation.txt（原始紀錄未公開）。這些證明接線與拒絕行為，不證明真 Groq 帳號配額、模型品質或 VPS 已上線。

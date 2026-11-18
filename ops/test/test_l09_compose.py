@@ -7,7 +7,10 @@ import subprocess
 import unittest
 
 
-@unittest.skipUnless(shutil.which('docker'), 'Docker Compose not available')
+@unittest.skipUnless(
+    os.environ.get('HUB_TEST_NO_DOCKER') != '1' and shutil.which('docker'),
+    'Docker Compose disabled or unavailable',
+)
 class GatewayComposeTest(unittest.TestCase):
     def test_gateway_tmpfs_is_one_mount_with_all_security_options(self):
         root = Path(__file__).resolve().parents[2]

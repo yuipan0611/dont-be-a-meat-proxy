@@ -129,7 +129,7 @@ shasum -a 256 .hub-local/bin/mcp-agent-mail   # 應為 4c3804feff45cd068e48fa57e
 
 1. 用 [hub-client.json 範本](templates/hub-client.json) 建立根目錄的同名設定，保留正確的 `group_id`、伺服器 `project_key`、Mac／Windows agent 與 peers。把 `clock_agent` 換成 PM 提供的 **canonical 名稱**（來自 H-02 `hubclock.sender.json.agentName`）；不要填字面 `HubClock`，也不要把服務端 sender token 複製到客戶端。placeholder 未換時會警告並跳過控制事件。
 
-   已部署 memory bridge 時，也把 `memory_agent` 換成 `memorybridge.sender.json.agentName`。兩台電腦先更新同一版本的 `client/hub-hook.mjs`、`client/mail-client.mjs` 與 `ops/lifecycle/protocol.mjs`，再加設定。舊 H-04 client 會忽略 `memory_agent`，只改 JSON 不會自動 CC。升級時保留 `hub-client.json`、私密憑證與本機 outbox，先備份並核對檔案差異。檢查與回填步驟見 [#89 索引診斷](../docs/ops/evidence/L09-memory-bridge-89.md)。
+   已部署 memory bridge 時，也把 `memory_agent` 換成 `memorybridge.sender.json.agentName`。兩台電腦先更新同一版本的 `client/hub-hook.mjs`、`client/mail-client.mjs` 與 `ops/lifecycle/protocol.mjs`，再加設定。舊 H-04 client 會忽略 `memory_agent`，只改 JSON 不會自動 CC。升級時保留 `hub-client.json`、私密憑證與本機 outbox，先備份並核對檔案差異。檢查與回填步驟見 #89 索引診斷（原始紀錄未公開）。
 2. 把 [claude-settings.json 範本](templates/claude-settings.json) 的 hooks 與專案所需的那條 `permissions.allow` **合併**進 `.claude/settings.json`，保留既有 hooks／權限。只有原檔不存在時才整份複製。不要改全域權限模式。範本的 exec form `command: node`＋`args` 在兩邊共用，Windows 需要真的 `node.exe` 在 PATH 上；不經 PowerShell 展開。
 3. 在要啟動 Claude 的同一個終端機載入該裝置的私密檔。完整步驟見 [H-07 §4](../docs/onboarding-S1.md#4-第三步自動化-hook-設定claudesettingsjson)。入口 bearer `HUB_TOKEN` 和送信 registration `HUB_SENDER_TOKEN` 是兩把不同的 token。不要貼進設定檔、訊息、Git 或除錯輸出。
 4. 執行 `claude`。如果出現資料夾信任提示，先核對路徑與設定，**明確選中「Yes, I trust this folder」再 Enter**。既有測試曾停在預選「No, exit」；不能只按 Enter 或假定選項順序。未信任時 interactive Claude 會暫停所有 settings hooks，連全域 hooks 也會暫停。[官方說明](https://code.claude.com/docs/en/hooks#workspace-trust)

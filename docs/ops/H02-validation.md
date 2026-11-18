@@ -24,7 +24,7 @@ H-03 的 `client/mail-client.mjs` 與整合測試斷言未改，只在既有 hel
 | `python3 -m unittest discover -s ops/test -v` | exit 0；Ran 7 tests、OK | CLI 私密檔／權限、重跑保留、設定注入拒絕、all-revoked deny、失敗 pending 與 snippet 復原、active 裝置禁止直接 issue |
 | `docker buildx imagetools inspect ghcr.io/dicklesworthstone/mcp_agent_mail_rust:0.3.40` | index `sha256:031d1d0e6764495f8db12f981704ade32d56fe9c12678efca1d533cde67fd3a5`，其中 amd64 manifest 為本次固定 digest | 不把可移動 tag 當部署鎖定 |
 | `HUB_PRIVATE_DIR="$PWD/.hub-local/h02/private" HUB_MAIL_PORT=18765 docker compose -p neighbor-h02-test -f deploy/compose.yaml config --quiet` | exit 0、無輸出；私密 env 已先由 init 產生 | Compose 靜態格式與參數，沒有把 config 全文或 token 印出 |
-| `node ops/test/local-stack.mjs` | exit 0；完整成功輸出見 [H02-local-stack.txt](evidence/H02-local-stack.txt) | 固定 Linux image、實際 Caddy、實際 MCP 與下表 |
+| `node ops/test/local-stack.mjs` | exit 0；完整成功輸出見 H02-local-stack.txt（原始紀錄未公開） | 固定 Linux image、實際 Caddy、實際 MCP 與下表 |
 | `node --check ops/verify-h02.mjs`、`node --check ops/test/local-stack.mjs` | exit 0、無輸出 | Node 語法 |
 | `python3 <LOCAL_HOME>/.codex/skills/safely-modify-codebase/scripts/manage_config.py validate --repo . --strict` | exit 0、VALID；1 個 known unknown，為 VPS 專屬實測仍待 operator | Repo 邊界與保護項已記錄，不假裝未知已消失 |
 | `git diff --check` | exit 0、無輸出 | whitespace 檢查；新檔加入暫存區後另跑 cached check |
@@ -83,7 +83,7 @@ Compose healthy 後，harness 會透過實際 Caddy 路徑輪詢 Mail health 200
 
 `node --test ops/test/readiness.test.mjs`：3 pass／0 fail／0 skip，涵蓋斷線／503 後恢復、總逾時與無秘密的階段診斷、200 headers 但 body 卡住仍須在期限內失敗。`python3 -m unittest discover -s ops/test -v`：7 tests OK；runbook 22 段 shell 範例均通過 `bash -n`。
 
-連續執行 `node ops/test/local-stack.mjs` 三次，全部 exit 0，各輪 H-03 都是 8 pass／0 skip，TC-05／TC-10／明確 issue 及清理都通過。原始輸出：[第 1 輪](evidence/H02-readiness-run-1.txt)、[第 2 輪](evidence/H02-readiness-run-2.txt)、[第 3 輪](evidence/H02-readiness-run-3.txt)。這是本機回歸結果，不是對原本間歇失敗根因或 VPS readiness 的完整證明。
+連續執行 `node ops/test/local-stack.mjs` 三次，全部 exit 0，各輪 H-03 都是 8 pass／0 skip，TC-05／TC-10／明確 issue 及清理都通過。原始輸出：第 1 輪（原始紀錄未公開）、第 2 輪（原始紀錄未公開）、第 3 輪（原始紀錄未公開）。這是本機回歸結果，不是對原本間歇失敗根因或 VPS readiness 的完整證明。
 
 ## 追加整合 HubClock（H-05 合併後的最終版本）
 
@@ -91,7 +91,7 @@ Compose healthy 後，harness 會透過實際 Caddy 路徑輪詢 Mail health 200
 
 HubClock 用 H-05 既有程式與 image，不改計時核心。harness 建立自己擁有的 700 狀態目錄，容器 UID/GID 配合 600 憑證 owner；確認 rootfs 唯讀、cap_drop ALL、128 MiB、沒有公開 port。啟動最多等 30 秒取得真正 `ev=tick`，單次讀 log 最多 2 秒；fatal／crash／tick_failed 直接失敗。第二實例以 `run --rm --no-deps … once` 必須回 `ev=standby`／exit 3，且主 lock owner 不變、服務仍 running。
 
-最終版再連續執行 `node ops/test/local-stack.mjs` **三次，全部 exit 0**，每輪均有 restart readiness、TC-05、同 session TC-10、明確 issue、H-03 **8 pass／0 skip**，以及 HubClock 主實例 tick／第二實例 standby 證據：[第 1 輪](evidence/H02-hubclock-run-1.txt)、[第 2 輪](evidence/H02-hubclock-run-2.txt)、[第 3 輪](evidence/H02-hubclock-run-3.txt)。每個 project 的 container、volume、network 另以其精確 Compose project label 查詢，均為空；沒有停止其他 project 的資源。
+最終版再連續執行 `node ops/test/local-stack.mjs` **三次，全部 exit 0**，每輪均有 restart readiness、TC-05、同 session TC-10、明確 issue、H-03 **8 pass／0 skip**，以及 HubClock 主實例 tick／第二實例 standby 證據：第 1 輪（原始紀錄未公開）、第 2 輪（原始紀錄未公開）、第 3 輪（原始紀錄未公開）。每個 project 的 container、volume、network 另以其精確 Compose project label 查詢，均為空；沒有停止其他 project 的資源。
 
 補充檢查：`node --test ops/test/readiness.test.mjs` 3 pass；`python3 -m unittest discover -s ops/test -v` 7 tests OK；`node --test ops/lifecycle/test/lifecycle.test.mjs` 21 pass／0 skip；H-05 合併後 `npm test --prefix client` 45 pass／0 skip。Runbook 增加 HubClock 部署與回滾停服務後，**25 個 shell 區塊**均通過 `bash -n`。
 

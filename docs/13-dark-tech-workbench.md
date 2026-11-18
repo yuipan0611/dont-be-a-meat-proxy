@@ -15,7 +15,7 @@
 | ⌘K | [命令面板](ui/tech-desktop-command.png) | [命令面板](ui/tech-mobile-command.png) |
 | 原碼頁 | [原始碼](ui/tech-desktop-code.png) | [原始碼](ui/tech-mobile-code.png) |
 
-[三站並排比較圖](ui/tech-comparison.png) 由本機 HTML＋Playwright 排列研究截圖產生；[可直接開啟的比較頁](ui/tech-comparison.html)。共 12 張 app 場景＋1 張比較圖；原 board-* 與 atlas-* 保留歷史。
+三站並排比較圖（原始紀錄未公開） 由本機 HTML＋Playwright 排列研究截圖產生；可直接開啟的比較頁（原始紀錄未公開）。共 12 張 app 場景＋1 張比較圖；原 board-* 與 atlas-* 保留歷史。
 
 ## 參考與設計技能
 
@@ -41,22 +41,22 @@ v4 的平移／滾輪縮放／框選／拖動／小地圖／巢狀頁保留，�
 
 ## 可讀性與驗證
 
-[原始測試與瀏覽器證據](ui/evidence/tech-playwright.json)：
+原始測試與瀏覽器證據（原始紀錄未公開）：
 
 | 驗證 | 結果 |
 | --- | --- |
-| web | [19/19 pass，0 fail／skip](ui/evidence/tech-web-test.txt)，含既有 OAuth／fixed group／來源白名單與頁面樹 |
-| client 全套 | [105 pass、13 既有環境依賴 skip、0 fail](ui/evidence/tech-client-test.txt)，本次 client 無修改 |
+| web | 19/19 pass，0 fail／skip（原始紀錄未公開），含既有 OAuth／fixed group／來源白名單與頁面樹 |
+| client 全套 | 105 pass、13 既有環境依賴 skip、0 fail（原始紀錄未公開），本次 client 無修改 |
 | Playwright | 桌面＋手機 12 場景；命令鍵盤跳頁／Escape、雙向高亮、hover glow、沿線光點、動態 reduced-motion、43 行 sendItem 原碼、自架字型、無整頁溢位；頁面錯誤／CSP 錯誤／寫入請求 0 |
-| 文字對比抽查 | 兩個 viewport 共 20 個 computed style／背景合成樣本，最低 **約 8.60:1**，均超過正常文字 AA 4.5:1；[資料](ui/evidence/tech-playwright.json) |
+| 文字對比抽查 | 兩個 viewport 共 20 個 computed style／背景合成樣本，最低 **約 8.60:1**，均超過正常文字 AA 4.5:1；資料（原始紀錄未公開） |
 | 有意義邊界計算 | control 3.23:1、card 3.28:1、group 3.59:1；可見焦點採高對比 blue。裝飾格線不作唯一狀態訊號 |
-| v4 操作回歸 | wheel／空白 pan／返回 viewport／多選、工作定位文字 opacity 見 [補充結果](ui/evidence/tech-regression.json) |
-| Docker | [最終 image 建置](ui/evidence/tech-docker-build.txt)；bundle／theme／font／授權 smoke 見 [image 記錄](ui/evidence/tech-image-smoke.json)，不是 full stack 負載測試 |
+| v4 操作回歸 | wheel／空白 pan／返回 viewport／多選、工作定位文字 opacity 見 補充結果（原始紀錄未公開） |
+| Docker | 最終 image 建置（原始紀錄未公開）；bundle／theme／font／授權 smoke 見 image 記錄（原始紀錄未公開），不是 full stack 負載測試 |
 | 獨立視覺審查 | [Resolved — ship](ui/tech-finish-review.md)，唯一 material fix 為播放／暫停圖示一致性，已修正與補拍 |
 
 對比是實際抽查及 token 計算，不宣稱通過所有 WCAG 條文的完整認證。焦點可見、狀態除顏色外有邊框／文字／圖示，動態效果有減量偏好。
 
-設計 detector 原始 [187 項](ui/evidence/tech-design-detector.json)：182 advisory 多為舊 v4 文件與新 palette 不符；5 warning 是 Inter／Geist Mono 過度使用兩項、字型文件兩項、stroke-width transition 一項。字型符合明確參考所以保留，文件已更新，stroke-width transition 已移除；未重跑 detector，也不宣稱警告機器清零。
+設計 detector 原始 187 項（原始紀錄未公開）：182 advisory 多為舊 v4 文件與新 palette 不符；5 warning 是 Inter／Geist Mono 過度使用兩項、字型文件兩項、stroke-width transition 一項。字型符合明確參考所以保留，文件已更新，stroke-width transition 已移除；未重跑 detector，也不宣稱警告機器清零。
 
 ## 邊界與提交
 

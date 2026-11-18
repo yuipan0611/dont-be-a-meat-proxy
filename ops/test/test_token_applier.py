@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import secrets
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -217,7 +218,9 @@ class TokenApplierTests(unittest.TestCase):
         self.assertEqual(self.db.device('tok_networkprobe1')['status'], 'revoked')
 
     def test_real_caddy_late_timeout_denies_token_without_a_new_request(self):
-        if subprocess.run(['docker', 'info'], capture_output=True).returncode:
+        if (os.environ.get('HUB_TEST_NO_DOCKER') == '1'
+                or not shutil.which('docker')
+                or subprocess.run(['docker', 'info'], capture_output=True).returncode):
             self.skipTest('Docker unavailable; live Caddy reconciliation not exercised')
         name = 'p3-reconcile-' + str(os.getpid())
         config = self.d / 'live.Caddyfile'
@@ -508,7 +511,9 @@ class TokenApplierTests(unittest.TestCase):
 
     def test_real_caddy_validate_accepts_snippet_next_to_office_and_rejects_without_reload(self):
         """Caddy 2.11.9 (pinned digest, Docker). Skips without Docker; never fakes a pass."""
-        if subprocess.run(['docker', 'info'], capture_output=True).returncode:
+        if (os.environ.get('HUB_TEST_NO_DOCKER') == '1'
+                or not shutil.which('docker')
+                or subprocess.run(['docker', 'info'], capture_output=True).returncode):
             self.skipTest('docker not available; real Caddy validation not run')
         image = 'caddy:2.11.9@sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193b45e84a75b'
         wrapper = self.d / 'real-caddy'

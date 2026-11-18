@@ -46,13 +46,13 @@
 
 | 驗證 | 結果 | 原始輸出 |
 | --- | --- | --- |
-| `npm test --prefix web` | **16/16 pass，0 fail、0 skip**；含來源範圍／對照、7 根目錄、無懸空參照、OAuth／撤銷／固定 group、來源白名單與穿越拒絕 | [web](ui/evidence/atlas-v3-web-test.txt) |
-| `node --test client/test/*.test.mjs` | **105 pass、13 既有環境依賴 skip、0 fail**；client 本次無修改 | [client](ui/evidence/atlas-v3-client-test.txt) |
-| Playwright Chromium | 桌面＋手機五層；三條播放／暫停、動畫、點邊、雙擊下鑽、搜尋 JS／Python／Go、hash 重載、縮放／重設、reduced-motion；頁面錯誤 0、水平溢位 0 | [結果 JSON](ui/evidence/atlas-v3-playwright.json)、[CLI scenario](ui/evidence/atlas-v3-browser-scenario.js) |
+| `npm test --prefix web` | **16/16 pass，0 fail、0 skip**；含來源範圍／對照、7 根目錄、無懸空參照、OAuth／撤銷／固定 group、來源白名單與穿越拒絕 | web（原始紀錄未公開） |
+| `node --test client/test/*.test.mjs` | **105 pass、13 既有環境依賴 skip、0 fail**；client 本次無修改 | client（原始紀錄未公開） |
+| Playwright Chromium | 桌面＋手機五層；三條播放／暫停、動畫、點邊、雙擊下鑽、搜尋 JS／Python／Go、hash 重載、縮放／重設、reduced-motion；頁面錯誤 0、水平溢位 0 | 結果 JSON（原始紀錄未公開）、CLI scenario（原始紀錄未公開） |
 | source API 實讀 | sendItem 43 行、PsqlDb.export 3 行、validator.ServeHTTP 148 行、createPgStore 320 行 | 同上 |
-| Docker `hub-guide:atlas-v3` | 建置成功；image 內 filesystem fallback 產生 13 服務／92 模組／541 符號，Python／Go 來源存在 | [build](ui/evidence/atlas-v3-docker-build.txt) |
+| Docker `hub-guide:atlas-v3` | 建置成功；image 內 filesystem fallback 產生 13 服務／92 模組／541 符號，Python／Go 來源存在 | build（原始紀錄未公開） |
 | image 離線解析 smoke | `--network none --memory 128m` 成功讀取模型；僅為快照解析檢查，不是完整服務負載測試 | 本報告 |
-| 設計 detector／獨立 review | detector `[]`；兩輪截圖後 **ship**，6 項 material fixes 全 resolved | [detector](ui/evidence/atlas-v3-design-detector.json)、[review](ui/atlas-v3-finish-review.md) |
+| 設計 detector／獨立 review | detector `[]`；兩輪截圖後 **ship**，6 項 material fixes 全 resolved | detector（原始紀錄未公開）、[review](ui/atlas-v3-finish-review.md) |
 
 重播瀏覽器 scenario：先啟動本機 8083，再使用 Playwright CLI `open`，把 scenario 檔內容作 `run-code` 的單一參數；結束時回傳 JSON。它不會操作真實登入或正式服務。
 

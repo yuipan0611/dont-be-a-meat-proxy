@@ -18,7 +18,7 @@
 
 ## L09 部署與正式驗收接線
 
-唯一部署順序：[runbook-L09-launch-deploy](ops/runbook-L09-launch-deploy.md)，入口 `ops/deploy-l09.sh --step 1..7`。本機假 VPS 收據：[L09-launch-dry-run](ops/evidence/L09-launch-dry-run.txt)；它使用明示 systemd／Discord／Hindsight fixtures，**不能**勾選下列正式環境驗收。正常部署只 reload Caddy 一次；後續 `/connect`／`/revoke` 的 reload 另計憑證管理。步驟 4 只有 Mail 移除 raw host port、HubClock 改走 validator 各需重建一次，保留 state；其餘段落兩者與 DB 的 IDs/StartedAt 必須不變。
+唯一部署順序：[runbook-L09-launch-deploy](ops/runbook-L09-launch-deploy.md)，入口 `ops/deploy-l09.sh --step 1..7`。本機假 VPS 收據：L09-launch-dry-run（原始紀錄未公開）；它使用明示 systemd／Discord／Hindsight fixtures，**不能**勾選下列正式環境驗收。正常部署只 reload Caddy 一次；後續 `/connect`／`/revoke` 的 reload 另計憑證管理。步驟 4 只有 Mail 移除 raw host port、HubClock 改走 validator 各需重建一次，保留 state；其餘段落兩者與 DB 的 IDs/StartedAt 必須不變。
 
 | Gate／TC | PM 在正式環境必須附的證據 | 狀態 |
 |---|---|---|

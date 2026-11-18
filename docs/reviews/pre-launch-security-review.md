@@ -9,7 +9,7 @@
 - master 固定為 `2d37280deaea695b16ff3ff58aba4488ddd1700a`；工作區起點 `e93e18e6c7829a9c3f1c4b7693a9c0a213dddb37`，兩者只有 `docs/00-DAG.md` 派工文字差異，審查範圍內程式碼相同。
 - 範圍：`deploy/`、`ops/`、`client/`、`bot/`、`ops/llm-gateway/`、`ops/bank-proxy/`、`ops/memory-bridge/`、`server/validator/`、全部 8 份 `supabase/migrations/`；另追查 Caddy 公開 `/api/*` 的唯讀 web 路由。
 - 靜態追蹤認證／資料流，執行本機 Node、Python、Go、真 Postgres／Caddy 測試；以鎖定的正式 Mail image 做額外決策寫回重現。未接真 VPS、未 push、未用 spikes 執行檔、未讀真 provider key、未呼叫真 Discord／LLM，未改其他 worktree。
-- 檔案行號以受審 master 為準；已修項目另外列本分支測試與 commit。證據：[pre-launch-security-evidence.txt](pre-launch-security-evidence.txt)。診斷腳本只用合成資料，輸出已知問題的觀察值，**不是通過驗收的測試套件**。
+- 檔案行號以受審 master 為準；已修項目另外列本分支測試與 commit。證據：pre-launch-security-evidence.txt（原始紀錄未公開）。診斷腳本只用合成資料，輸出已知問題的觀察值，**不是通過驗收的測試套件**。
 
 | ID | 嚴重度 | 發現 | 狀態 |
 | --- | --- | --- | --- |

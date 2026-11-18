@@ -37,12 +37,12 @@
 
 | 項目 | 結果 | 證據 |
 | --- | --- | --- |
-| web | **19/19 pass，0 fail／skip**，包括頁面 ancestry、搜尋未展開函式、破損來源拒絕與既有 OAuth／group／白名單回歸 | [輸出](ui/evidence/board-web-test.txt) |
-| client 全套 | **105 pass、13 既有環境依賴 skip、0 fail**；client 無修改 | [輸出](ui/evidence/board-client-test.txt) |
-| Playwright 桌面＋手機 | 滾輪縮放、真正空白平移、一次框選 6 零件、頁面與 viewport 返回、搜尋→函式白板→43 行原碼→reload、播放／暫停／步進、點線看契約、手機無整頁溢位、減少動態效果；頁面錯誤／CSP 錯誤／寫入請求均 0 | [結果](ui/evidence/board-playwright.json)、[scenario](ui/evidence/board-browser-scenario.js) |
-| Docker | 建置成功；包含本地 bundle／CSS／授權與來源模型；離線 128 MiB snapshot/asset smoke 通過，不是完整負載測試 | [建置](ui/evidence/board-docker-build.txt) |
+| web | **19/19 pass，0 fail／skip**，包括頁面 ancestry、搜尋未展開函式、破損來源拒絕與既有 OAuth／group／白名單回歸 | 輸出（原始紀錄未公開） |
+| client 全套 | **105 pass、13 既有環境依賴 skip、0 fail**；client 無修改 | 輸出（原始紀錄未公開） |
+| Playwright 桌面＋手機 | 滾輪縮放、真正空白平移、一次框選 6 零件、頁面與 viewport 返回、搜尋→函式白板→43 行原碼→reload、播放／暫停／步進、點線看契約、手機無整頁溢位、減少動態效果；頁面錯誤／CSP 錯誤／寫入請求均 0 | 結果（原始紀錄未公開）、scenario（原始紀錄未公開） |
+| Docker | 建置成功；包含本地 bundle／CSS／授權與來源模型；離線 128 MiB snapshot/asset smoke 通過，不是完整負載測試 | 建置（原始紀錄未公開） |
 | 獨立視覺審查 | 首輪指出卡片說明字行被 flex 壓縮；統一 180px 卡高與兩完整行預算後補拍確認，最終 **resolved — ship** | [審查](ui/board-finish-review.md) |
-| 設計 detector | 舊 DESIGN.md 對新 token 的 64 個 advisory（字級 29、顏色 32、圓角 3），無阻擋等級；已交文件 agent 按實作更新設計文件，未捏造第二次 detector 全綠 | [輸出](ui/evidence/board-design-detector.json) |
+| 設計 detector | 舊 DESIGN.md 對新 token 的 64 個 advisory（字級 29、顏色 32、圓角 3），無阻擋等級；已交文件 agent 按實作更新設計文件，未捏造第二次 detector 全綠 | 輸出（原始紀錄未公開） |
 
 原碼 API、Discord OAuth、每請求重新驗證有效組員與 server 固定 group、同源 logout、CSP 均保留。只新增固定靜態 asset allowlist；Caddy 路由保留 master 的 loopback 8781 與既有 MCP／memory 驗證分流。所有畫布操作只改本機狀態；測試未觀察到寫入 API。
 

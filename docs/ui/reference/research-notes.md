@@ -6,10 +6,10 @@ Inspected 2026-11-18, Asia/Taipei, with a real Chromium browser through the Play
 
 | Official page | Capture | Coverage |
 | --- | --- | --- |
-| [Terax](https://terax.app/) | [Desktop](terax-desktop.png), [mobile](terax-mobile.png) | First viewport in the site's dark theme |
-| [Terax](https://terax.app/) | [Editor section](terax-editor-desktop.png) | Scrolled desktop viewport showing actual editor screenshot and explanatory hierarchy |
-| [InsForge](https://insforge.dev/) | [Desktop](insforge-desktop.png), [mobile](insforge-mobile.png) | First viewport in HUMAN mode |
-| [InsForge](https://insforge.dev/) | [AGENT mode](insforge-agent-desktop.png) | Actual AGENT tab click; machine-readable Markdown presentation |
+| [Terax](https://terax.app/) | Desktop（原始紀錄未公開）, mobile（原始紀錄未公開） | First viewport in the site's dark theme |
+| [Terax](https://terax.app/) | Editor section（原始紀錄未公開） | Scrolled desktop viewport showing actual editor screenshot and explanatory hierarchy |
+| [InsForge](https://insforge.dev/) | Desktop（原始紀錄未公開）, mobile（原始紀錄未公開） | First viewport in HUMAN mode |
+| [InsForge](https://insforge.dev/) | AGENT mode（原始紀錄未公開） | Actual AGENT tab click; machine-readable Markdown presentation |
 
 Captures were first generated under `output/playwright/tech-refs/`, then copied unchanged here. Both pages rendered successfully. The InsForge browser console reported nine CSP-blocked advertising/analytics requests; these did not prevent the captured content from rendering. No account, download, signup, or external message was triggered.
 

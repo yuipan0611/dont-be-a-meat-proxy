@@ -13,8 +13,8 @@ node --test client/test/hub-hook.test.mjs
 MAIL_BIN="$PWD/spikes/f01b/target/release/mcp-agent-mail" node --test client/test/hub-hook.integration.test.mjs
 ```
 
-- 單元：exit 0；tests 36、pass 36、fail 0、skipped 0，約 0.88 秒。[完整輸出](evidence/H04-hook-unit.txt)
-- 整合：runner 完整收尾；tests 5、pass 5、fail 0、skipped 0，約 312.89 秒。[完整輸出](evidence/H04-hook-integration.txt)
+- 單元：exit 0；tests 36、pass 36、fail 0、skipped 0，約 0.88 秒。完整輸出（原始紀錄未公開）
+- 整合：runner 完整收尾；tests 5、pass 5、fail 0、skipped 0，約 312.89 秒。完整輸出（原始紀錄未公開）
 - 整合逐項：TC-02 模擬 Mac 留交接／新 Windows session 逐字收到且不重複；session.closed 到 generated-name HubClock 並符合 H-05 shape；question CC 與 answer control 同串；TC-04 空匣／不可達區分；TC-13 雙向各 5 次。
 
 TC-13 使用一台 Mac 上兩個 Hook 子程序，真 Mail 與固定 15 秒輪詢，隨機發送相位，採同一個 `performance.now()` 單調時鐘量測。下列秒數為 send → 對端 watcher 通知 → 讀原文 → 回執的 round trip，沒有模型生成或實際 Windows；不是正式 WAN 或真 Claude 被動喚醒數據。測試本身有 900 秒上限。
