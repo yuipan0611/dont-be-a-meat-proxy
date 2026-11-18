@@ -27,6 +27,7 @@ const FORWARD_HEADERS = ['content-type', 'accept', 'mcp-session-id', 'mcp-protoc
 const BANK_PATH = /^\/mcp\/([a-z0-9][a-z0-9_-]{0,62})\/?(\?[^#]*)?$/; // raw URL: no %-escapes, no dot segments
 
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
+const fingerprint = (s) => ({ length: Buffer.byteLength(s), sha256: sha256(s) });
 
 function plain(res, status, message) {
   res.writeHead(status, { 'content-type': 'application/json' });
@@ -90,14 +91,16 @@ export function createBankProxy({ registry, upstreamUrl, upstreamKey, groupId = 
     try {
       dev = await registry.lookup(sha256(token));
     } catch (e) {
-      log({ ev: 'registry_error', error: String(e?.message ?? e) });
+      log({ ev: 'registry_error', code: 'REGISTRY_UNAVAILABLE', ...fingerprint(String(e?.message ?? e)) });
       return plain(res, 503, 'token registry unavailable');
     }
     if (!dev || dev.groupId !== groupId) return plain(res, 401, 'invalid or revoked token');
 
     const m = BANK_PATH.exec(req.url);
     if (!m || m[1] !== dev.bankId) {
-      log({ ev: 'path_refused', token_id: dev.tokenId, method: req.method, path: req.url.slice(0, 200) });
+      const queryAt = req.url.indexOf('?');
+      log({ ev: 'path_refused', token_id: dev.tokenId, method: req.method, route: m ? 'bank' : 'other',
+        ...(queryAt === -1 ? {} : { query: fingerprint(req.url.slice(queryAt + 1)) }) });
       return plain(res, 403, 'this token may only use its own bank');
     }
     if (!['POST', 'GET', 'DELETE'].includes(req.method)) return plain(res, 405, 'method not allowed');
@@ -157,7 +160,7 @@ export function createBankProxy({ registry, upstreamUrl, upstreamKey, groupId = 
       ures.pipe(res);
     });
     up.on('error', (e) => {
-      log({ ev: 'upstream_error', token_id: dev.tokenId, error: e.code ?? e.message });
+      log({ ev: 'upstream_error', token_id: dev.tokenId, code: 'MEMORY_UPSTREAM_ERROR', ...fingerprint(e.message) });
       if (!res.headersSent) plain(res, 502, 'memory service unavailable');
       else res.destroy();
     });

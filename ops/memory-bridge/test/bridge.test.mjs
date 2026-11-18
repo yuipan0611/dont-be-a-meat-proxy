@@ -93,7 +93,10 @@ test('Hindsight down: stays pending with error + last attempt time, backs off, a
   await s.bridge.tick();
   let r = await rec(s.store, m.id);
   assert.equal(r.status, 'pending');
-  assert.match(r.lastError.message, /ECONNREFUSED/);
+  assert.deepEqual(r.lastError, {
+    stage: 'retain', kind: 'unreachable', code: 'RETAIN_FAILED',
+    length: Buffer.byteLength('ECONNREFUSED'), sha256: sha('ECONNREFUSED'),
+  });
   assert.equal(r.lastAttemptAt, T0);
   assert.equal(r.nextTryAt, T0 + 30_000);
   await s.bridge.tick(); // before nextTryAt: no new attempt
@@ -118,7 +121,9 @@ test('daily budget exhausted (gateway 429 surfaces as a Hindsight failure): pend
   assert.equal(r.status, 'pending');
   assert.equal(r.attempts, 2);
   assert.equal(r.nextTryAt, s.clock.nowMs() + 60_000); // exponential
-  assert.match(r.lastError.message, /額度/);
+  assert.equal(r.lastError.status, 500);
+  assert.equal(r.lastError.sha256, sha('500 rate_limit_error 今日 LLM 額度已用完'));
+  assert.equal(r.lastError.message, undefined);
   s.clock.advance(60_000);
   await s.bridge.tick();
   r = await rec(s.store, m.id);
@@ -262,5 +267,5 @@ test('Mail text that no longer matches the recorded hash is never indexed (error
   await s.bridge.tick();
   const r = await rec(s.store, m.id);
   assert.equal(r.status, 'error');
-  assert.match(r.lastError.message, /hash/);
+  assert.equal(r.lastError.code, 'MAIL_TEXT_MISMATCH');
 });

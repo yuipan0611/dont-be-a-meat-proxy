@@ -3,7 +3,7 @@
 import { test, after } from 'node:test';
 import { rmSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runHook } from '../hub-hook.mjs';
@@ -75,6 +75,33 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { MailError } from '../mail-client.mjs';
 import { DEFAULTS } from '../hub-hook.mjs';
 const outbox = (m) => (existsSync(join(m.dataDir, 'outbox')) ? readdirSync(join(m.dataDir, 'outbox')) : []);
+
+test('client journal creates private outbox data and repairs old state on SessionStart', { skip: process.platform === 'win32' }, async () => {
+  const hub = createFakeHub();
+  hub.down();
+  const m = machine(hub);
+  const mode = (name) => statSync(join(m.dataDir, name)).mode & 0o777;
+  const previousUmask = process.umask(0o022);
+  try {
+    rmSync(m.dataDir, { recursive: true });
+    await m.run('checkpoint', handoff({ to: ['BlueLake'] }));
+    const [name] = outbox(m);
+    assert.ok(name, 'checkpoint was queued');
+    const queued = `outbox/${name}`;
+    assert.equal(mode('.'), 0o700);
+    assert.equal(mode('outbox'), 0o700);
+    assert.equal(mode(queued), 0o600);
+    chmodSync(m.dataDir, 0o755);
+    chmodSync(join(m.dataDir, 'outbox'), 0o755);
+    chmodSync(join(m.dataDir, queued), 0o644);
+    writeFileSync(join(m.dataDir, 'hook.log'), '', { mode: 0o644 });
+    await m.run('start');
+    for (const dir of ['.', 'outbox', 'sessions']) assert.equal(mode(dir), 0o700, dir);
+    for (const file of [queued, 'hook.log', 'sessions/sess-1.json']) assert.equal(mode(file), 0o600, file);
+  } finally {
+    process.umask(previousUmask);
+  }
+});
 
 // ---- start (FR-09, FR-10, AC-03.x, TC-02, TC-04) ----
 

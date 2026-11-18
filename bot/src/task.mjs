@@ -14,6 +14,8 @@ import { randomUUID } from 'node:crypto';
 
 export const TASK_CONFIRM_PREFIX = 'task_confirm:';
 export const TASK_CANCEL_PREFIX = 'task_cancel:';
+const CONFIRM_TTL_MS = 5 * 60_000;
+const expiredConfirmation = () => ({ ok: false, privateReply: true, message: '此任務確認已過期或不存在。' });
 
 export function renderTaskPrompt({ title, repo, body }) {
   const lines = [
@@ -53,25 +55,32 @@ export function createTaskService({
   mailClient,
   defaultRepo = 'example-org/dont-be-a-meat-proxy',
   log = () => {},
+  now = Date.now,
 }) {
   const pending = new Map();
 
-  function stageTask({ member, creatorDiscordId, title, repo, body, assignee }) {
+  function stageTask({ member, creatorDiscordId, guildId, title, repo, body, assignee }) {
     const trimmedTitle = String(title ?? '').trim();
     if (!trimmedTitle) {
       return { ok: false, error: 'E-TITLE', message: '標題必填' };
     }
     const targetRepo = String(repo ?? '').trim() || defaultRepo;
     const actionId = randomUUID();
+    const createdAt = now();
+    for (const [id, task] of pending) {
+      if (task.expiresAt <= createdAt) pending.delete(id);
+    }
     const task = {
       actionId,
       member,
       creatorDiscordId: String(creatorDiscordId),
+      guildId: String(guildId ?? ''),
       title: trimmedTitle,
       repo: targetRepo,
       body: body ? String(body).trim() : '',
       assignee: assignee ? String(assignee).trim() : null,
-      createdAt: Date.now(),
+      createdAt,
+      expiresAt: createdAt + CONFIRM_TTL_MS,
     };
     pending.set(actionId, task);
 
@@ -97,15 +106,30 @@ export function createTaskService({
     return { ok: true, message: '已取消建立任務。' };
   }
 
-  async function confirmTask({ actionId, userId }) {
+  async function confirmTask({ actionId, userId, guildId }) {
     const task = pending.get(actionId);
-    if (!task) {
-      return { ok: false, message: '此任務確認已過期或不存在。' };
-    }
+    if (!task) return expiredConfirmation();
     if (task.creatorDiscordId !== String(userId)) {
       return { ok: false, forbidden: true, message: '只有發起人能確認此任務。' };
     }
+    if (!guildId || task.guildId !== String(guildId)) {
+      return { ok: false, privateReply: true, message: '請在發起此任務的 Discord 伺服器內確認。' };
+    }
+    // Claim before the membership query so concurrent clicks cannot reach GitHub twice.
     pending.delete(actionId);
+    if (now() >= task.expiresAt) return expiredConfirmation();
+
+    let member;
+    try {
+      member = await store.findMemberByDiscord(task.guildId, task.creatorDiscordId);
+    } catch {
+      log({ ev: 'task.membership.error', code: 'MEMBERSHIP_UNAVAILABLE' });
+      return { ok: false, privateReply: true, message: '目前無法確認成員資格，請稍後重新執行 /task。' };
+    }
+    if (now() >= task.expiresAt) return expiredConfirmation();
+    if (!member || member.memberId !== task.member.memberId || member.groupId !== task.member.groupId) {
+      return { ok: false, privateReply: true, message: '此操作需要有效的專案成員資格。' };
+    }
 
     // 1. Call GitHub to create Issue (Single Source of Truth)
     let issue;

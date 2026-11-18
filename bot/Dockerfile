@@ -5,7 +5,7 @@ FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea
 WORKDIR /app
 COPY bot/package.json bot/package-lock.json /app/bot/
 RUN cd /app/bot && npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
-COPY client/mail-client.mjs /app/client/mail-client.mjs
+COPY client/mail-client.mjs client/private-files.mjs /app/client/
 COPY ops/llm-gateway/client.mjs /app/ops/llm-gateway/client.mjs
 COPY bot/src /app/bot/src
 USER node

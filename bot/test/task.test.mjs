@@ -14,18 +14,82 @@ import {
   fakeInteraction,
   fakeButtonInteraction,
   seed,
+  GUILD,
   OWNER_DISCORD,
   STRANGER,
 } from './helpers/fakes.mjs';
 
-function setupTaskRig({ gitHubFail = null, defaultRepo = 'example-org/dont-be-a-meat-proxy' } = {}) {
+function setupTaskRig({ gitHubFail = null, defaultRepo = 'example-org/dont-be-a-meat-proxy', now = Date.now } = {}) {
   const store = createMemoryStore(seed());
   const mail = createFakeMail();
   const github = createFakeGitHub({ failNext: gitHubFail, defaultRepo });
-  const taskService = createTaskService({ store, github, mailClient: mail, defaultRepo });
+  const taskService = createTaskService({ store, github, mailClient: mail, defaultRepo, now });
   const router = createRouter({ store, connect: {}, assistant: {}, taskService });
   return { store, mail, github, taskService, router, defaultRepo };
 }
+
+async function stage(rig) {
+  const ix = fakeInteraction('task', { title: '待確認任務' });
+  await rig.router.handle(ix);
+  return ix.log.find((x) => x.type === 'edit').components[0].components[0].custom_id;
+}
+
+test('task confirmation rechecks the active member and Discord link in its original guild', async (t) => {
+  for (const table of ['members', 'links']) {
+    await t.test(`revoked ${table}`, async () => {
+      const rig = setupTaskRig();
+      const id = await stage(rig);
+      const member = await rig.store.findMemberByDiscord(GUILD, OWNER_DISCORD);
+      const row = rig.store.db[table].find((r) => (r.member_id ?? r.id) === member.memberId);
+      row.status = 'revoked';
+      const click = fakeButtonInteraction(id);
+      await rig.router.handle(click);
+      assert.equal(rig.github.issues.length, 0);
+      assert.equal(rig.mail.messages.size, 0);
+      assert.ok(click.log.some((x) => x.flags === EPHEMERAL && /成員/.test(x.content)));
+    });
+  }
+  const rig = setupTaskRig();
+  const id = await stage(rig);
+  const otherGuild = fakeButtonInteraction(id, { guildId: 'other-guild' });
+  await rig.router.handle(otherGuild);
+  assert.equal(rig.github.issues.length, 0);
+  assert.ok(otherGuild.log.some((x) => x.flags === EPHEMERAL));
+  await rig.router.handle(fakeButtonInteraction(id));
+  assert.equal(rig.github.issues.length, 1, 'the correct guild can still confirm');
+});
+
+test('task confirmation denies expiry at five minutes, including during membership lookup', async (t) => {
+  const ttl = 5 * 60_000;
+  for (const delay of [0, 1]) {
+    await t.test(`lookup delay ${delay}`, async () => {
+      let time = 0;
+      const rig = setupTaskRig({ now: () => time });
+      const id = await stage(rig);
+      time = ttl - delay;
+      const lookup = rig.store.findMemberByDiscord;
+      rig.store.findMemberByDiscord = async (...args) => {
+        time += delay;
+        return lookup(...args);
+      };
+      const click = fakeButtonInteraction(id);
+      await rig.router.handle(click);
+      assert.equal(rig.github.issues.length, 0);
+      assert.ok(click.log.some((x) => x.flags === EPHEMERAL && /已過期/.test(x.content)));
+    });
+  }
+});
+
+test('simultaneous confirmations claim the task before the membership await', async () => {
+  const rig = setupTaskRig();
+  const id = await stage(rig);
+  const lookup = rig.store.findMemberByDiscord;
+  let checks = 0;
+  rig.store.findMemberByDiscord = async (...args) => { checks++; return lookup(...args); };
+  await Promise.all([rig.router.handle(fakeButtonInteraction(id)), rig.router.handle(fakeButtonInteraction(id))]);
+  assert.equal(checks, 1);
+  assert.equal(rig.github.issues.length, 1);
+});
 
 // --------------------------------------------------------------------------
 // 1. GitHub REST Client unit tests
@@ -329,7 +393,7 @@ test('double click protection: second click reports already handled / expired, n
   // Second click with same actionId -> already handled
   const click2 = fakeButtonInteraction(confirmBtn.custom_id, { userId: OWNER_DISCORD });
   await rig.router.handle(click2);
-  const update2 = click2.log.find((l) => l.type === 'edit' || l.type === 'update');
+  const update2 = click2.log.find((l) => l.type === 'followUp' && l.flags === EPHEMERAL);
   assert.match(update2.content, /已過期或不存在/);
 
   // No duplicate issue created

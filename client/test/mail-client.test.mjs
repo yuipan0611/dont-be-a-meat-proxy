@@ -399,6 +399,33 @@ test('staging.put never overwrites an already staged original', async () => {
   assert.equal((await staging.get(1)).raw, 'first');
 });
 
+test('durable staging secures old and new message files, directories and cursor', { skip: process.platform === 'win32' }, async (t) => {
+  const { mkdir, mkdtemp, rm, stat, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const parent = await mkdtemp(join(tmpdir(), 'hub-staging-modes-'));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const dir = join(parent, 'staging');
+  const previousUmask = process.umask(0o022);
+  try {
+    await mkdir(join(dir, 'messages'), { recursive: true, mode: 0o755 });
+    await writeFile(join(dir, 'messages/1.json'), rawMsg(1), { mode: 0o644 });
+    await writeFile(join(dir, 'cursor.json'), '{"cursor":1}', { mode: 0o644 });
+    const staging = createStaging({ dir });
+    const mode = async (name) => (await stat(join(dir, name))).mode & 0o777;
+    assert.equal(await staging.getCursor(), 1);
+    assert.equal((await staging.get(1)).raw, rawMsg(1));
+    for (const part of ['.', 'messages']) assert.equal(await mode(part), 0o700, part);
+    for (const part of ['messages/1.json', 'cursor.json']) assert.equal(await mode(part), 0o600, part);
+    await staging.put(2, rawMsg(2));
+    await staging.setCursor(2);
+    assert.equal(await mode('messages/2.json'), 0o600);
+    assert.equal(await mode('cursor.json'), 0o600);
+  } finally {
+    process.umask(previousUmask);
+  }
+});
+
 test('HTTP 200 with an unparseable body after send is unconfirmed, not a crash', async () => {
   const fetch = fakeFetch((rpc) => handshake(rpc) ?? { status: 200, body: '<html>proxy page</html>' });
   await rejectsWith(client(fetch).sendItem(baseItem()), { code: 'E-HUB', reason: 'protocol', delivery: 'unconfirmed' });

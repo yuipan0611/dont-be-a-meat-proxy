@@ -2,7 +2,7 @@
 // Run: node --test ops/bank-proxy/test/budget.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLedger, taipeiDay, PRICES, costMicros, maxCostMicros } from '../budget.mjs';
@@ -79,4 +79,36 @@ test('crash safety: reopening the file charges unsettled reservations in full (n
   assert.deepEqual(reopened.status(), { day: '2026-11-20', capMicros: 1000, spentMicros: 700, reservedMicros: 0 });
   assert.equal(reopened.reserve({ requestId: 'y', role: 'retain', maxMicros: 301 }).ok, false);
   assert.ok(JSON.parse(readFileSync(file, 'utf8')).days['2026-11-20']);
+});
+
+test('ledger loading fails closed on invalid counters, days and schema without modifying the file', async (t) => {
+  const { file, clock, done } = ledger(T, 1);
+  t.after(done);
+  const day = '2026-11-20';
+  const good = { v: 1, days: { [day]: { spentMicros: 0 } }, open: {} };
+  const invalid = {
+    'unsupported version': { ...good, v: 2 },
+    'days array': { ...good, days: [] },
+    'missing open': { ...good, open: undefined },
+    'open array': { ...good, open: [] },
+    'invalid spending day': { ...good, days: { '2026-02-30': { spentMicros: 0 } } },
+    'invalid reservation day': { ...good, open: { req: { day: '2026-2-03', micros: 1 } } },
+    'string spending': { ...good, days: { [day]: { spentMicros: 'invalid' } } },
+    'negative spending': { ...good, days: { [day]: { spentMicros: -1 } } },
+    'fractional spending': { ...good, days: { [day]: { spentMicros: 0.5 } } },
+    'unsafe spending': { ...good, days: { [day]: { spentMicros: Number.MAX_SAFE_INTEGER + 1 } } },
+    'string reservation': { ...good, open: { req: { day, micros: '1' } } },
+    'missing reservation counter': { ...good, open: { req: { day } } },
+    'recovery overflow': {
+      ...good, days: { [day]: { spentMicros: Number.MAX_SAFE_INTEGER } }, open: { req: { day, micros: 1 } },
+    },
+  };
+  for (const [name, state] of Object.entries(invalid)) {
+    await t.test(name, () => {
+      const source = JSON.stringify(state);
+      writeFileSync(file, source, { mode: 0o600 });
+      assert.throws(() => createLedger({ file, capMicros: 1, clock }), { code: 'INVALID_LEDGER' });
+      assert.equal(readFileSync(file, 'utf8'), source);
+    });
+  }
 });

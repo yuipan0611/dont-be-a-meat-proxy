@@ -61,6 +61,16 @@ export function maxCostMicros(p, { bodyBytes, maxTokens, cacheControl = false })
   return ceilDiv(bodyBytes * r.inp * inMult + maxTokens * r.out, 1_000_000);
 }
 
+const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const isCounter = (value) => Number.isSafeInteger(value) && value >= 0;
+const invalidLedger = () => Object.assign(new Error('Invalid budget ledger; reconcile the file before restarting'), { code: 'INVALID_LEDGER' });
+
+function isDay(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 /**
  * @param {object} o
  * @param {string} o.file            ledger JSON path (0600, on the private state volume)
@@ -75,14 +85,20 @@ export function createLedger({ file, capMicros = DEFAULT_CAP_MICROS, clock }) {
     try {
       s = JSON.parse(readFileSync(file, 'utf8'));
     } catch (e) {
+      if (e instanceof SyntaxError) throw invalidLedger();
       if (e.code !== 'ENOENT') throw e;
       return { v: 1, days: {}, open: {} };
     }
+    if (s?.v !== 1 || !isRecord(s.days) || !isRecord(s.open)) throw invalidLedger();
+    for (const [day, spent] of Object.entries(s.days)) {
+      if (!isDay(day) || !isRecord(spent) || !isCounter(spent.spentMicros)) throw invalidLedger();
+    }
     // Crash recovery: anything still reserved was possibly billed. Charge it.
-    for (const [id, r] of Object.entries(s.open ?? {})) {
+    for (const r of Object.values(s.open)) {
+      if (!isRecord(r) || !isDay(r.day) || !isCounter(r.micros)) throw invalidLedger();
       const d = (s.days[r.day] ??= { spentMicros: 0 });
       d.spentMicros += r.micros;
-      delete s.open[id];
+      if (!isCounter(d.spentMicros)) throw invalidLedger();
     }
     s.open = {};
     persist(s);

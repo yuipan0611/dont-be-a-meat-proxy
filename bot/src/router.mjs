@@ -74,10 +74,12 @@ export function createRouter({ store, connect, assistant, decisions = null, task
         return;
       }
       if (ix.deferUpdate) await ix.deferUpdate();
-      const res = await taskService?.confirmTask({ actionId, userId });
+      const res = await taskService?.confirmTask({ actionId, userId, guildId: ix.guildId });
       if (!res) return;
-      if (res.forbidden) {
-        if (ix.reply) await ix.reply({ content: res.message, flags: EPHEMERAL });
+      if (res.forbidden || res.privateReply) {
+        const refusal = { content: res.message, flags: EPHEMERAL, allowedMentions: NO_MENTIONS };
+        if (ix.deferUpdate) await ix.followUp(refusal);
+        else if (ix.reply) await ix.reply(refusal);
         return;
       }
       if (ix.editReply) await ix.editReply({ content: res.message, components: [], allowedMentions: NO_MENTIONS });
@@ -130,6 +132,7 @@ export function createRouter({ store, connect, assistant, decisions = null, task
         const staged = taskService.stageTask({
           member,
           creatorDiscordId: actorId,
+          guildId: ix.guildId,
           title,
           repo,
           body,

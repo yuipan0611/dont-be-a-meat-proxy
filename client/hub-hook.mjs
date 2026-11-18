@@ -11,7 +11,8 @@
 //   read <id> | inbox | send (JSON stdin) | checkpoint (JSON stdin) | presented <id> | choice <id> approve|reject [reason]
 //   auto on --for <agent> [--minutes N] | auto off [--for <agent>] | auto check <id> | auto done <id> succeeded|failed [reason]   (L-06)
 import { createMailClient, createStaging, syncInbox, validateItem, MailError } from './mail-client.mjs';
-import { realpathSync, readFileSync, writeFileSync, renameSync, mkdirSync, readdirSync, appendFileSync, unlinkSync, openSync, closeSync } from 'node:fs';
+import { realpathSync, readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync, closeSync, constants } from 'node:fs';
+import { ensurePrivateDirectory, repairPrivateTree, openPrivateFile } from './private-files.mjs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
@@ -92,8 +93,17 @@ export function loadConfig({ env, platform = process.platform, home = homedir() 
 
 class ConfigError extends Error {}
 
-function journal(dir) {
-  mkdirSync(dir, { recursive: true });
+const CREATE_EXCLUSIVE = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL;
+const CREATE_APPEND = constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND;
+
+function writePrivateFile(path, data, flags) {
+  const fd = openPrivateFile(path, flags);
+  try { writeFileSync(fd, data); } finally { closeSync(fd); }
+}
+
+function journal(dir, repairExisting) {
+  if (repairExisting) repairPrivateTree(dir);
+  else ensurePrivateDirectory(dir);
   const p = (name) => join(dir, name);
   const self = {
     dir,
@@ -101,14 +111,14 @@ function journal(dir) {
       try { return JSON.parse(readFileSync(p(name), 'utf8')); } catch { return dflt; }
     },
     write(name, value) {
-      mkdirSync(dirname(p(name)), { recursive: true });
+      ensurePrivateDirectory(dirname(p(name)));
       const tmp = `${p(name)}.${process.pid}.${randomUUID()}.tmp`;
-      writeFileSync(tmp, JSON.stringify(value, null, 1));
+      writePrivateFile(tmp, JSON.stringify(value, null, 1), CREATE_EXCLUSIVE);
       renameSync(tmp, p(name));
     },
     remove(name) { try { unlinkSync(p(name)); } catch {} },
     list(sub) { try { return readdirSync(p(sub)).filter((f) => f.endsWith('.json')).sort(); } catch { return []; } },
-    log(obj) { try { appendFileSync(p('hook.log'), JSON.stringify(obj) + '\n'); } catch {} },
+    log(obj) { try { writePrivateFile(p('hook.log'), JSON.stringify(obj) + '\n', CREATE_APPEND); } catch {} },
     session(sid) { return self.read(`sessions/${safe(sid)}.json`, null); },
     saveSession(s) { self.write(`sessions/${safe(s.sid)}.json`, s); },
     seen() { return new Set(self.read('seen.json', [])); },
@@ -501,7 +511,7 @@ async function modeWatch(ctx, input) {
   const sid = input.session_id ?? 'unknown';
   const parentPid = deps.ppid();
   const lock = lockPath(j, sid);
-  mkdirSync(dirname(lock), { recursive: true });
+  ensurePrivateDirectory(dirname(lock));
   if (!acquireLock(lock, deps)) {
     j.log({ t: clock.now(), ev: 'watch-skip', sid });
     return { exitCode: 0 };
@@ -570,9 +580,7 @@ function orphanExit(ctx, sid) {
 function acquireLock(path, deps) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const fd = openSync(path, 'wx');
-      writeFileSync(fd, String(deps.pid));
-      closeSync(fd);
+      writePrivateFile(path, String(deps.pid), CREATE_EXCLUSIVE);
       return true;
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
@@ -875,12 +883,13 @@ export async function runHook(mode, { input = {}, args = [], env = process.env, 
     if (mode === 'watch' || mode === 'stop' || mode === 'end') return done({}); // stay quiet: start already said it
     return done({ exitCode: 1, stderr: msg });
   }
-  const j = journal(cfg.dataDir);
+  const j = journal(cfg.dataDir, mode === 'start');
   const client = deps.createClient({
     url: cfg.url, token: cfg.token, projectKey: cfg.projectKey, agentName: cfg.agent,
     senderToken: cfg.senderToken, roster: cfg.roster, clock: deps.clock,
   });
-  const ctx = { cfg, j, client, clock: deps.clock, deps, staging: createStaging({ dir: join(cfg.dataDir, 'staging') }), watchMaxMs: given.watchMaxMs };
+  const ctx = { cfg, j, client, clock: deps.clock, deps,
+    staging: createStaging({ dir: join(cfg.dataDir, 'staging'), repairExisting: false }), watchMaxMs: given.watchMaxMs };
   try {
     switch (mode) {
       case 'start': return done(await modeStart(ctx, input));
