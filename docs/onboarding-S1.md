@@ -1,20 +1,19 @@
 # 08 組員接入手冊（S1 初稿：Mac 與 Windows 端）
 
 - **負責**：agy-junior-swe-2（Antigravity）｜**對應票號**：H-07｜**審查**：PM-Emily → 維護者
-- **版本**：v0.2 接入補充（2026-11-17）
+- **版本**：v0.3 L-09 接入補充（2026-11-18）
 - **依據**：`docs/05-sds.md`（v0.3 權威）、`docs/04-sad.md`、`docs/research/F-08-hostinger-vscode.md`、`docs/06-test-plan.md`
 - **適用對象**：新手工程師、專案協作者（S1 階段供 維護者 於 Mac 與 Windows 操作；S2 開放組員時沿用）
 - **目標**：語言白話、步驟分明，**在 Windows 上照做 ≤ 15 分鐘接上**。
-- **狀態提醒**：本文件補入 H-04 設定與信任確認；VPS 部署、真 Claude／Windows 驗收仍由 維護者 執行，尚未代表 S1 通過。
+- **狀態提醒**：L-09 已部署，組員請等 PM 通知開放接入，再照本手冊操作。驗收進度見 [S1 驗收紀錄](delivery-S1.md)。
 
 ---
 
 ## 快速目錄
 
 1. [前置概念：什麼是裝置 Token？安全第一守則](#1-前置概念什麼是裝置-token安全第一守則)
-2. [第一步：拿到 Token 後放哪裡？怎麼設定？](#2-第一步拿到-token-後放哪裡怎麼設定)
-   - [A. Mac 使用者（zsh 終端機）](#a-mac-使用者zsh-終端機)
-   - [B. Windows 使用者（PowerShell 終端機）](#b-windows-使用者powershell-終端機)
+2. [第一步：加入 Discord、領取並保存裝置 Token](#2-第一步加入-discord領取並保存裝置-token)
+   - [Mac 或 Windows 的裝置設定檔](#mac-或-windows-的裝置設定檔)
 3. [第二步：Claude Code 專案 `.mcp.json` 設定](#3-第二步claude-code-專案-mcpjson-設定)
 4. [第三步：自動化 Hook 設定（`.claude/settings.json`）](#4-第三步自動化-hook-設定claudesettingsjson)
 5. [第四步：如何確認成功接上？](#5-第四步如何確認成功接上)
@@ -40,71 +39,38 @@
 
 ---
 
-## 2. 第一步：拿到 Token 後放哪裡？怎麼設定？
+## 2. 第一步：加入 Discord、領取並保存裝置 Token
 
-當 PM 或管理員發給你一組 Token（外觀通常是一串英文與數字，例如 `tok_win_abc123...`），請**將它存放在電腦的「環境變數」中**，變數名稱固定為 `HUB_TOKEN`。
-同時，我們將 Hub 的網址也放入環境變數 `HUB_MAIL_URL`，固定為 `https://hub.example.invalid/mcp/`。
+🟡 1. 用 PM 提供的邀請連結加入專案 Discord 伺服器。
 
-請依照你的作業系統選擇對應說明：
+🟡 2. 確認 PM 已開放組員接入，且你的 Discord 帳號已與組員身分綁定。
 
-### A. Mac 使用者（zsh 終端機）
+🟡 3. 在專案頻道選擇 `/connect`，在 `platform` 選 **Mac** 或 **Windows**，可在 `device` 填裝置名稱，再送出。
 
-Mac 預設使用 `zsh`。
+🟡 4. 確認機器人的回覆顯示「只有你看得到」，並從回覆的設定指令複製 `Bearer ` 後方、結尾引號前的字串。
 
-#### 1. 暫時設定（只在目前的終端機視窗有效）
-適合快速測試：
-```zsh
-export HUB_MAIL_URL='https://hub.example.invalid/mcp/'
-export HUB_TOKEN='<你的_MAC_裝置_TOKEN>'
+🟡 5. 私下另外記下回覆中的 Token ID。裝置遺失或 token 外洩時，用 `/revoke` 的 `token_id` 選項撤銷，再用 `/connect` 領新值。
+
+每次 `/connect` 都會新發一把裝置 token，舊值仍有效。既有 MVP 裝置只更新程式時可沿用原本的有效憑證。若看不到指令、顯示非組員或發放失敗，請把錯誤文字回報 PM，並遮蔽憑證。
+
+### Mac 或 Windows 的裝置設定檔
+
+🟡 6. 打開 Hub 專案根目錄；已有桌面 `hub-win` 的 Windows 使用者可先做 [L-09 更新](ops/windows-update-L09.md)。
+
+🟡 7. 在根目錄的 `.hub-local/h02-client/` 中開啟或建立自己的設定檔。Mac 用 `mac.env`，Windows 用 `windows.env`。
+
+🟡 8. 在設定檔填下面兩行，把第二行的佔位文字換成剛拿到的值。等號兩邊貼齊文字，用 UTF-8（無 BOM）存檔。
+
+```dotenv
+HUB_MAIL_URL=https://hub.example.invalid/mcp/
+HUB_TOKEN=<你的裝置_TOKEN>
 ```
-*(請將 `<你的_MAC_裝置_TOKEN>` 替換為實際收到的 Token)*
 
-#### 2. 長久設定（每次打開終端機都有效，推薦）
-把變數寫入個人設定檔 `~/.zshrc`：
-```zsh
-echo 'export HUB_MAIL_URL="https://hub.example.invalid/mcp/"' >> ~/.zshrc
-echo 'export HUB_TOKEN="<你的_MAC_裝置_TOKEN>"' >> ~/.zshrc   # 注意：token 會以明文存在 ~/.zshrc，不要把這個檔案同步或分享
-source ~/.zshrc
-```
+🟡 9. 把 PM 私下配發的 sender 設定檔放進同一資料夾，Mac 用 `mac.sender.json`，Windows 用 `windows.sender.json`。
 
-#### 3. 怎麼確認設好了？
-執行以下指令檢查變數是否有值（為防外洩，只印出長度）：
-```zsh
-echo "HUB_MAIL_URL: $HUB_MAIL_URL"
-echo "HUB_TOKEN 長度: ${#HUB_TOKEN} 字元"
-```
-若「HUB_TOKEN 長度」大於 0（非空），即表示設定成功！
+🟡 10. 接著完成 §3 的 `.mcp.json`、§4 的 Hook 設定及憑證載入、§5 的連線檢查。
 
----
-
-### B. Windows 使用者（PowerShell 終端機）
-
-Windows 使用者請打開 **PowerShell**（非 CMD 命令提示字元）。
-
-#### 1. 暫時設定（只在目前的 PowerShell 視窗有效）
-適合快速測試：
-```powershell
-$env:HUB_MAIL_URL = "https://hub.example.invalid/mcp/"
-$env:HUB_TOKEN = "<你的_WINDOWS_裝置_TOKEN>"
-```
-*(請將 `<你的_WINDOWS_裝置_TOKEN>` 替換為實際收到的 Token)*
-
-#### 2. 長久設定（永久寫入使用者環境變數，重開視窗仍在，推薦）
-在 PowerShell 中執行以下兩行指令，將設定儲存到 Windows 使用者註冊表：
-```powershell
-[System.Environment]::SetEnvironmentVariable('HUB_MAIL_URL', 'https://hub.example.invalid/mcp/', 'User')
-[System.Environment]::SetEnvironmentVariable('HUB_TOKEN', '<你的_WINDOWS_裝置_TOKEN>', 'User')
-```
-> [!NOTE]
-> 設定完成後，**必須將目前開著的 PowerShell / VS Code 視窗全部關閉並重新打開**，新的環境變數才會被讀入。
-
-#### 3. 怎麼確認設好了？
-在新開的 PowerShell 視窗中執行：
-```powershell
-Write-Host "HUB_MAIL_URL: $env:HUB_MAIL_URL"
-Write-Host "HUB_TOKEN 長度: $($env:HUB_TOKEN.Length) 字元"
-```
-若看到網址正確且長度大於 0，即表示設定成功！
+`HUB_TOKEN` 是 Discord 發的入口憑證。PM 配發的 sender 檔提供送信所需的 agent 名稱與 `HUB_SENDER_TOKEN`。Mac 將兩個本機私密檔的權限設成 600，Windows 將它們留在只有自己可讀的資料夾。`.hub-local/` 應由 Git 忽略，請勿分享。MVP 啟動腳本會從對應的 `.env` 讀取 `HUB_TOKEN`。
 
 ---
 
@@ -112,7 +78,7 @@ Write-Host "HUB_TOKEN 長度: $($env:HUB_TOKEN.Length) 字元"
 
 在你的專案根目錄下，檢查或建立 `.mcp.json` 檔案。
 
-這個檔案告訴 Claude Code 如何連線到我們的通訊 Hub。因為我們在第一步已經設定好環境變數，這裡**直接參照環境變數名稱**，不需要寫入真實密鑰，這個檔案也可以安心被 Git 追蹤。
+這個檔案告訴 Claude Code 如何連線到 Hub，並**參照 §4 B 載入的環境變數**。請使用下面的變數名稱，讓入口憑證留在裝置的私密設定檔。
 
 請直接照抄以下內容（格式嚴格依據 SDS v0.3 CLI-01 契約）：
 
@@ -130,13 +96,6 @@ Write-Host "HUB_TOKEN 長度: $($env:HUB_TOKEN.Length) 字元"
 }
 ```
 
-> [!TIP]
-> **如果不方便手動編輯檔案**，也可以在專案目錄下用命令列指令加入（以 Mac/Linux bash 為例）：
-> ```bash
-> claude mcp add --transport http --scope local hub https://hub.example.invalid/mcp/ --header "Authorization: Bearer <HUB_TOKEN>"
-> ```
-> *注意：透過命令列指令加入時，Token 可能會被留在終端機歷史紀錄中，建議優先使用範本檔案配合環境變數展開。*
-
 ---
 
 ## 4. 第三步：自動化 Hook 設定（`.claude/settings.json`）
@@ -145,10 +104,11 @@ Write-Host "HUB_TOKEN 長度: $($env:HUB_TOKEN.Length) 字元"
 
 ### A. 放正確設定，保留已有內容
 
-1. 確認目前資料夾內有 `client/hub-hook.mjs`。用 [hub-client.json 範本](../client/templates/hub-client.json) 建立根目錄 `hub-client.json`；有舊檔就逐項核對，別覆蓋。`project_key` 是 Hub 上的 `/data/projects/group-a`，不是本機路徑；`agents` 與 `peers` 必須和 H-02 註冊一致。
+1. 確認目前資料夾內有 `client/hub-hook.mjs`。用 [hub-client.json 範本](../client/templates/hub-client.json) 建立根目錄 `hub-client.json`；有舊檔就逐項核對，別覆蓋。`group_id`、`project_key`、`agents` 與 `peers` 採用 PM 提供的本組設定。`/data/projects/group-a` 是 A 組在 Hub 上的 project key。
 2. 向 PM 取得 HubClock 的**公開 canonical 名稱**，填入 `clock_agent`。來源是 VPS `hubclock.sender.json.agentName`，不是字面 `HubClock`；不要索取或複製 HubClock 的 sender token。placeholder 留著會跳過控制回報，不能當作接入完成。
 3. 把 [claude-settings.json 範本](../client/templates/claude-settings.json) 的 hooks 及專案所需 `permissions.allow` 合併進 `.claude/settings.json`。僅在目標檔不存在時整份複製；保留其他 hooks 與權限，不調整全域設定或 permission mode。範本用 exec form `command: node` 與 `args`，Mac／Windows 共用；Windows 的 Node 必須是可執行的 `node.exe`。
-4. 在根目錄驗 JSON：
+4. 在 `hub-client.json` 將 `memory_agent` 設為 `NavyOrchid`（維護者 的 A 組）。若舊檔沒有這個欄位，依完整範例新增。其他組請向 PM 確認該組 MemoryBridge 的公開名稱。Hook 會把新交接、checkpoint 和決策副本轉給這個 agent，供 `/status` 查詢。若有設定 `HUB_MEMORY_AGENT`，其值優先於 JSON。 [完整設定範例](ops/windows-update-L09.md#2-備份並換檔)
+5. 在根目錄驗 JSON：
 
 ```sh
 node -e 'const fs=require("node:fs"); for (const p of ["hub-client.json",".claude/settings.json"]) { JSON.parse(fs.readFileSync(p,"utf8")); console.log(p+" JSON OK"); }'
@@ -167,9 +127,9 @@ foreach ($H04Config in @('hub-client.json', '.claude/settings.json')) {
 
 ### B. 載入這台裝置的兩種憑證
 
-第一步的 `HUB_TOKEN` 只管入口；Hook 送信另需 `HUB_SENDER_TOKEN`，必須與本機 `HUB_AGENT` 配對。以下讀 H-02 已交付的私密檔，只影響目前終端機；**不要把實際值打進指令歷史或貼回 PM**。從這個終端機啟動的 Claude 才會繼承。
+第一步的 `HUB_TOKEN` 只管入口；Hook 送信另需 `HUB_SENDER_TOKEN`，必須與本機 `HUB_AGENT` 配對。以下讀取 §2 保存的裝置設定與 PM 配發的 sender 檔，只影響目前終端機。從這個終端機啟動的 Claude 才會繼承。
 
-Mac（repo 根目錄；檔案已由 H-02 安全取得）：
+Mac（專案根目錄）：
 
 ```zsh
 set -a
@@ -219,7 +179,7 @@ Get-Content "$env:LOCALAPPDATA/hub-client/group-a/RedStone/hook.log" -Tail 10
 
 若有 `HUB_DATA_DIR`，改讀該目錄的 `hook.log`。log 與耐久收件含工作資訊，只在本機查看，分享前遮蔽；不要上傳整份目錄。
 
-4. `start.syncError` 應為 null；Claude 應明說無新項目，或逐字列出可取得的項目。出現「無法取得」就查憑證／連線，不能當成空收件匣。`watch-skip` 可能已有同 session watcher，需搭配 `watch-arm` 與程序確認；不能單看 skip 說成功。
+4. `start.syncError` 應為 null；Claude 應明說無新項目，或逐字列出可取得的項目。出現「無法取得」就查憑證／連線，不能當成空收件匣。`watch-skip` 可能已有同 session watcher，需搭配 `watch-arm` 與程序確認；不能單看 skip 說成功。若開工畫面提醒缺少 `memory_agent`，依 §4 A 補上後重開 Claude。
 5. SessionStart 讀最近 5 則交接；watch 每 15 秒輪詢，有訊息 exit 2 喚醒，55 分鐘自行到期、Stop 重掛；SessionEnd 在預算內回報 `session.closed`。watch exit 2 是通知，不是部署壞掉。`/exit` 若顯示背景工作確認，選 **Exit and stop tasks** 才算關完。
 6. Windows 的 idle／回答中／長工具／正常退出／孤兒程序，照 [client README Windows 驗證](../client/README.md#yui-的-windows-驗證尚未實測) 執行並交回版本、ID、延遲表。未實測前保留「待驗」，不能以 Mac 模擬結果替代。
 
@@ -280,6 +240,18 @@ claude mcp list
 - 看到 `HTTP 狀態碼: 401`：Token 錯誤或已被撤銷。
 - 看到 `HTTP 狀態碼: 502` 或連線超時：Hub 後端維護中或網路受阻。
 
+### 驗證步驟 D：回 Discord 試問 `/status`
+
+🟡 1. 確認 `/mcp` 中的 `hub` 已連線，且 §4 的 Hook 檢查已完成。
+
+🟡 2. 回到專案 Discord 頻道，選 `/status`，在 `question` 輸入「目前最新的交接是什麼？」；保留 `public` 的預設值。
+
+🟡 3. 確認回覆只有本人可見；已有同步的交接時，核對回覆尾端「依據：#ID（台北時間）」是否對得上交接。
+
+🟡 4. 若明知有新交接卻回「記憶中沒有這項資訊」，交回不含憑證的 Mail ID 及時間，請 PM 查該筆同步。
+
+驗收進度以 [S1 驗收紀錄](delivery-S1.md) 的 TC-16、TC-17 為準。
+
 ---
 
 ## 6. 常見其他工具沿用性（Codex、Antigravity、VS Code 擴充）
@@ -308,7 +280,7 @@ claude mcp list
   1. 檢查變數是否真的存在：
      - Mac: `echo "長度: ${#HUB_TOKEN}"`
      - Windows: `Write-Host "長度: $($env:HUB_TOKEN.Length)"`
-  2. 若長度為 0，請重新執行第一步的環境變數設定指令。
+  2. 若長度為 0，核對 §2 的本機設定檔，並重新執行 §4 B 的憑證載入指令。
   3. 若長度正常但依舊 401，請聯繫 PM（Emily），確認該 Token 是否已被撤銷或未正確加入 Caddy allowlist。
 
 ---
@@ -347,17 +319,18 @@ claude mcp list
 
 ## 8. Windows 新手 15 分鐘極速檢核清單（Checklist）
 
-以下是設定的目標時間，不含尚待執行的雙向真機驗收；未完成 §4 的 Windows 檢查前不能回報整體接入成功：
+以下為接入設定的目標時間，雙向真機驗收另依 §4 C 執行。
 
 | 時間（分） | 步驟 | 檢核動作 | 通過判準 |
 |---|---|---|---|
-| **00 ~ 03** | **步驟 1：載入裝置憑證** | 在 PowerShell 依 §4 B 載入 Windows 私密檔，留在同一視窗。 | 印出 `device credentials present`，不印出值。 |
-| **03 ~ 06** | **步驟 2：放 `.mcp.json`** | 確保專案根目錄有 `.mcp.json`，內容參照第三節範本（使用 `${HUB_MAIL_URL}` 與 `${HUB_TOKEN}`）。 | 檔案存在且 JSON 語法無誤。 |
+| **00 ~ 03** | **步驟 1：載入裝置憑證** | 依 §2 領取並保存 token，在 PowerShell 依 §4 B 載入 Windows 私密檔。 | 印出 `device credentials present`，不印出值。 |
+| **03 ~ 06** | **步驟 2：核對本機設定** | 依 §3 檢查 `.mcp.json`，依 §4 A 設定 `hub-client.json` 的 `memory_agent` 及 Hook。 | 設定檔可解析且使用本組名稱。 |
 | **06 ~ 10** | **步驟 3：驗證 MCP 連線** | 在專案路徑下執行 `claude`，進入後輸入 `/mcp`。 | 看到 `hub` 狀態為綠色或 Connected，且有 `send_message` 等工具。 |
-| **10 ~ 13** | **步驟 4：快速健康探測** | 在 PowerShell 執行 `curl.exe` 探測指令。 | HTTP 回應可達；MCP 送讀按 H-02 驗證，不能只看 200。 |
+| **10 ~ 13** | **步驟 4：看 Hook 並試問** | 確認本次 `start`／`watch-arm`，回 Discord 執行 `/status`。 | Hook 讀取成功，收到私人回覆並按 §5 D 核對。 |
 | **13 ~ 15** | **步驟 5：完成登記** | 確認 `/hooks` 與本次 start，另完成 client README 的 Windows 驗證。 | 交回實際結果；未驗部分明列待驗。 |
 
 ---
 *文件維護紀錄：*
 - 2026-11-17：初稿建立（H-07，agy-junior-swe-2），遵循 SDS v0.3 與 F-08 調研，涵蓋 Mac/Win 獨立說明與 ≤15 分鐘流程。
 - 2026-11-17：H-04 收尾補入雙 token、真 canonical clock 名稱、workspace trust、啟動證據與 Windows 待驗步驟（Codex）。
+- 2026-11-18：L-09 補入 Discord 領取裝置 token、`memory_agent` 與 `/status` 試問（P-6）。
