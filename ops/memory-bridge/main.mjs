@@ -25,6 +25,8 @@ const systemClock = { nowMs: () => Date.now() };
 const log = (obj) => console.log(JSON.stringify({ t: new Date().toISOString(), svc: 'memory-bridge', ...obj }));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+class BridgeIdentityError extends Error {}
+
 async function privateText(path) {
   const st = await stat(path);
   if ((st.mode & 0o077) !== 0) throw new Error(`${path} must not be readable by group/others (chmod 600)`);
@@ -44,8 +46,11 @@ export async function loadIdentity(privateDir) {
   return { token, hindsightKey, ...sender };
 }
 
-async function scrubLegacyErrors(store) {
+async function checkWriterState(store, bank) {
   const { requests } = await store.snapshot();
+  if (Object.values(requests).some((r) => r.bank !== bank)) {
+    throw new BridgeIdentityError('BRIDGE_STATE_BANK_MISMATCH');
+  }
   const hasLegacyError = (r) => r.lastError && Object.hasOwn(r.lastError, 'message');
   if (!Object.values(requests).some(hasLegacyError)) return;
   await store.transact((tx) => {
@@ -64,7 +69,8 @@ export async function main(argv = process.argv.slice(2)) {
       'data-dir': { type: 'string', default: process.env.BRIDGE_DATA_DIR ?? '/var/lib/neighbor-hub/memory-bridge' },
       url: { type: 'string', default: process.env.BRIDGE_MAIL_URL ?? 'http://127.0.0.1:8765/mcp/' },
       hindsight: { type: 'string', default: process.env.BRIDGE_HINDSIGHT_URL ?? 'http://hindsight:8888' },
-      bank: { type: 'string', default: process.env.BRIDGE_BANK ?? 'group-a' },
+      'group-id': { type: 'string', default: process.env.HUB_GROUP_ID ?? 'group-a' },
+      bank: { type: 'string', default: process.env.BRIDGE_BANK },
       'interval-s': { type: 'string', default: process.env.BRIDGE_INTERVAL_S ?? '15' },
       'lease-s': { type: 'string', default: '60' },
       force: { type: 'boolean', default: false },
@@ -89,10 +95,15 @@ export async function main(argv = process.argv.slice(2)) {
     return 2;
   }
 
+  const groupId = values['group-id'];
+  const bank = values.bank ?? groupId;
+  if (!/^[a-z][a-z0-9-]{1,62}$/.test(groupId)) throw new BridgeIdentityError('BRIDGE_INVALID_GROUP');
+  if (bank !== groupId) throw new BridgeIdentityError('BRIDGE_BANK_GROUP_MISMATCH');
   const id = await loadIdentity(values['private-dir']);
+  if (id.projectKey !== `/data/projects/${groupId}`) throw new BridgeIdentityError('BRIDGE_SENDER_GROUP_MISMATCH');
   const mail = createMailClient({ url: values.url, token: id.token, projectKey: id.projectKey, agentName: id.agentName, senderToken: id.senderToken });
   const hindsight = createHindsightClient({ url: values.hindsight, apiKey: id.hindsightKey });
-  const bridge = createBridge({ mail, hindsight, store, clock: systemClock, bank: values.bank, log });
+  const bridge = createBridge({ mail, hindsight, store, clock: systemClock, bank, log });
 
   const lock = await store.acquireLock();
   if (!lock.acquired) {
@@ -102,7 +113,7 @@ export async function main(argv = process.argv.slice(2)) {
 
   if (cmd === 'reindex') {
     try {
-      await scrubLegacyErrors(store);
+      await checkWriterState(store, bank);
       const mailId = Number(positionals[1]);
       if (!Number.isInteger(mailId) || mailId <= 0) { console.error('usage: main.mjs reindex <mailId> [--force]'); return 2; }
       const r = await bridge.reindex(mailId, { force: values.force });
@@ -118,16 +129,16 @@ export async function main(argv = process.argv.slice(2)) {
   const stop = () => { stopping = true; };
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
-  let scrubbed = false;
+  let stateChecked = false;
   try {
     for (;;) {
       const held = (await store.acquireLock()).acquired;
       if (held) {
+        if (!stateChecked) {
+          await checkWriterState(store, bank);
+          stateChecked = true;
+        }
         try {
-          if (!scrubbed) {
-            await scrubLegacyErrors(store);
-            scrubbed = true;
-          }
           const r = await bridge.tick();
           log({ ev: 'tick', ...r });
         } catch (e) {
@@ -147,5 +158,8 @@ export async function main(argv = process.argv.slice(2)) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().then((code) => process.exit(code), (e) => { log({ ev: 'crash', ...errorDiagnostic('BRIDGE_CRASH', e) }); process.exit(1); });
+  main().then((code) => process.exit(code), (e) => {
+    log({ ev: 'crash', ...(e instanceof BridgeIdentityError ? { code: e.message } : errorDiagnostic('BRIDGE_CRASH', e)) });
+    process.exit(1);
+  });
 }

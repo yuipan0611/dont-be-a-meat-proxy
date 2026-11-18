@@ -20,7 +20,8 @@ services:
     environment:
       BRIDGE_MAIL_URL: http://mail-a:8765/mcp/
       BRIDGE_HINDSIGHT_URL: http://hindsight:8888
-      BRIDGE_BANK: group-a
+      HUB_GROUP_ID: "${HUB_GROUP_ID:-group-a}"
+      BRIDGE_BANK: "${HUB_GROUP_ID:-group-a}"
       BRIDGE_INTERVAL_S: "15"
       HUB_PRIVATE_DIR: /run/hub-private
       BRIDGE_DATA_DIR: /data

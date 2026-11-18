@@ -10,7 +10,7 @@ import { tempDir } from '../../lifecycle/test/helpers.mjs';
 
 const entry = fileURLToPath(new URL('../main.mjs', import.meta.url));
 
-async function setup(t, projectKey = '/data/projects/group-a') {
+async function setup(t, { projectKey = '/data/projects/group-a', env = {} } = {}) {
   const { dir, cleanup } = await tempDir('bridge-main-');
   t.after(cleanup);
   const privateDir = join(dir, 'private');
@@ -22,8 +22,11 @@ async function setup(t, projectKey = '/data/projects/group-a') {
     'hindsight-api.key': 'fixture',
   })) await writeFile(join(privateDir, name), value, { mode: 0o600 });
   const store = createFileStore({ dir: dataDir, clock: { nowMs: Date.now } });
-  const run = (...args) => spawnSync(process.execPath, [entry, '--private-dir', privateDir, '--data-dir', dataDir, ...args], {
-    encoding: 'utf8', timeout: 3000, env: { PATH: process.env.PATH },
+  const run = (...args) => spawnSync(process.execPath, [
+    entry, '--private-dir', privateDir, '--data-dir', dataDir, '--url', 'http://127.0.0.1:0/mcp/',
+    '--hindsight', 'http://127.0.0.1:0', ...args,
+  ], {
+    encoding: 'utf8', timeout: 3000, env: { PATH: process.env.PATH, ...env },
   });
   return { store, run };
 }
@@ -47,4 +50,44 @@ test('status redacts historical errors and the next writer removes them from sta
   const reindex = run('reindex', '7');
   assert.equal(reindex.status, 0, reindex.stdout + reindex.stderr);
   assert.deepEqual((await store.snapshot()).requests['mail-7'].lastError, expected);
+});
+
+test('bridge refuses writer startup when the bank, bootstrapped sender or state belongs to another group', async (t) => {
+  for (const scenario of [
+    { name: 'explicit foreign bank', env: { BRIDGE_BANK: 'group-b' }, code: 'BRIDGE_BANK_GROUP_MISMATCH' },
+    { name: 'foreign sender with the old defaults', projectKey: '/data/projects/group-b', code: 'BRIDGE_SENDER_GROUP_MISMATCH' },
+    { name: 'foreign persisted state', stateBank: 'group-b', code: 'BRIDGE_STATE_BANK_MISMATCH' },
+  ]) {
+    await t.test(scenario.name, async (t) => {
+      const { store, run } = await setup(t, scenario);
+      if (scenario.stateBank) {
+        await store.acquireLock();
+        await store.transact((tx) => tx.putRequest({
+          key: 'mail-7', mailId: 7, bank: scenario.stateBank, status: 'error',
+        }));
+        await store.releaseLock();
+      }
+      for (const args of [['once'], ['reindex', '7']]) {
+        const before = await store.snapshot();
+        const result = run(...args);
+        assert.equal(result.status, 1, result.stdout + result.stderr);
+        assert.deepEqual(result.stdout.trim().split('\n').map(JSON.parse).map(({ ev, code }) => ({ ev, code })), [
+          { ev: 'crash', code: scenario.code },
+        ]);
+        assert.deepEqual(await store.snapshot(), before);
+      }
+    });
+  }
+});
+
+test('writer startup accepts independent canonical group-a and group-b configurations', async (t) => {
+  for (const group of ['group-a', 'group-b']) {
+    const { store, run } = await setup(t, { projectKey: `/data/projects/${group}`, env: { HUB_GROUP_ID: group } });
+    await store.acquireLock();
+    await store.transact((tx) => tx.putRequest({ key: 'mail-7', mailId: 7, bank: group, status: 'error' }));
+    await store.releaseLock();
+    const result = run('reindex', '7');
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal((await store.snapshot()).requests['mail-7'].status, 'pending');
+  }
 });
