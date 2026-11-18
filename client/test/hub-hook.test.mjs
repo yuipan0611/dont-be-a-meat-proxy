@@ -883,7 +883,28 @@ test('L-02b: with memory_agent set, handoff, decision and checkpoint CC the brid
   assert.equal(hub.messages.filter((m) => (m.cc ?? []).includes('AmberCove')).length, 3); // one message each: no second write
 });
 
-test('L-02b: without memory_agent nothing changes (no CC, no error)', async () => {
+test('start: missing memory_agent warns once per session without blocking start', async () => {
+  const win = machine(createFakeHub());
+  const first = await win.run('start', { session_id: 'missing-memory' });
+  assert.equal(first.exitCode, 0);
+  assert.match(JSON.parse(first.stdout).systemMessage ?? '', /hub-client\.json.*memory_agent/);
+  assert.match(ctx(first), /沒有給你的新項目/);
+
+  const resumed = await win.run('start', { session_id: 'missing-memory', source: 'resume' });
+  assert.equal(JSON.parse(resumed.stdout).systemMessage, undefined);
+  const next = await win.run('start', { session_id: 'another-session' });
+  assert.match(JSON.parse(next.stdout).systemMessage ?? '', /memory_agent/);
+});
+
+test('start: configured memory_agent suppresses the warning', async () => {
+  const win = machine(createFakeHub());
+  writeFileSync(join(win.projectDir, 'hub-client.json'), JSON.stringify({ ...CONFIG, memory_agent: 'AmberCove' }));
+  const result = await win.run('start');
+  assert.equal(result.exitCode, 0);
+  assert.equal(JSON.parse(result.stdout).systemMessage, undefined);
+});
+
+test('L-02b: handoffs still save without CC when memory_agent is missing', async () => {
   const hub = createFakeHub();
   const win = machine(hub);
   await win.run('start');

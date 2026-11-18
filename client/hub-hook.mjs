@@ -481,15 +481,19 @@ async function modeStart(ctx, input) {
   }
 
   const prev = j.session(sid);
+  const systemMessage = !cfg.memoryAgent && !prev?.memoryAgentWarned
+    ? 'Hub：請在 hub-client.json 設定 memory_agent，讓新的交接與決策同步到記憶庫。'
+    : undefined;
   j.saveSession({
     ...(prev ?? {}), sid, state: 'open', startDone: true, claudePid: deps.ppid(),
+    memoryAgentWarned: prev?.memoryAgentWarned || Boolean(systemMessage),
     startedAt: prev?.startedAt ?? new Date(clock.now()).toISOString(),
     baselineRevision: prev?.baselineRevision ?? deps.workRevision(cfg.projectDir),
     notified: prev?.notified ?? [],
   });
   j.write('current-session.json', { sid });
   j.log({ t: clock.now(), ev: 'start', sid, unread: unread.length, syncError: syncErr ? describeError(syncErr) : null });
-  return { stdout: JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: out.join('\n') } }) };
+  return { stdout: JSON.stringify({ systemMessage, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: out.join('\n') } }) };
 }
 
 async function modeWatch(ctx, input) {
