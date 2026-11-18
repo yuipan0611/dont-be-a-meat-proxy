@@ -239,6 +239,7 @@ export function fakeButtonInteraction(customId, { userId = OWNER_DISCORD, guildI
     isChatInputCommand: () => false,
     async deferReply(o) { log.push({ type: 'defer', ...o }); },
     async deferUpdate(o) { log.push({ type: 'deferUpdate', ...o }); },
+    async followUp(o) { log.push({ type: 'followUp', ...o }); },
     async editReply(o) { log.push({ type: 'edit', ...o }); },
     async reply(o) { log.push({ type: 'reply', ...o }); },
     async update(o) { log.push({ type: 'update', ...o }); },
