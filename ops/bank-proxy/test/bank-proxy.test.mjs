@@ -116,6 +116,17 @@ test('another bank, the multi-bank /mcp/, REST, metrics and admin paths → 403 
   assert.equal(s.up.seen.length, 0);
 });
 
+test('refusal logs contain a route class and query fingerprint, never raw query text', async (t) => {
+  const s = await setup();
+  t.after(s.cleanup);
+  const query = 'note=private-fixture';
+  assert.equal((await s.call('/mcp/group-b/?' + query)).status, 403);
+  assert.deepEqual(s.logs[0], {
+    ev: 'path_refused', token_id: 'tok_alice0001', method: 'POST', route: 'bank',
+    query: { length: Buffer.byteLength(query), sha256: sha(query) },
+  });
+});
+
 test('write / destructive / LLM tools are refused with TOOL_NOT_ALLOWED and never forwarded', async (t) => {
   const s = await setup();
   t.after(s.cleanup);

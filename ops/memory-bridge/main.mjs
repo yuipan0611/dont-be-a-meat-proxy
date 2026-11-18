@@ -19,6 +19,7 @@ import { createMailClient, MailError } from '../../client/mail-client.mjs';
 import { createFileStore, LockLostError } from '../lifecycle/store-file.mjs';
 import { createBridge } from './bridge.mjs';
 import { createHindsightClient } from './hindsight-client.mjs';
+import { errorDiagnostic, redactLegacyError } from './diagnostics.mjs';
 
 const systemClock = { nowMs: () => Date.now() };
 const log = (obj) => console.log(JSON.stringify({ t: new Date().toISOString(), svc: 'memory-bridge', ...obj }));
@@ -41,6 +42,17 @@ export async function loadIdentity(privateDir) {
   const hindsightKey = (await privateText(join(privateDir, 'hindsight-api.key'))).trim();
   if (!hindsightKey) throw new Error('hindsight-api.key is empty');
   return { token, hindsightKey, ...sender };
+}
+
+async function scrubLegacyErrors(store) {
+  const { requests } = await store.snapshot();
+  const hasLegacyError = (r) => r.lastError && Object.hasOwn(r.lastError, 'message');
+  if (!Object.values(requests).some(hasLegacyError)) return;
+  await store.transact((tx) => {
+    for (const r of tx.listRequests(hasLegacyError)) {
+      tx.putRequest({ ...r, lastError: redactLegacyError(r.lastError) });
+    }
+  });
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -67,7 +79,7 @@ export async function main(argv = process.argv.slice(2)) {
     for (const r of Object.values(s.requests)) by[r.status] = (by[r.status] ?? 0) + 1;
     const notIndexed = Object.values(s.requests).filter((r) => r.status !== 'indexed')
       .map((r) => ({ mailId: r.mailId, kind: r.kind, status: r.status, attempts: r.attempts,
-        lastAttemptAt: r.lastAttemptAt && new Date(r.lastAttemptAt).toISOString(), nextTryAt: r.nextTryAt && new Date(r.nextTryAt).toISOString(), lastError: r.lastError }));
+        lastAttemptAt: r.lastAttemptAt && new Date(r.lastAttemptAt).toISOString(), nextTryAt: r.nextTryAt && new Date(r.nextTryAt).toISOString(), lastError: redactLegacyError(r.lastError) }));
     const lastIndexed = Math.max(0, ...Object.values(s.requests).map((r) => r.indexedAt ?? 0));
     console.log(JSON.stringify({ cursor: s.cursor, byStatus: by, lastIndexedAt: lastIndexed ? new Date(lastIndexed).toISOString() : null, notIndexed }, null, 2));
     return 0;
@@ -90,6 +102,7 @@ export async function main(argv = process.argv.slice(2)) {
 
   if (cmd === 'reindex') {
     try {
+      await scrubLegacyErrors(store);
       const mailId = Number(positionals[1]);
       if (!Number.isInteger(mailId) || mailId <= 0) { console.error('usage: main.mjs reindex <mailId> [--force]'); return 2; }
       const r = await bridge.reindex(mailId, { force: values.force });
@@ -105,17 +118,22 @@ export async function main(argv = process.argv.slice(2)) {
   const stop = () => { stopping = true; };
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
+  let scrubbed = false;
   try {
     for (;;) {
       const held = (await store.acquireLock()).acquired;
       if (held) {
         try {
+          if (!scrubbed) {
+            await scrubLegacyErrors(store);
+            scrubbed = true;
+          }
           const r = await bridge.tick();
           log({ ev: 'tick', ...r });
         } catch (e) {
           if (e instanceof LockLostError) { log({ ev: 'lock_lost', holder: e.holder }); return 4; }
           if (e instanceof MailError && e.code === 'E-AUTH') { log({ ev: 'fatal', code: e.code, msg: 'Mail rejected bridge credentials' }); return 2; }
-          log({ ev: 'tick_failed', code: e.code ?? e.name, msg: e.message });
+          log({ ev: 'tick_failed', ...errorDiagnostic('BRIDGE_TICK_FAILED', e) });
           if (cmd === 'once') return 1;
         }
       }
@@ -129,5 +147,5 @@ export async function main(argv = process.argv.slice(2)) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().then((code) => process.exit(code), (e) => { log({ ev: 'crash', msg: e.message }); process.exit(1); });
+  main().then((code) => process.exit(code), (e) => { log({ ev: 'crash', ...errorDiagnostic('BRIDGE_CRASH', e) }); process.exit(1); });
 }

@@ -21,6 +21,7 @@
 
 import { createHash } from 'node:crypto';
 import { parseItem } from '../lifecycle/protocol.mjs';
+import { recordError } from './diagnostics.mjs';
 
 export const INDEXED_KINDS = Object.freeze(['handoff', 'decision']);
 export const documentIdFor = (mailId) => `mail-${mailId}`;
@@ -94,18 +95,18 @@ export function createBridge({ mail, hindsight, store, clock, bank, retryBaseMs 
     try {
       item = parseItem((await mail.readMessage(r.mailId)).message.body_md);
     } catch (e) {
-      return update(r.key, { status: 'pending', lastAttemptAt: now, nextTryAt: now + backoff(r.attempts + 1), lastError: { stage: 'mail', message: String(e.message ?? e) } });
+      return update(r.key, { status: 'pending', lastAttemptAt: now, nextTryAt: now + backoff(r.attempts + 1), lastError: recordError('mail', 'MAIL_READ_FAILED', e) });
     }
     if (!item || sha256(item.text) !== r.textSha256) {
       log({ ev: 'text_mismatch', mail_id: r.mailId });
-      return update(r.key, { status: 'error', lastAttemptAt: now, lastError: { stage: 'mail', message: 'Mail text hash no longer matches the queued hash; not indexed' } });
+      return update(r.key, { status: 'error', lastAttemptAt: now, lastError: { stage: 'mail', code: 'MAIL_TEXT_MISMATCH' } });
     }
     if (r.status === 'unknown') {
       let doc;
       try {
         doc = await hindsight.getDocument(bank, r.documentId);
       } catch (e) {
-        return update(r.key, { lastAttemptAt: now, nextTryAt: now + backoff(r.attempts + 1), lastError: { stage: 'lookup', kind: e.kind ?? null, message: String(e.message ?? e) } });
+        return update(r.key, { lastAttemptAt: now, nextTryAt: now + backoff(r.attempts + 1), lastError: recordError('lookup', 'LOOKUP_FAILED', e) });
       }
       if (doc && typeof doc.original_text === 'string' && sha256(doc.original_text) === r.textSha256) {
         log({ ev: 'indexed_after_unknown', mail_id: r.mailId });
@@ -120,8 +121,8 @@ export function createBridge({ mail, hindsight, store, clock, bank, retryBaseMs 
     } catch (e) {
       if (!e?.kind) throw e; // programming error / killed: leave in_flight → treated as unknown on restart
       const at = clock.nowMs();
-      const lastError = { stage: 'retain', kind: e.kind, status: e.status ?? null, message: String(e.message).slice(0, 500) };
-      log({ ev: 'retain_failed', mail_id: r.mailId, kind: e.kind, status: e.status ?? null, attempts });
+      const lastError = recordError('retain', 'RETAIN_FAILED', e);
+      log({ ev: 'retain_failed', mail_id: r.mailId, ...lastError, attempts });
       if (e.kind === 'rejected' && e.status !== 429) return update(r.key, { status: 'error', lastError });
       return update(r.key, { status: e.kind === 'unknown' ? 'unknown' : 'pending', nextTryAt: at + backoff(attempts), lastError });
     }

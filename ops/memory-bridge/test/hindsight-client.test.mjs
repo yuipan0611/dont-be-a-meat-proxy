@@ -3,6 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { createHash } from 'node:crypto';
 import { createHindsightClient } from '../hindsight-client.mjs';
 
 const listen = (handler) => new Promise((res) => {
@@ -49,13 +50,34 @@ test('errors are classified: refused → unreachable, 5xx → failed, 4xx → re
   });
   t.after(() => close(f.server));
   const c = createHindsightClient({ url: f.url, apiKey: 'k', timeoutMs: 200 });
-  await assert.rejects(c.retain('group-a', ITEM), (e) => e.kind === 'failed' && e.status === 500 && /額度/.test(e.message));
+  await assert.rejects(c.retain('group-a', ITEM), { kind: 'failed', status: 500, code: 'HINDSIGHT_HTTP', message: 'HINDSIGHT_HTTP' });
   mode = 422;
   await assert.rejects(c.retain('group-a', ITEM), (e) => e.kind === 'rejected' && e.status === 422);
   mode = 'false';
   await assert.rejects(c.retain('group-a', ITEM), (e) => e.kind === 'failed');
   mode = 'hang';
   await assert.rejects(c.retain('group-a', ITEM), (e) => e.kind === 'unknown');
+});
+
+test('HTTP, success:false and malformed JSON errors carry only safe diagnostics', async (t) => {
+  let status = 500;
+  let body = JSON.stringify({ success: false, detail: '私密 fixture' });
+  const f = await fake((req, res) => { res.writeHead(status); res.end(body); });
+  t.after(() => close(f.server));
+  const c = createHindsightClient({ url: f.url, apiKey: 'k' });
+  for (const [httpStatus, code, response] of [
+    [500, 'HINDSIGHT_HTTP', body],
+    [200, 'HINDSIGHT_RETAIN_FAILED', body],
+    [200, 'HINDSIGHT_INVALID_JSON', 'private fixture'],
+  ]) {
+    status = httpStatus;
+    body = response;
+    await assert.rejects(c.retain('group-a', ITEM), {
+      code, message: code, status,
+      length: Buffer.byteLength(body),
+      sha256: createHash('sha256').update(body).digest('hex'),
+    });
+  }
 });
 
 test('getDocument: 200 → document, 404 → null, other → classified error; IDs are path-encoded', async (t) => {
