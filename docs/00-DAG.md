@@ -167,3 +167,4 @@ flowchart TD
 | P-6 結果 | <ORCA_ID> | <ORCA_ID> | codex | 11-18 | ✅ c6cd3c4＋26f78a2 併入 master：Windows 更新包 hub-win-L09-update.zip（sha256 5c3c7f8b…，24 檔＋SHA256SUMS，無秘密）＋手冊 docs/ops/windows-update-L09.md＋onboarding 上線版；PM 重跑 client 107 pass／13 skip；已上傳 Drive（zip 1HmgOcKQ…、手冊 1T5zMseq…）；待 維護者 Windows 換檔 |
 | P-5 結果 | <ORCA_ID> | <ORCA_ID> | codex | 11-18 | ✅ R-06～R-10 各一 commit（bbd0c33…a85f3cf）併入 master；PM 重跑 bot 79、client＋gateway＋bridge＋acceptance 188 pass／13 skip 0 fail；未部署（下次部署帶上） |
 | P-7 一行安裝＋自動更新（Mac/Win/Linux） | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-P7） | 11-19 | 🔄 派工中（維護者：要給協作者用，不要 Drive 傳檔）；發佈點 hub.example.invalid/dist，部署需 Caddy reload，PM 另排 |
+| P-8 GitHub 公開上架準備（作品集） | — | — | codex（worktree codex-P8） | 11-20 | 🔄 派工中；只準備到可推，push／公開需 維護者 確認 |
