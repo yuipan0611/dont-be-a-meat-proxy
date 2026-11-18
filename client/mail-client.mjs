@@ -2,8 +2,9 @@
 // Zero dependencies; Node >= 20 (global fetch, AbortController, crypto.randomUUID).
 
 import { randomUUID as nodeRandomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile, rename, readdir } from 'node:fs/promises';
+import { open, readFile, rename, readdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { ensurePrivateDirectory, repairPrivateTree, PRIVATE_FILE_MODE } from './private-files.mjs';
 
 const systemClock = {
   now: () => performance.now(),
@@ -423,21 +424,40 @@ function tryParse(raw) {
 }
 
 /** Local durable staging of raw Hub messages + the committed event cursor. */
-export function createStaging({ dir }) {
+export function createStaging({ dir, repairExisting = true }) {
+  // The hook repairs its entire data tree on SessionStart. Standalone callers repair on open.
+  if (repairExisting) repairPrivateTree(dir);
+  else ensurePrivateDirectory(dir);
   const msgDir = join(dir, 'messages');
   const cursorFile = join(dir, 'cursor.json');
 
   async function atomicWrite(path, data) {
-    await mkdir(join(path, '..'), { recursive: true });
-    const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
-    await writeFile(tmp, data, 'utf8');
-    await rename(tmp, path);
+    const tmp = `${path}.${process.pid}.${nodeRandomUUID()}.tmp`;
+    const file = await open(tmp, 'wx', PRIVATE_FILE_MODE);
+    try {
+      try {
+        if (process.platform !== 'win32') await file.chmod(PRIVATE_FILE_MODE);
+        await file.writeFile(data, 'utf8');
+      } finally {
+        await file.close();
+      }
+      await rename(tmp, path);
+    } catch (e) {
+      await unlink(tmp).catch(() => {});
+      throw e;
+    }
   }
+
+  const messagePath = (id) => {
+    if (!/^\d+$/.test(String(id))) throw new Error('Invalid Mail message ID');
+    return join(msgDir, `${id}.json`);
+  };
 
   return {
     async has(id) {
+      const path = messagePath(id);
       try {
-        await readFile(join(msgDir, `${id}.json`));
+        await readFile(path);
         return true;
       } catch {
         return false;
@@ -446,12 +466,13 @@ export function createStaging({ dir }) {
     /** Stores the Hub's resource text exactly as received. Never overwrites an existing entry. */
     async put(id, raw) {
       if (await this.has(id)) return false;
-      await atomicWrite(join(msgDir, `${id}.json`), raw);
+      ensurePrivateDirectory(msgDir);
+      await atomicWrite(messagePath(id), raw);
       return true;
     },
     async get(id) {
       try {
-        const raw = await readFile(join(msgDir, `${id}.json`), 'utf8');
+        const raw = await readFile(messagePath(id), 'utf8');
         return { raw, message: tryParse(raw) };
       } catch (e) {
         if (e.code === 'ENOENT') return null;
