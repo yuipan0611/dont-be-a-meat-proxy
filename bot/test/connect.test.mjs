@@ -34,6 +34,8 @@ test('TC-16: /connect replies ephemerally with install fields; DB keeps only the
   assert.ok(token && token.length > 40);
   assert.match(text, /Agent：`RedStone`/);
   assert.match(text, /平台：`windows`/);
+  assert.ok(text.includes("$env:HUB_DIST_URL = 'https://hub.example.test/dist/'"));
+  assert.ok(text.includes("Invoke-RestMethod 'https://hub.example.test/install.ps1'"));
   assert.match(text, /組別：`group-a`/);
   assert.doesNotMatch(text, /BlueLake|Authorization|claude mcp add/);
   assert.match(text, /保存與刪除/); // R-8 notice

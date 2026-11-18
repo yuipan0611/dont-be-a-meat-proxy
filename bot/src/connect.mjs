@@ -74,9 +74,10 @@ export function renderConnect({ onboarding, token, tokenId, label, platform, gro
   const agentLine = names.length === 1 ? `Agent：\`${names[0]}\``
     : names.length ? `Agent：${names.map((name) => `\`${name}\``).join('、')}（選這台裝置使用的名稱）`
       : 'Agent 尚未配發，請向 PM 取得這台裝置的 canonical agent 名稱。';
+  const distUrl = new URL('/dist/', onboarding).href;
   const installer = platform === 'windows'
-    ? `& ([scriptblock]::Create((Invoke-RestMethod '${onboarding}/install.ps1')))`
-    : `curl -fsS '${onboarding}/install.sh' | sh`;
+    ? `$env:HUB_DIST_URL = '${distUrl}'; & ([scriptblock]::Create((Invoke-RestMethod '${onboarding}/install.ps1')))`
+    : `curl -fsS '${onboarding}/install.sh' | HUB_DIST_URL='${distUrl}' sh`;
   return [
     `**${label} 的接入設定**（只有你看得到；這把 token 只顯示這一次）`,
     `平台：\`${platform}\`　組別：\`${groupId}\``,

@@ -18,13 +18,15 @@
 **Mac 或 Linux**
 
 ```sh
-curl -fsS 'https://hub.example.invalid/install.sh' | sh
+# HUB_ORIGIN 請設為已部署的 Hub HTTPS 網址
+curl -fsS "$HUB_ORIGIN/install.sh" | HUB_DIST_URL="$HUB_ORIGIN/dist/" sh
 ```
 
 **Windows PowerShell 5.1 或 7**
 
 ```powershell
-& ([scriptblock]::Create((Invoke-RestMethod 'https://hub.example.invalid/install.ps1')))
+# HUB_ORIGIN 請設為已部署的 Hub HTTPS 網址
+$env:HUB_DIST_URL = "$env:HUB_ORIGIN/dist/"; & ([scriptblock]::Create((Invoke-RestMethod "$env:HUB_ORIGIN/install.ps1")))
 ```
 
 看到 `✅ Hub readiness 200` 和 `✅ Hub inbox can be listed` 代表這台裝置可以連線並列出收件匣。開一個新終端機，回原專案資料夾執行 `hub claude`，核對 Claude 的專案信任及 MCP 啟用提示。其他專案可在該資料夾執行 `hub setup`。沒裝 Claude Code 時，安裝器會印出 Codex 與 Cursor 的 MCP 設定與啟動方式。

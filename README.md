@@ -13,8 +13,8 @@ flowchart LR
   Hooks -->|device-authenticated MCP| Edge["Caddy"]
   Edge --> Validator["Go request validator"]
   Validator --> Mail["Agent Mail"]
-  Mail -->|events and receipts| Clock["HubClock"]
-  Clock -->|status and decisions| Bot["Discord bot"]
+  Mail <-->|events and confirmations| Clock["HubClock"]
+  Mail <-->|status and decisions| Bot["Discord bot"]
   Bot -->|group and decision state| DB["Postgres"]
   Bot -->|approved issue creation| Issues["GitHub Issues"]
   Guide["Web architecture guide"] -->|read-only views| Mail
@@ -51,6 +51,16 @@ Open [the local demo](http://127.0.0.1:8084/) and select **Mac → Windows** in 
 
 See the [client setup](client/README.md), [web guide](web/README.md), and [deployment runbook](docs/ops/runbook-L09-launch-deploy.md) for the service configuration.
 
+### Install a client on a deployed Hub
+
+Once the operator has published a client release on the Hub's HTTPS origin, use the command from Discord `/connect`. On macOS or Linux, with `HUB_ORIGIN` set to your deployment's HTTPS origin:
+
+```bash
+curl -fsS "$HUB_ORIGIN/install.sh" | HUB_DIST_URL="$HUB_ORIGIN/dist/" sh
+```
+
+The installer prompts for configuration and the device token. See the [onboarding guide](docs/onboarding-S1.md) for PowerShell and the [client release runbook](docs/ops/runbook-P7-client-release.md) for publishing installers. The local demo above is ready to use from a clone.
+
 ## Test
 
 The [CI workflow](.github/workflows/ci.yml) has the commands for all credential-free suites. To start with the client and web app:
@@ -61,7 +71,7 @@ npm ci --prefix web --ignore-scripts
 npm test --prefix web
 ```
 
-CI also covers the Discord bot, LLM gateway, memory bridge, bank proxy, acceptance harness, HubClock, classification evaluator, Python operations, and Go validator. It uses loopback or in-process fixtures. Native Agent Mail tests self-skip when their binary is unavailable. The Python job enables an explicit skip for tests that start or configure Docker services.
+CI also covers the Discord bot, LLM gateway, memory bridge, bank proxy, acceptance harness, HubClock, classification evaluator, Python operations and installer, and Go validator. It uses loopback or in-process fixtures. Native Agent Mail tests self-skip when their binary is unavailable. The Python job skips Docker-dependent tests. The release runbook lists the separate Caddy and PowerShell checks.
 
 ## Stack
 

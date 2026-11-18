@@ -4,9 +4,9 @@
 
 ## 建置並準備上線
 
-1. 合併 P-7 後，在含合併版 `ops/release` 的 checkout 建置。用新的 semver。預設來源為本機 `master`，也可用 `--ref` 指定待驗的完整 commit。
+1. 合併 P-7 後，在含合併版 `ops/release` 的 checkout 建置。用新的 semver。從完成審查的 checkout 建置，以下範例指定目前的 Git commit。
    ```sh
-   node ops/release/build.mjs --version 1.0.0 --out /tmp/hub-client-1.0.0
+   node ops/release/build.mjs --ref HEAD --version 1.0.0 --out /tmp/hub-client-1.0.0
    ```
    建置需 Node 22+ 與 Git。固定讀取已提交的 runtime 檔，Git 以 commit 時間及固定樹順序打包。輸出包含兩種版本化 archive、`manifest.json`、兩個安裝腳本及 Node bootstrap。Manifest 記錄版本、commit、兩個 archive 的 SHA-256，以及包內檔案和公開安裝腳本的 SHA-256。`bootstrap.mjs` 是包內下載模組的副本。首次執行的信任根是 Hub HTTPS，後續依 manifest 驗證內容。
 2. 準備一份獨立的公開 `config.json`。每組只放公開的 HubClock、MemoryBridge canonical agent 名稱與允許寄信的公開 peer 名稱。HubClock／MemoryBridge 名稱取自各組私有 sender 檔的 `agentName` 欄位；請手動擷取名稱。下面是格式示例，請填入實際值。
