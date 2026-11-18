@@ -36,7 +36,7 @@ test('whole-repository snapshot has valid source ranges and no dangling architec
  assert(Object.keys(map.symbols).length>300);assert(atlas.services.length>=12);assert(atlas.tables.some(t=>t.name==='devices'));assert(atlas.tables.some(t=>t.name==='decisions'));
  const files=new Map();
  for(const[id,s]of Object.entries(map.symbols)){
-  assert.equal(id,s.id);assert.match(s.fileHash,/^[a-f0-9]{64}$/);assert(s.endLine>=s.startLine);assert(!/(?:private|\.env|\/test\/|\/tests\/|spikes\/)/.test(s.path));
+  assert.equal(id,s.id);assert.match(s.fileHash,/^[a-f0-9]{64}$/);assert(s.endLine>=s.startLine);assert.doesNotMatch(s.path,/(?:^|\/)(?:private|\.local|\.hub-local|test|tests|spikes)(?:\/|$)|(?:^|\/)\.env(?:\.|$)|\.(?:key|pem|token|password|secret)$/);
   if(!files.has(s.path))files.set(s.path,(await readFile(resolve(root,s.path),'utf8')).split('\n'));
   const range=files.get(s.path).slice(s.startLine-1,s.endLine).join('\n');assert(range.includes(s.code),id);
  }

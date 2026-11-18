@@ -9,7 +9,7 @@ export const sourceRoots=['client','ops','server','bot','web','deploy','supabase
 const sha=s=>createHash('sha256').update(s).digest('hex');
 const lineAt=(text,offset)=>text.slice(0,offset).split('\n').length;
 const isTest=path=>/(^|\/)(test|tests|fixtures)(\/|$)|(?:_test\.go|\.test\.mjs)$/.test(path);
-const isSensitive=path=>/(^|\/)(private|\.local|\.generated|node_modules|__pycache__)(\/|$)|(^|\/)\.env(?:\.|$)|\.(?:key|pem|token|password)$/.test(path);
+const isSensitive=path=>/(^|\/)(private|\.local|\.hub-local|\.generated|node_modules|__pycache__)(\/|$)|(^|\/)\.env(?:\.|$)|\.(?:key|pem|token|password|secret)$/.test(path);
 const isSource=path=>!isSensitive(path)&&(/\.(mjs|js|jsx|css|py|go|sql|sh|yaml|yml|caddy|routes|service|timer|path)$/.test(path)||/\/Dockerfile$/.test(path)||/^ops\/[^/.]+$/.test(path));
 const language=path=>({'.mjs':'javascript','.js':'javascript','.jsx':'jsx','.css':'css','.py':'python','.go':'go','.sql':'sql','.yaml':'compose','.yml':'compose','.caddy':'caddy','.routes':'caddy','.sh':'shell'})[extname(path)]??(/Dockerfile$/.test(path)?'dockerfile':'configuration');
 export function serviceFor(path){
@@ -106,7 +106,7 @@ async function inventoryPaths(root){
  try{return {method:'git ls-files (tracked repository files)',paths:execFileSync('git',['ls-files','-z','--',...sourceRoots],{cwd:root,encoding:'utf8',stdio:['ignore','pipe','ignore']}).split('\0').filter(Boolean)};}
  catch{
   const paths=[];
-  async function walk(dir){let entries;try{entries=await readdir(resolve(root,dir),{withFileTypes:true});}catch{return;}for(const entry of entries){if(['node_modules','.generated','private','.git','__pycache__'].includes(entry.name)||entry.isSymbolicLink())continue;const path=`${dir}/${entry.name}`;if(entry.isDirectory())await walk(path);else paths.push(path);}}
+  async function walk(dir){let entries;try{entries=await readdir(resolve(root,dir),{withFileTypes:true});}catch{return;}for(const entry of entries){if(['node_modules','.generated','private','.local','.hub-local','.git','__pycache__'].includes(entry.name)||entry.isSymbolicLink())continue;const path=`${dir}/${entry.name}`;if(entry.isDirectory())await walk(path);else paths.push(path);}}
   for(const dir of sourceRoots)await walk(dir);
   return {method:'filesystem fallback (build image without .git; private/generated/dependencies excluded)',paths:paths.sort()};
  }

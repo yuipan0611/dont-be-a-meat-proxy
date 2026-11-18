@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { runHook } from '../hub-hook.mjs';
 import { createFakeHub } from './helpers/fake-hub.mjs';
 import { FakeClock } from './helpers/fakes.mjs';
@@ -20,7 +21,7 @@ const tempDirs = [];
 after(() => { for (const d of tempDirs) rmSync(d, { recursive: true, force: true }); });
 
 /** One machine: its project dir (with hub-client.json), its local data dir, and deps wired to the fake hub. */
-function machine(hub, { agent = 'RedStone', clock = new FakeClock(Date.parse('2026-11-18T01:00:00Z')), alive = () => true, revision = () => 'rev-0' } = {}) {
+function machine(hub, { agent = 'RedStone', clock = new HookClock(Date.parse('2026-11-18T01:00:00Z')), alive = () => true, revision = () => 'rev-0' } = {}) {
   const projectDir = mkdtempSync(join(tmpdir(), 'hubhook-proj-'));
   tempDirs.push(projectDir);
   writeFileSync(join(projectDir, 'hub-client.json'), JSON.stringify(CONFIG));
@@ -62,13 +63,37 @@ test('start: an unread handoff is shown verbatim with its ID before the first in
   assert.ok(c.includes('https://github.com/o/r/pull/1'));
 });
 
-/** Runs a long-lived mode (watch) on the FakeClock, advancing time until it settles. */
-async function drive(promise, clock, { stepMs = 500, maxMs = 4 * 3600_000 } = {}) {
-  let settled = false, value;
-  promise.then((v) => { settled = true; value = v; });
-  for (let t = 0; !settled && t <= maxMs; t += stepMs) await clock.advance(stepMs);
+// Hook polling mixes asynchronous filesystem work with virtual time. Advance
+// the clock once the hook is asleep so real I/O cannot age a poll.
+class HookClock extends FakeClock {
+  wakeAt;
+
+  async sleep(ms) {
+    this.wakeAt = this.now() + ms;
+    await super.sleep(ms);
+    this.wakeAt = undefined;
+  }
+}
+
+async function waitForHookSleep(clock, isDone = () => false) {
+  const deadline = performance.now() + 5_000;
+  while (clock.wakeAt === undefined && !isDone()) {
+    assert.ok(performance.now() < deadline, 'hook did not finish or reach its next sleep');
+    await delay(1);
+  }
+}
+
+async function drive(promise, clock) {
+  let settled = false;
+  const markSettled = () => { settled = true; };
+  void promise.then(markSettled, markSettled);
+  const deadline = clock.now() + 4 * 3600_000;
+  while (!settled && clock.now() <= deadline) {
+    await waitForHookSleep(clock, () => settled);
+    if (!settled) await clock.advance(clock.wakeAt - clock.now());
+  }
   assert.ok(settled, 'mode did not finish');
-  return value;
+  return promise;
 }
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
@@ -214,7 +239,7 @@ test('watch: a new message wakes Claude with a short notice (ID + summary + how 
   const win = machine(hub);
   await win.run('start');
   const p = win.run('watch');
-  await win.clock.advance(1000);
+  await waitForHookSleep(win.clock);
   const sent = await hub.send('BlueLake', handoff({ intent: 'question', kind: 'help' }));
   const r = await drive(p, win.clock);
   assert.equal(r.exitCode, 2);
@@ -231,10 +256,13 @@ test('watch: polls every 15 s, so a message is seen within one poll interval', a
   await win.run('start');
   const t0 = win.clock.now();
   const p = win.run('watch');
-  await win.clock.advance(20_000);
+  await waitForHookSleep(win.clock);
+  await win.clock.advance(15_000);
+  await waitForHookSleep(win.clock);
+  await win.clock.advance(5_000);
   await hub.send('BlueLake', handoff());
   const sentAt = win.clock.now();
-  const r = await drive(p, win.clock, { stepMs: 250 });
+  const r = await drive(p, win.clock);
   assert.equal(r.exitCode, 2);
   const lag = win.clock.now() - sentAt;
   assert.ok(lag <= 15_000, `detected ${lag} ms after send`);
@@ -258,7 +286,7 @@ test('watch: only one watcher per session — a second one exits 0 at once while
   const win = machine(hub);
   await win.run('start');
   const first = win.run('watch');
-  await win.clock.advance(1000);
+  await waitForHookSleep(win.clock);
   const second = await win.run('watch', {}, { pid: 5555 });
   assert.equal(second.exitCode, 0);
   assert.equal(second.stderr, '');
@@ -272,7 +300,7 @@ test('watch: when its Claude process is gone it exits 0 without reading the Hub 
   const win = machine(hub, { alive: (pid) => (pid === 777 ? claudeAlive : true) });
   await win.run('start');
   const p = win.run('watch');
-  await win.clock.advance(1000);
+  await waitForHookSleep(win.clock);
   claudeAlive = false; // kill -9 of Claude; on POSIX the watcher would also be re-parented
   await hub.send('BlueLake', handoff());
   const callsBefore = hub.calls.length;
@@ -288,7 +316,7 @@ test('watch: re-parenting alone (ppid changed) also counts as orphaned', async (
   const win = machine(hub);
   await win.run('start');
   const p = win.run('watch');
-  await win.clock.advance(1000);
+  await waitForHookSleep(win.clock);
   win.proc.ppid = 1;
   assert.equal((await drive(p, win.clock)).exitCode, 0);
 });
@@ -298,7 +326,7 @@ test('watch: expires itself after 55 min with a re-arm notice — before the 360
   const win = machine(hub);
   await win.run('start');
   const t0 = win.clock.now();
-  const r = await drive(win.run('watch'), win.clock, { stepMs: 5_000 });
+  const r = await drive(win.run('watch'), win.clock);
   assert.equal(r.exitCode, 2);
   assert.match(r.stderr, /例行重新掛載/);
   const elapsed = win.clock.now() - t0;
@@ -459,7 +487,7 @@ test('end: stops this session\'s watcher', async () => {
   const win = machine(hub);
   await win.run('start');
   const p = win.run('watch');
-  await win.clock.advance(1000);
+  await waitForHookSleep(win.clock);
   await win.run('end', { reason: 'other' }, { pid: 9999, kill: (pid) => killed.push(pid) });
   assert.deepEqual(killed, [4242]);
   win.proc.ppid = 1;
@@ -655,7 +683,7 @@ test('watch: a question wake line tells the agent a do-it question still needs t
   const win = machine(hub);
   await win.run('start');
   const p = win.run('watch');
-  await win.clock.advance(1000);
+  await waitForHookSleep(win.clock);
   await hub.send('BlueLake', handoff({ intent: 'question', kind: 'help' }));
   const r = await drive(p, win.clock);
   assert.equal(r.exitCode, 2);
@@ -714,7 +742,7 @@ test('L-00: a reply in a thread is labelled 回覆 (no kind/intent) in start, in
   const mac3 = machine(hub3, { agent: 'BlueLake' });
   await mac3.run('start');
   const p = mac3.run('watch');
-  await mac3.clock.advance(1000);
+  await waitForHookSleep(mac3.clock);
   await hub3.send('RedStone', handoff({ to: ['BlueLake'], kind: 'help', subject: 'Re: x', threadId: 'thread-of-some-root' }));
   const w = await drive(p, mac3.clock);
   assert.match(w.stderr, /｜回覆｜/);
@@ -735,7 +763,7 @@ test('L-00: a HubClock result shows as 「HubClock 通知：<事件>」 with the
   const mac2 = machine(hub2, { agent: 'BlueLake' });
   await mac2.run('start');
   const p = mac2.run('watch');
-  await mac2.clock.advance(1000);
+  await waitForHookSleep(mac2.clock);
   const q = await hub2.send('BlueLake', handoff({ to: ['RedStone'], kind: 'help', intent: 'question', subject: '問' }));
   await hubClockResult(hub2, q, { status: 'unanswered', kind: 'question' });
   const w = await drive(p, mac2.clock);
@@ -810,7 +838,7 @@ test('auto check: no grant for this sender → exit 3 at once (card); an approva
 });
 
 test('auto check: a grant covers the sender but HubClock has not decided yet → waits, then falls back to the card (fail-closed)', async () => {
-  const clock = new FakeClock(Date.parse('2026-11-18T01:00:00Z'));
+  const clock = new HookClock(Date.parse('2026-11-18T01:00:00Z'));
   const hub = createFakeHub({ clock });
   const win = machine(hub, { clock });
   await win.run('start');
@@ -819,20 +847,18 @@ test('auto check: a grant covers the sender but HubClock has not decided yet →
   const req = await hub.send('BlueLake', handoff({ kind: 'task', intent: 'action', subject: '跑測試' }));
   await win.run('read', {}, { args: [String(req.messageId)] });
   const p = win.run('auto', {}, { args: ['check', String(req.messageId)] });
-  let settled = false; p.then(() => { settled = true; });
-  const step = async (ms) => { for (let t = 0; t < ms; t += 250) { await clock.advance(250); await new Promise((r) => setImmediate(r)); } };
-  await step(10_000);
-  assert.equal(settled, false, 'waits for HubClock while a grant covers the sender');
+  await waitForHookSleep(clock);
+  await clock.advance(DEFAULTS.autoCheckPollMs);
+  await waitForHookSleep(clock);
+  await clock.advance(DEFAULTS.autoCheckPollMs);
+  await waitForHookSleep(clock);
   await clockResult(hub, ['BlueLake', 'RedStone'], req.threadId, { kind: 'action', status: 'auto_approved', root_mail_id: req.messageId, recipient_agent: 'RedStone', requester: 'BlueLake' });
-  await step(20_000);
-  const r = await p;
+  const r = await drive(p, clock);
   assert.equal(r.exitCode, 0);
 
   const req2 = await hub.send('BlueLake', handoff({ kind: 'task', intent: 'action', subject: '再跑一次' }));
   await win.run('read', {}, { args: [String(req2.messageId)] });
-  const p2 = win.run('auto', {}, { args: ['check', String(req2.messageId)] });
-  await step(40_000);
-  const r2 = await p2;
+  const r2 = await drive(win.run('auto', {}, { args: ['check', String(req2.messageId)] }), clock);
   assert.equal(r2.exitCode, 3);
   assert.match(r2.stdout, /HubClock 尚未核准/);
 });
