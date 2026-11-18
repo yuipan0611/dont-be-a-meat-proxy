@@ -1,5 +1,7 @@
 # L-02b：Mail → Hindsight 索引 bridge（GAP-16）
 
+2026-11-18 L09 更新：VPS 已部署，LLM 使用共用 Groq gateway。下文原始部署與模型測試為歷史紀錄；正式順序以 [L09 runbook](runbook-L09-launch-deploy.md) 為準。兩端 client 必須更新 runtime 檔案並設定 `memory_agent`，舊 client 只加欄位仍不會 CC。已確認的 #89 案例與待 PM 核准的回填方案見 [索引診斷](evidence/L09-memory-bridge-89.md)。
+
 > 2026-11-17 F-11 更新：正式 LLM 呼叫已改經共用 request-count gateway；本文 Anthropic／USD 設定為歷史紀錄。個人 Gemini CLI OAuth 已有官方停用公告，請依 [F-11 調研與部署設計](../research/F-11-gemini-subscription-backend.md) 的 backend／條款／隱私限制操作；目前預設 disabled。
 
 2026-11-17，swe-Ben。**本機驗證完成，VPS 未部署**。依據：SDS API-04（唯一 bridge）、GAP-16、`docs/ops/runbook-L02-memory.md`。
@@ -53,7 +55,7 @@ HUB_OPS_UID=${OWNER%%:*} HUB_OPS_GID=${OWNER##*:} docker compose -f deploy/compo
 docker compose -f deploy/compose.yaml -f deploy/hubclock/compose.hubclock.yaml -f deploy/memory-bridge/compose.bridge.yaml logs --tail 5 memory-bridge   # 每 15 秒 "ev":"tick"
 ```
 
-4) 兩台電腦的 `hub-client.json` 加 `"memory_agent": "<上面印出的名字>"`（和 `clock_agent` 一樣是 Mail 產生的名字）。沒設就不 CC，行為與 L-02 前相同。
+4) 兩台電腦先更新同一版本的 `client/hub-hook.mjs`、`client/mail-client.mjs` 與 `ops/lifecycle/protocol.mjs`，保留原設定、憑證與 outbox。再在各專案的 `hub-client.json` 加 `"memory_agent": "<上面印出的名字>"`。只加欄位不會讓舊版 client 取得自動 CC 功能。沒設就不 CC，行為與 L-02 前相同。
 5) 已存在的交接補索引：對每個要補的 Mail ID 跑
    `docker compose … run --rm --no-deps memory-bridge node /app/ops/memory-bridge/main.mjs reindex <id>`（服務運行時會 standby，先 `stop memory-bridge` 再跑，跑完再 `start`）。
 6) 檢查：`… run --rm --no-deps memory-bridge node /app/ops/memory-bridge/main.mjs status` → `byStatus`、`lastIndexedAt`、`notIndexed`（含錯誤與下次重試時間）。
