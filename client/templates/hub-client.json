@@ -6,6 +6,7 @@
   "agents": { "darwin": "BlueLake", "win32": "RedStone" },
   "peers": ["BlueLake", "RedStone"],
   "clock_agent": "<H-02 bootstrap 產生的 HubClock 名稱，見 hubclock.sender.json 的 agentName>",
+  "memory_agent": "<L-02b bootstrap 產生的 MemoryBridge 名稱，見 memorybridge.sender.json 的 agentName>",
   "recent_handoffs": 5,
   "poll_seconds": 15
 }
