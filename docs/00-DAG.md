@@ -163,3 +163,4 @@ flowchart TD
 | P-4 正式機 MemoryBridge 未收件（/status 無交接） | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-P1） | 11-18 | 🔄 查根因中（#89 已保存但 bridge cursor=0） |
 | P-5 上線後修 R-06～R-10 | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-P5） | 11-19 | 🔄 派工中 |
 | P-6 Windows 更新包＋onboarding 上線版 | <ORCA_ID> | <ORCA_ID> | codex（worktree codex-P6） | 11-19 | 🔄 派工中 |
+| P-4 結果 | <ORCA_ID> | <ORCA_ID> | codex | 11-18 | ✅ 685ac4b 併入 master：根因為 Mac ~/hub-mac 的 client 是舊版（無 memory_agent auto-CC）；PM 同步 hub-hook/mail-client/lifecycle protocol（備份 ~/hub-mac/.bak-*），重送交接 #90 → bridge 02:40:56Z indexed（cursor 121）。#89 與 13 筆歷史交接回填未做（需另核准）；Windows 待 P-6 更新包 |
